@@ -158,9 +158,11 @@ impl DocumentBuffer {
         let Some(enc) = Encoding::for_label(encoding_label.as_bytes()) else {
             return false;
         };
+        // 轉換為 UTF-16LE / UTF-16BE 時預設寫入 BOM；若原本即為含 BOM 之 UTF-8 則保留 BOM
+        self.has_bom = enc == encoding_rs::UTF_16LE
+            || enc == encoding_rs::UTF_16BE
+            || (enc == encoding_rs::UTF_8 && self.encoding == encoding_rs::UTF_8 && self.has_bom);
         self.encoding = enc;
-        // 轉換為 UTF-16LE / UTF-16BE 時預設寫入 BOM，使其他軟體能正確識別位元組序
-        self.has_bom = enc == encoding_rs::UTF_16LE || enc == encoding_rs::UTF_16BE;
         self.raw_bytes = Self::encode_str(&self.text, enc, self.has_bom);
         self.has_decode_error = false;
         self.is_modified = true;

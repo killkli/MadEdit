@@ -29,6 +29,7 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_file_path(doc.file_name().into());
     ui.set_edit_mode(mode_idx);
     ui.set_encoding_name(doc.encoding.name().into());
+    ui.set_selected_encoding(doc.encoding.name().into());
     ui.set_newline_format(doc.newline_format.as_str().into());
     ui.set_text_content(doc.text.clone().into());
 

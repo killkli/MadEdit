@@ -11,7 +11,8 @@ export component MainWindow inherits Window {
     in-out property <string> hex-content-text: "";
     in-out property <string> hex-ascii-text: "";
     in-out property <int> edit-mode: 0; // 0: 文字模式 (Text), 1: 列塊模式 (Column), 2: 十六進位模式 (Hex)
-    in-out property <[string]> encoding-list: ["UTF-8", "UTF-16LE", "UTF-16BE", "Big5", "GBK", "GB18030", "Shift_JIS", "EUC-JP", "EUC-KR", "windows-1252"];
+    in-out property <[string]> encoding-list: ["UTF-8"];
+    in-out property <string> selected-encoding: "UTF-8";
     in-out property <string> encoding-name: "UTF-8";
     in-out property <string> newline-format: "CRLF";
     in-out property <string> status-info: "Ln 1, Col 1";
@@ -64,15 +65,15 @@ export component MainWindow inherits Window {
             ComboBox {
                 width: 130px;
                 model: root.encoding-list;
-                current-value <=> root.encoding-name;
+                current-value <=> root.selected-encoding;
             }
             Button {
                 text: "重新解碼";
-                clicked => { root.reinterpret-encoding-clicked(root.encoding-name); }
+                clicked => { root.reinterpret-encoding-clicked(root.selected-encoding); }
             }
             Button {
                 text: "轉換編碼";
-                clicked => { root.convert-encoding-clicked(root.encoding-name); }
+                clicked => { root.convert-encoding-clicked(root.selected-encoding); }
             }
 
             Rectangle { horizontal-stretch: 1; }
