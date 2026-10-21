@@ -112,3 +112,20 @@ D:\Git\MadEdit-Rust\
 2. **維持繁體中文繁簡規範**：溝通及所有文件請使用 `zh-TW 繁體中文`。
 3. **保持測試完整性**：新增核心邏輯時務必加入對應單元測試，並確保 `cargo test` 與 `cargo check` 零 Warning 通過。
 4. **Git Commit 規範**：遵循 Conventional Commits (例如 `feat: ...`, `fix: ...`, `refactor: ...`)。
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues 與 Specs 以本地 Markdown 檔案形式存放於 `.scratch/` 目錄下。請參閱 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用預設的五種標準分類狀態標籤（`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`）。請參閱 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+採用單一語境（single-context）結構（根目錄 `GLOSSARY.md` 與 `docs/adr/`）。請參閱 `docs/agents/domain.md`。
+
