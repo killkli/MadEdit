@@ -1,0 +1,161 @@
+import { Button, TextEdit, ScrollView, ComboBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "MadEdit-Rust";
+    preferred-width: 960px;
+    preferred-height: 640px;
+
+    in-out property <string> file-path: "Untitled";
+    in-out property <string> text-content: "";
+    in-out property <string> hex-offset-text: "";
+    in-out property <string> hex-content-text: "";
+    in-out property <string> hex-ascii-text: "";
+    in-out property <int> edit-mode: 0; // 0: Text, 1: Column, 2: Hex
+    in-out property <string> encoding-name: "UTF-8";
+    in-out property <string> newline-format: "CRLF";
+    in-out property <string> status-info: "Ln 1, Col 1";
+
+    callback open-file-clicked();
+    callback save-file-clicked();
+    callback mode-changed(int);
+    callback text-changed(string);
+
+    VerticalLayout {
+        padding: 4px;
+        spacing: 4px;
+
+        // Toolbar
+        HorizontalLayout {
+            spacing: 8px;
+            height: 32px;
+
+            Button {
+                text: "開啟舊檔";
+                clicked => { root.open-file-clicked(); }
+            }
+            Button {
+                text: "儲存檔案";
+                clicked => { root.save-file-clicked(); }
+            }
+
+            Rectangle { width: 16px; }
+
+            Button {
+                text: "文字模式";
+                primary: root.edit-mode == 0;
+                clicked => { root.mode-changed(0); }
+            }
+            Button {
+                text: "列塊模式";
+                primary: root.edit-mode == 1;
+                clicked => { root.mode-changed(1); }
+            }
+            Button {
+                text: "十六進位模式";
+                primary: root.edit-mode == 2;
+                clicked => { root.mode-changed(2); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                vertical-alignment: center;
+                text: "檔案: " + root.file-path;
+                color: #555555;
+            }
+        }
+
+        // Editor Area
+        Rectangle {
+            vertical-stretch: 1;
+            background: #ffffff;
+            border-width: 1px;
+            border-color: #d0d0d0;
+
+            if root.edit-mode != 2 : TextEdit {
+                width: 100%;
+                height: 100%;
+                text <=> root.text-content;
+                edited(str) => { root.text-changed(str); }
+                font-family: "Consolas, Courier New, monospace";
+                font-size: 14px;
+            }
+
+            if root.edit-mode == 2 : ScrollView {
+                width: 100%;
+                height: 100%;
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    padding: 8px;
+
+                    // Offset column
+                    Text {
+                        text: root.hex-offset-text;
+                        font-family: "Consolas, Courier New, monospace";
+                        font-size: 13px;
+                        color: #00008b;
+                    }
+
+                    // Hex dump column
+                    Text {
+                        text: root.hex-content-text;
+                        font-family: "Consolas, Courier New, monospace";
+                        font-size: 13px;
+                        color: #222222;
+                    }
+
+                    // ASCII dump column
+                    Text {
+                        text: root.hex-ascii-text;
+                        font-family: "Consolas, Courier New, monospace";
+                        font-size: 13px;
+                        color: #006400;
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+        }
+
+        // Status bar
+        Rectangle {
+            height: 24px;
+            background: #f0f0f0;
+            border-width: 1px;
+            border-color: #d8d8d8;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 16px;
+
+                Text {
+                    vertical-alignment: center;
+                    text: root.status-info;
+                    font-size: 12px;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                Text {
+                    vertical-alignment: center;
+                    text: "模式: " + (root.edit-mode == 0 ? "Text" : (root.edit-mode == 1 ? "Column" : "Hex"));
+                    font-size: 12px;
+                }
+
+                Text {
+                    vertical-alignment: center;
+                    text: "換行: " + root.newline-format;
+                    font-size: 12px;
+                }
+
+                Text {
+                    vertical-alignment: center;
+                    text: "編碼: " + root.encoding-name;
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+}
