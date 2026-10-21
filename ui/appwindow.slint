@@ -22,7 +22,7 @@ export component MainWindow inherits Window {
     in-out property <string> encoding-name: "UTF-8";
     in-out property <string> newline-format: "CRLF";
     in-out property <string> status-info: "Len: 0 bytes";
-    in-out property <string> cursor-status: "Ln 1, Col 1";
+    in-out property <string> caret-status: "Ln 1, Col 1";
 
     // 自繪編輯器屬性
     in-out property <[VisibleLine]> visible-lines: [];
@@ -257,7 +257,7 @@ export component MainWindow inherits Window {
 
                 Text {
                     vertical-alignment: center;
-                    text: root.cursor-status;
+                    text: root.caret-status;
                     font-size: 12px;
                     color: #333333;
                 }

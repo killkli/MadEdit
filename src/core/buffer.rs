@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(doc.encoding, encoding_rs::GB18030);
         assert!(!doc.has_decode_error);
         assert_eq!(doc.text, "软件");
-        assert_eq!(doc.raw_gb_bytes(), &raw_gb_bytes[..]);
+        assert_eq!(&doc.raw_bytes[..], &raw_gb_bytes[..]);
         assert!(!doc.is_modified);
         assert_eq!(doc.editor.lines, vec!["软件".to_string()]);
 
@@ -364,9 +364,6 @@ mod tests {
 
 #[cfg(test)]
 impl DocumentBuffer {
-    pub fn raw_gb_bytes(&self) -> &[u8] {
-        &self.raw_bytes
-    }
     pub fn load_file_from_memory(&mut self, text: String) {
         self.text = text.clone();
         self.raw_bytes = text.into_bytes();

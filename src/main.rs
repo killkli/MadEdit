@@ -54,7 +54,7 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
 
     // 同步游標位置座標資訊
     let head = doc.editor.selection.head;
-    ui.set_cursor_status(format!("Ln {}, Col {}", head.line + 1, head.col + 1).into());
+    ui.set_caret_status(format!("Ln {}, Col {}", head.line + 1, head.col + 1).into());
 
     if doc.edit_mode == EditMode::Hex {
         let dump = doc.get_hex_dump();
@@ -199,17 +199,15 @@ fn main() -> Result<(), slint::PlatformError> {
                         d.editor.select_all();
                     }
                     "c" | "C" => {
-                        let text = d.editor.selected_text();
-                        if !text.is_empty() {
-                            // 可擴充寫入系統剪貼簿
-                        }
+                        d.editor.copy_to_clipboard();
                     }
                     "x" | "X" => {
-                        let text = d.editor.selected_text();
-                        if !text.is_empty() {
-                            d.editor.delete_selection();
-                            d.sync_from_editor();
-                        }
+                        d.editor.cut_to_clipboard();
+                        d.sync_from_editor();
+                    }
+                    "v" | "V" => {
+                        d.editor.paste_from_clipboard();
+                        d.sync_from_editor();
                     }
                     _ => return false,
                 }
@@ -314,12 +312,9 @@ fn main() -> Result<(), slint::PlatformError> {
         main_window.on_scrolled(move |delta_y| {
             let mut d = doc_clone.borrow_mut();
             if delta_y > 0.0 {
-                d.editor.viewport.first_visible_line =
-                    d.editor.viewport.first_visible_line.saturating_sub(3);
+                d.editor.scroll_by(-3);
             } else if delta_y < 0.0 {
-                let max_first = d.editor.lines.len().saturating_sub(1);
-                d.editor.viewport.first_visible_line =
-                    (d.editor.viewport.first_visible_line + 3).min(max_first);
+                d.editor.scroll_by(3);
             }
             if let Some(ui) = ui_handle.upgrade() {
                 sync_ui_from_doc(&ui, &d);

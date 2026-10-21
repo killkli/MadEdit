@@ -49,7 +49,6 @@ impl Selection {
 pub struct Viewport {
     pub first_visible_line: usize,
     pub visible_line_count: usize,
-    pub first_visible_col: usize,
 }
 
 impl Default for Viewport {
@@ -57,13 +56,12 @@ impl Default for Viewport {
         Self {
             first_visible_line: 0,
             visible_line_count: 30,
-            first_visible_col: 0,
         }
     }
 }
 
 /// 判斷單一字元的視覺欄寬（ASCII 半形為 1，CJK 全形字元為 2，控制字元為 1）
-pub fn char_visual_width(c: char) -> usize {
+pub fn char_visual_columns(c: char) -> usize {
     if c == '\t' {
         return 4;
     }
@@ -94,7 +92,7 @@ pub fn char_col_to_visual_col(line: &str, char_idx: usize) -> usize {
             let next_tab = ((visual_col / 4) + 1) * 4;
             visual_col = next_tab;
         } else {
-            visual_col += char_visual_width(c);
+            visual_col += char_visual_columns(c);
         }
     }
     visual_col
@@ -107,18 +105,38 @@ pub fn visual_col_to_char_col(line: &str, target_visual_col: usize) -> usize {
         if current_visual_col >= target_visual_col {
             return i;
         }
-        let char_w = if c == '\t' {
+        let cols = if c == '\t' {
             let next_tab = ((current_visual_col / 4) + 1) * 4;
             next_tab - current_visual_col
         } else {
-            char_visual_width(c)
+            char_visual_columns(c)
         };
-        if current_visual_col + char_w > target_visual_col {
+        if current_visual_col + cols > target_visual_col {
             return i;
         }
-        current_visual_col += char_w;
+        current_visual_col += cols;
     }
     line.chars().count()
+}
+
+/// 將字串中的 Tab 字元依格網展開為相應數量的空白字元，確保畫面字元寬度與游標格網嚴格對齊
+pub fn expand_tabs(line: &str, tab_size: usize) -> String {
+    let mut out = String::new();
+    let mut visual_col = 0;
+    for c in line.chars() {
+        if c == '\t' {
+            let next_tab = ((visual_col / tab_size) + 1) * tab_size;
+            let spaces = next_tab - visual_col;
+            for _ in 0..spaces {
+                out.push(' ');
+            }
+            visual_col = next_tab;
+        } else {
+            visual_col += char_visual_columns(c);
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// 核心編輯狀態：管理行清單快取、選取狀態、游標導覽與基礎編輯邏輯
@@ -127,6 +145,7 @@ pub struct EditorState {
     pub lines: Vec<String>,
     pub selection: Selection,
     pub viewport: Viewport,
+    pub clipboard: String,
 }
 
 impl Default for EditorState {
@@ -135,6 +154,7 @@ impl Default for EditorState {
             lines: vec![String::new()],
             selection: Selection::default(),
             viewport: Viewport::default(),
+            clipboard: String::new(),
         }
     }
 }
@@ -173,7 +193,7 @@ impl EditorState {
         }
         self.lines = lines;
         self.selection = Selection::caret(TextPosition::new(0, 0));
-        self.clamp_cursor();
+        self.clamp_caret();
     }
 
     /// 組合目前所有行成單一字串（使用指定換行符號）
@@ -201,7 +221,7 @@ impl EditorState {
         TextPosition::new(line, col)
     }
 
-    pub fn clamp_cursor(&mut self) {
+    pub fn clamp_caret(&mut self) {
         self.selection.anchor = self.clamp_pos(self.selection.anchor);
         self.selection.head = self.clamp_pos(self.selection.head);
     }
@@ -214,7 +234,7 @@ impl EditorState {
     }
 
     /// 更新游標位置（expand_selection 為 true 時維持 anchor 擴展選取）
-    fn update_cursor(&mut self, new_pos: TextPosition, expand_selection: bool) {
+    fn update_caret(&mut self, new_pos: TextPosition, expand_selection: bool) {
         let pos = self.clamp_pos(new_pos);
         if expand_selection {
             self.selection.head = pos;
@@ -227,11 +247,11 @@ impl EditorState {
     pub fn move_left(&mut self, expand_selection: bool) {
         let head = self.selection.head;
         if head.col > 0 {
-            self.update_cursor(TextPosition::new(head.line, head.col - 1), expand_selection);
+            self.update_caret(TextPosition::new(head.line, head.col - 1), expand_selection);
         } else if head.line > 0 {
             let prev_line = head.line - 1;
             let col = self.line_char_count(prev_line);
-            self.update_cursor(TextPosition::new(prev_line, col), expand_selection);
+            self.update_caret(TextPosition::new(prev_line, col), expand_selection);
         }
     }
 
@@ -239,55 +259,55 @@ impl EditorState {
         let head = self.selection.head;
         let line_len = self.line_char_count(head.line);
         if head.col < line_len {
-            self.update_cursor(TextPosition::new(head.line, head.col + 1), expand_selection);
+            self.update_caret(TextPosition::new(head.line, head.col + 1), expand_selection);
         } else if head.line + 1 < self.lines.len() {
-            self.update_cursor(TextPosition::new(head.line + 1, 0), expand_selection);
+            self.update_caret(TextPosition::new(head.line + 1, 0), expand_selection);
         }
     }
 
     pub fn move_up(&mut self, expand_selection: bool) {
         let head = self.selection.head;
         if head.line > 0 {
-            self.update_cursor(TextPosition::new(head.line - 1, head.col), expand_selection);
+            self.update_caret(TextPosition::new(head.line - 1, head.col), expand_selection);
         } else {
-            self.update_cursor(TextPosition::new(0, 0), expand_selection);
+            self.update_caret(TextPosition::new(0, 0), expand_selection);
         }
     }
 
     pub fn move_down(&mut self, expand_selection: bool) {
         let head = self.selection.head;
         if head.line + 1 < self.lines.len() {
-            self.update_cursor(TextPosition::new(head.line + 1, head.col), expand_selection);
+            self.update_caret(TextPosition::new(head.line + 1, head.col), expand_selection);
         } else {
             let last_line = self.lines.len() - 1;
             let last_col = self.line_char_count(last_line);
-            self.update_cursor(TextPosition::new(last_line, last_col), expand_selection);
+            self.update_caret(TextPosition::new(last_line, last_col), expand_selection);
         }
     }
 
     pub fn move_home(&mut self, expand_selection: bool) {
         let head = self.selection.head;
-        self.update_cursor(TextPosition::new(head.line, 0), expand_selection);
+        self.update_caret(TextPosition::new(head.line, 0), expand_selection);
     }
 
     pub fn move_end(&mut self, expand_selection: bool) {
         let head = self.selection.head;
         let col = self.line_char_count(head.line);
-        self.update_cursor(TextPosition::new(head.line, col), expand_selection);
+        self.update_caret(TextPosition::new(head.line, col), expand_selection);
     }
 
     pub fn move_page_up(&mut self, expand_selection: bool) {
         let page_size = self.viewport.visible_line_count.max(1);
         let head = self.selection.head;
         let target_line = head.line.saturating_sub(page_size);
-        self.update_cursor(TextPosition::new(target_line, head.col), expand_selection);
+        self.update_caret(TextPosition::new(target_line, head.col), expand_selection);
     }
 
     pub fn move_page_down(&mut self, expand_selection: bool) {
         let page_size = self.viewport.visible_line_count.max(1);
         let head = self.selection.head;
         let target_line = (head.line + page_size).min(self.lines.len() - 1);
-        self.update_cursor(TextPosition::new(target_line, head.col), expand_selection);
+        self.update_caret(TextPosition::new(target_line, head.col), expand_selection);
     }
 
     pub fn select_all(&mut self) {
@@ -359,7 +379,7 @@ impl EditorState {
         }
 
         self.selection = Selection::caret(start);
-        self.clamp_cursor();
+        self.clamp_caret();
         self.scroll_caret_into_view();
         true
     }
@@ -458,6 +478,32 @@ impl EditorState {
         self.scroll_caret_into_view();
     }
 
+    /// 複製選取文字至內部剪貼簿
+    pub fn copy_to_clipboard(&mut self) -> String {
+        let text = self.selected_text();
+        if !text.is_empty() {
+            self.clipboard = text.clone();
+        }
+        text
+    }
+
+    /// 剪下選取文字至內部剪貼簿並刪除選取
+    pub fn cut_to_clipboard(&mut self) -> String {
+        let text = self.copy_to_clipboard();
+        if !text.is_empty() {
+            self.delete_selection();
+        }
+        text
+    }
+
+    /// 從內部剪貼簿貼上文字至游標處
+    pub fn paste_from_clipboard(&mut self) {
+        if !self.clipboard.is_empty() {
+            let text = self.clipboard.clone();
+            self.insert_text(&text);
+        }
+    }
+
     /// 確保游標在當前視窗範圍內（自動捲動）
     pub fn scroll_caret_into_view(&mut self) {
         let head = self.selection.head;
@@ -466,6 +512,18 @@ impl EditorState {
             self.viewport.first_visible_line = line;
         } else if line >= self.viewport.first_visible_line + self.viewport.visible_line_count {
             self.viewport.first_visible_line = line.saturating_sub(self.viewport.visible_line_count - 1);
+        }
+    }
+
+    /// 依行數進行畫面垂直捲動
+    pub fn scroll_by(&mut self, lines: i32) {
+        if lines < 0 {
+            self.viewport.first_visible_line =
+                self.viewport.first_visible_line.saturating_sub((-lines) as usize);
+        } else if lines > 0 {
+            let max_first = self.lines.len().saturating_sub(1);
+            self.viewport.first_visible_line =
+                (self.viewport.first_visible_line + lines as usize).min(max_first);
         }
     }
 
@@ -531,7 +589,7 @@ impl EditorState {
 
             result.push(VisibleLineData {
                 line_number,
-                text: line_text.clone(),
+                text: expand_tabs(line_text, 4),
                 has_selection: line_has_sel && sel_width > 0.0,
                 sel_start_x,
                 sel_width,
@@ -553,7 +611,7 @@ impl EditorState {
 
         let target_vcol = (x / cell_width).max(0.0).round() as usize;
         let char_col = visual_col_to_char_col(line_text, target_vcol);
-        TextPosition::new(line_idx, char_col)
+        self.clamp_pos(TextPosition::new(line_idx, char_col))
     }
 }
 
@@ -579,15 +637,15 @@ mod tests {
 
     #[test]
     fn test_character_cell_grid_width() {
-        assert_eq!(char_visual_width('a'), 1);
-        assert_eq!(char_visual_width('1'), 1);
-        assert_eq!(char_visual_width(' '), 1);
+        assert_eq!(char_visual_columns('a'), 1);
+        assert_eq!(char_visual_columns('1'), 1);
+        assert_eq!(char_visual_columns(' '), 1);
 
-        assert_eq!(char_visual_width('中'), 2);
-        assert_eq!(char_visual_width('文'), 2);
-        assert_eq!(char_visual_width('，'), 2);
-        assert_eq!(char_visual_width('あ'), 2);
-        assert_eq!(char_visual_width('한'), 2);
+        assert_eq!(char_visual_columns('中'), 2);
+        assert_eq!(char_visual_columns('文'), 2);
+        assert_eq!(char_visual_columns('，'), 2);
+        assert_eq!(char_visual_columns('あ'), 2);
+        assert_eq!(char_visual_columns('한'), 2);
     }
 
     #[test]
@@ -669,5 +727,22 @@ mod tests {
         assert_eq!(pos, TextPosition::new(0, 5));
         let pos_line2 = editor.pos_from_pixel(10.0, 25.0, 10.0, 20.0);
         assert_eq!(pos_line2, TextPosition::new(1, 1));
+    }
+
+    #[test]
+    fn test_expand_tabs_and_clipboard() {
+        let raw = "\tA\tB";
+        let expanded = expand_tabs(raw, 4);
+        assert_eq!(expanded, "    A   B");
+
+        let mut editor = EditorState::from_text("Copy this text");
+        editor.select_all();
+        let copied = editor.copy_to_clipboard();
+        assert_eq!(copied, "Copy this text");
+        assert_eq!(editor.clipboard, "Copy this text");
+
+        editor.set_caret(0, 4); // "Copy" 後面
+        editor.paste_from_clipboard();
+        assert_eq!(editor.lines[0], "CopyCopy this text this text");
     }
 }
