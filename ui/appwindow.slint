@@ -1,4 +1,14 @@
-import { Button, TextEdit, ScrollView, ComboBox } from "std-widgets.slint";
+import { Button, ComboBox, ScrollView } from "std-widgets.slint";
+
+export struct VisibleLine {
+    line_number: int,
+    text: string,
+    has_selection: bool,
+    sel_start_x: length,
+    sel_width: length,
+    has_caret: bool,
+    caret_x: length,
+}
 
 export component MainWindow inherits Window {
     title: "MadEdit-Rust";
@@ -6,23 +16,36 @@ export component MainWindow inherits Window {
     preferred-height: 640px;
 
     in-out property <string> file-path: "Untitled";
-    in-out property <string> text-content: "";
-    in-out property <string> hex-offset-text: "";
-    in-out property <string> hex-content-text: "";
-    in-out property <string> hex-ascii-text: "";
     in-out property <int> edit-mode: 0; // 0: 文字模式 (Text), 1: 列塊模式 (Column), 2: 十六進位模式 (Hex)
     in-out property <[string]> encoding-list: ["UTF-8"];
     in-out property <string> selected-encoding: "UTF-8";
     in-out property <string> encoding-name: "UTF-8";
     in-out property <string> newline-format: "CRLF";
-    in-out property <string> status-info: "Ln 1, Col 1";
+    in-out property <string> status-info: "Len: 0 bytes";
+    in-out property <string> cursor-status: "Ln 1, Col 1";
+
+    // 自繪編輯器屬性
+    in-out property <[VisibleLine]> visible-lines: [];
+    in-out property <length> line-height: 20px;
+    in-out property <length> gutter-width: 52px;
+    in-out property <bool> caret-visible: true;
+
+    // 十六進位檢視區屬性
+    in-out property <string> hex-offset-text: "";
+    in-out property <string> hex-content-text: "";
+    in-out property <string> hex-ascii-text: "";
 
     callback open-file-clicked();
     callback save-file-clicked();
     callback mode-changed(int);
     callback reinterpret-encoding-clicked(string);
     callback convert-encoding-clicked(string);
-    callback text-changed(string);
+
+    // 編輯器互動回呼
+    callback key-pressed(string, bool, bool) -> bool;
+    callback mouse-clicked(length, length, bool);
+    callback mouse-dragged(length, length);
+    callback scrolled(float);
 
     VerticalLayout {
         padding: 4px;
@@ -85,20 +108,102 @@ export component MainWindow inherits Window {
             }
         }
 
-        // 編輯檢視區：依當前編輯模式切換顯示文字編輯器或十六進位三欄檢視器
+        // 編輯檢視區：自繪編輯器元件（文字與列塊模式）或十六進位三欄檢視器
         Rectangle {
             vertical-stretch: 1;
             background: #ffffff;
             border-width: 1px;
             border-color: #d0d0d0;
+            clip: true;
 
-            if root.edit-mode != 2 : TextEdit {
-                width: 100%;
-                height: 100%;
-                text <=> root.text-content;
-                edited(str) => { root.text-changed(str); }
-                font-family: "Consolas, Courier New, monospace";
-                font-size: 14px;
+            if root.edit-mode != 2 : FocusScope {
+                key-pressed(event) => {
+                    if (root.key-pressed(event.text, event.modifiers.control, event.modifiers.shift)) {
+                        return accept;
+                    }
+                    return reject;
+                }
+
+                HorizontalLayout {
+                    // 左側行號欄（Line Number Gutter）
+                    Rectangle {
+                        width: root.gutter-width;
+                        background: #f7f7f7;
+                        border-width: 1px;
+                        border-color: #e5e5e5;
+
+                        for line[i] in root.visible-lines : Text {
+                            x: 0;
+                            y: i * root.line-height;
+                            width: root.gutter-width - 8px;
+                            height: root.line-height;
+                            text: line.line_number > 0 ? (line.line_number + "") : "";
+                            color: #888888;
+                            font-family: "Consolas, Courier New, monospace";
+                            font-size: 13px;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // 右側文字內容與選取/游標繪製區
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: #ffffff;
+                        clip: true;
+
+                        TouchArea {
+                            pointer-event(event) => {
+                                if (event.kind == PointerEventKind.down) {
+                                    root.mouse-clicked(self.mouse-x, self.mouse-y, false);
+                                }
+                            }
+                            moved => {
+                                if (self.pressed) {
+                                    root.mouse-dragged(self.mouse-x, self.mouse-y);
+                                }
+                            }
+                            scroll-event(event) => {
+                                root.scrolled(event.delta-y / 1px);
+                                return accept;
+                            }
+                        }
+
+                        // 1. 選取反白層（底層）
+                        for line[i] in root.visible-lines : Rectangle {
+                            if line.has_selection : Rectangle {
+                                x: line.sel_start_x;
+                                y: i * root.line-height;
+                                width: line.sel_width;
+                                height: root.line-height;
+                                background: #a6d2ff;
+                            }
+                        }
+
+                        // 2. 游標層（中層）
+                        for line[i] in root.visible-lines : Rectangle {
+                            if line.has_caret && root.caret-visible : Rectangle {
+                                x: line.caret_x;
+                                y: i * root.line-height;
+                                width: 2px;
+                                height: root.line-height;
+                                background: #000000;
+                            }
+                        }
+
+                        // 3. 文字內容層（頂層）
+                        for line[i] in root.visible-lines : Text {
+                            x: 0;
+                            y: i * root.line-height;
+                            height: root.line-height;
+                            text: line.text;
+                            font-family: "Consolas, Courier New, monospace";
+                            font-size: 14px;
+                            color: #222222;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
             }
 
             if root.edit-mode == 2 : ScrollView {
@@ -138,7 +243,7 @@ export component MainWindow inherits Window {
             }
         }
 
-        // 底部狀態列：顯示位元組長度、修改標記、無損解碼警告、模式、換行與編碼
+        // 底部狀態列：顯示游標座標、位元組長度、修改標記、無損解碼警告、模式、換行與編碼
         Rectangle {
             height: 24px;
             background: #f0f0f0;
@@ -149,6 +254,13 @@ export component MainWindow inherits Window {
                 padding-left: 8px;
                 padding-right: 8px;
                 spacing: 16px;
+
+                Text {
+                    vertical-alignment: center;
+                    text: root.cursor-status;
+                    font-size: 12px;
+                    color: #333333;
+                }
 
                 Text {
                     vertical-alignment: center;

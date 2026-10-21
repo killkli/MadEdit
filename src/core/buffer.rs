@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use encoding_rs::Encoding;
 
+use super::editor::EditorState;
 use super::hex::{generate_hex_dump, HexDump};
 use super::model::{EditMode, NewLineFormat};
 
@@ -30,6 +31,7 @@ pub struct DocumentBuffer {
     pub newline_format: NewLineFormat,
     pub edit_mode: EditMode,
     pub is_modified: bool,
+    pub editor: EditorState,
 }
 
 impl Default for DocumentBuffer {
@@ -44,6 +46,7 @@ impl Default for DocumentBuffer {
             newline_format: NewLineFormat::Dos,
             edit_mode: EditMode::Text,
             is_modified: false,
+            editor: EditorState::default(),
         }
     }
 }
@@ -84,6 +87,7 @@ impl DocumentBuffer {
 
         self.raw_bytes = bytes;
         self.is_modified = false;
+        self.editor.set_text(&self.text);
 
         Ok(())
     }
@@ -117,7 +121,18 @@ impl DocumentBuffer {
         Ok(())
     }
 
-    /// 當使用者在文字編輯區修改內容時同步更新文字與底層位元組
+    /// 將 editor 中的最新行內容同步至 text 與 raw_bytes
+    pub fn sync_from_editor(&mut self) {
+        let new_text = self.editor.to_text(self.newline_format.newline_str());
+        self.text = new_text;
+        self.is_modified = true;
+        if !self.has_decode_error {
+            self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
+        }
+    }
+
+    /// 當使用者在外部或模式切換修改內容時同步更新文字與底層位元組
+    #[allow(dead_code)]
     pub fn update_text(&mut self, new_text: String) {
         if self.text != new_text {
             self.text = new_text;
@@ -125,6 +140,7 @@ impl DocumentBuffer {
             if !self.has_decode_error {
                 self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
             }
+            self.editor.set_text(&self.text);
         }
     }
 
@@ -150,6 +166,7 @@ impl DocumentBuffer {
         self.encoding = enc;
         self.has_bom = has_bom;
         self.has_decode_error = had_errors;
+        self.editor.set_text(&self.text);
         true
     }
 
@@ -255,6 +272,7 @@ mod tests {
         assert!(doc.has_bom);
         assert!(!doc.has_decode_error);
         assert_eq!(doc.text, "Hi");
+        assert_eq!(doc.editor.lines, vec!["Hi".to_string()]);
 
         // 驗證 UTF-16LE 編輯後存檔仍保留 BOM 且為真正的 UTF-16LE（不會變成 UTF-8）
         doc.update_text("Hi!".to_string());
@@ -273,9 +291,10 @@ mod tests {
         assert!(!doc_big5.has_decode_error);
         assert_eq!(doc_big5.text, "測試");
         assert!(!doc_big5.is_modified);
+        assert_eq!(doc_big5.editor.lines, vec!["測試".to_string()]);
         let _ = fs::remove_file(&big5_path);
 
-        // 3. 含無法無損解碼位元組（例如非法 Big5 尾碼 0xFF 0x00）時，has_decode_error 為 true，且拒絕存檔防止毀損原檔
+        // 3. 含無法無損解碼位元組時拒絕存檔防止毀損原檔
         let invalid_path = temp_dir.join("madedit_test_invalid_bytes.txt");
         let original_bytes = vec![0x81, 0x00, 0xFF];
         fs::write(&invalid_path, &original_bytes).unwrap();
@@ -291,7 +310,6 @@ mod tests {
     fn test_reinterpret_and_convert_encoding() {
         let temp_dir = std::env::temp_dir();
 
-        // GB18030 編碼的 "软件" 位元組（C8 ED BC FE）：無 BOM 且非 UTF-8，開檔時會先 fallback 至 Big5
         let gb_path = temp_dir.join("madedit_test_gb18030.txt");
         let raw_gb_bytes = vec![0xC8, 0xED, 0xBC, 0xFE];
         fs::write(&gb_path, &raw_gb_bytes).unwrap();
@@ -301,15 +319,16 @@ mod tests {
         assert_eq!(doc.encoding, encoding_rs::BIG5);
         assert_ne!(doc.text, "软件");
 
-        // 重新解碼（Reinterpret）為 GB18030：raw_bytes 與 is_modified 不變，text 正確顯示為 "软件"
+        // 重新解碼（Reinterpret）為 GB18030
         assert!(doc.reinterpret_with_encoding("GB18030"));
         assert_eq!(doc.encoding, encoding_rs::GB18030);
         assert!(!doc.has_decode_error);
         assert_eq!(doc.text, "软件");
-        assert_eq!(doc.raw_bytes, raw_gb_bytes);
+        assert_eq!(doc.raw_gb_bytes(), &raw_gb_bytes[..]);
         assert!(!doc.is_modified);
+        assert_eq!(doc.editor.lines, vec!["软件".to_string()]);
 
-        // 轉換編碼（Convert）為 UTF-8：text 維持 "软件"，raw_bytes 更新為 UTF-8 位元組，且標記為已修改
+        // 轉換編碼（Convert）為 UTF-8
         assert!(doc.convert_to_encoding("UTF-8"));
         assert_eq!(doc.encoding, encoding_rs::UTF_8);
         assert!(!doc.has_decode_error);
@@ -317,7 +336,7 @@ mod tests {
         assert_eq!(doc.raw_bytes, "软件".as_bytes());
         assert!(doc.is_modified);
 
-        // 轉換編碼（Convert）為 UTF-16LE：raw_bytes 更新為 BOM (FF FE) + "软件" 的 UTF-16LE 位元組
+        // 轉換編碼（Convert）為 UTF-16LE
         assert!(doc.convert_to_encoding("UTF-16LE"));
         assert_eq!(doc.encoding, encoding_rs::UTF_16LE);
         assert!(doc.has_bom);
@@ -326,5 +345,31 @@ mod tests {
         assert_eq!(doc.raw_bytes, expected_utf16le);
 
         let _ = fs::remove_file(&gb_path);
+    }
+
+    #[test]
+    fn test_sync_from_editor() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("Initial line".to_string());
+        doc.editor.move_end(false);
+        doc.editor.insert_newline();
+        doc.editor.insert_text("Second line");
+        doc.sync_from_editor();
+
+        assert_eq!(doc.text, "Initial line\r\nSecond line");
+        assert!(doc.is_modified);
+        assert_eq!(doc.editor.lines.len(), 2);
+    }
+}
+
+#[cfg(test)]
+impl DocumentBuffer {
+    pub fn raw_gb_bytes(&self) -> &[u8] {
+        &self.raw_bytes
+    }
+    pub fn load_file_from_memory(&mut self, text: String) {
+        self.text = text.clone();
+        self.raw_bytes = text.into_bytes();
+        self.editor.set_text(&self.text);
     }
 }

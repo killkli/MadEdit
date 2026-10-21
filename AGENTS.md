@@ -22,7 +22,7 @@
 - **程式語言**：Rust (Edition 2024，需 Rust 1.85 以上)
 - **GUI 框架**：[Slint](https://slint.dev/) (v1.18.1)
   - 優勢：宣告式語法 (`.slint`)、輕量、純 Rust 原生編譯、不依賴繁重的系統 C++ 庫、跨平台 (Windows/macOS/Linux) 表現一致。
-  - 限制：內建 `TextEdit` 不支援虛擬捲動、矩形選取、多游標與分段著色（詳見第 6 節 Phase 2）。
+  - 限制：內建 `TextEdit` 不支援虛擬捲動、矩形選取、多游標與分段著色（已於 Phase 2 自繪編輯器元件中完全取代）。
 - **檔案對話框**：`rfd` (Rust File Dialog) - 支援跨平台原生系統視窗。
 - **編碼轉換**：`encoding_rs` - 高效能多字元編碼支援。
   - `encoding_rs_io` 已列於 `Cargo.toml` 但目前未使用（預留給大檔串流解碼）；若最終用不到請移除。
@@ -39,16 +39,18 @@ D:\Git\MadEdit-Rust\
 ├── build.rs                # Slint UI 編譯腳本 (slint_build::compile)
 ├── .gitignore
 ├── ui\
-│   └── appwindow.slint     # 主視窗 Slint UI 介面（工具列、編輯區、狀態列）
+│   └── appwindow.slint     # 主視窗 Slint UI 介面（工具列、自繪編輯區、狀態列）
 ├── src\
 │   ├── main.rs             # 應用程式入口點，負責 Slint UI 與 Core 狀態雙向綁定
 │   └── core\
 │       ├── mod.rs          # 核心模組匯出
 │       ├── model.rs        # 編輯模式 (EditMode) 與換行偵測 (NewLineFormat)
+│       ├── editor.rs       # 游標模型、選取範圍、字元格網與可見行切片產生
 │       ├── hex.rs          # 十六進位 Hex Dump 格式化邏輯 (Offset / Hex / ASCII)
 │       └── buffer.rs       # DocumentBuffer，封裝檔案 I/O、編碼解碼與內容同步
 ├── docs\
-│   └── agents\             # Agent skills 設定（issue tracker、triage labels、domain docs，見文末）
+│   ├── adr\                # 架構決策紀錄 (ADR)
+│   └── agents\             # Agent skills 設定（issue tracker、triage labels、domain docs）
 └── AGENTS.md               # 專案交接與開發指引文件（本檔案）
 ```
 
@@ -79,7 +81,7 @@ D:\Git\MadEdit-Rust\
 - [x] Slint UI 整合（視窗、工具列按鈕、文字編輯區、狀態列）。
 - [x] 原生跨平台「開啟舊檔」與「儲存檔案」對話框。
 - [x] 模式切換 UI（文字 / 列塊 / 十六進位按鈕與狀態）。
-- [ ] 列塊模式行為：**尚未實作**。目前 `edit-mode == 1` 與文字模式共用同一個 `TextEdit`，僅狀態列顯示不同。
+- [ ] 列塊模式行為：**尚未實作**。目前 `edit-mode == 1` 與文字模式共用同一個文字檢視，僅狀態列顯示不同（預計於 Phase 4 實作）。
 - [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
   - 限制：**唯讀**，不可直接編輯 Hex；超過 1MB 的部分會被截斷（`DocumentBuffer::get_hex_dump`）。
 - [x] 換行格式自動偵測（CRLF / LF / CR），目前僅顯示，不支援轉換。
@@ -88,14 +90,18 @@ D:\Git\MadEdit-Rust\
   - 工具列提供 10 種常用編碼選單（UTF-8、UTF-16LE、UTF-16BE、Big5、GBK、GB18030、Shift_JIS、EUC-JP、EUC-KR、windows-1252）與「重新解碼（Reinterpret）」、「轉換編碼（Convert）」按鈕。
   - 修正無法無損解碼時默默存檔毀損資料之問題（`has_decode_error` 為真時拒絕存檔並於狀態列提示）。
   - 修正 UTF-16LE / UTF-16BE 存檔變成 UTF-8 與遺失 BOM 之問題（自行實作 16-bit 編碼與 BOM 保留）。
+- [x] 自繪編輯器元件（Phase 2 完成）：
+  - 採用 Slint 宣告式可見行虛擬渲染（`for line in visible-lines`）結合 `FocusScope` 與 `TouchArea`，完全取代內建 `TextEdit`。
+  - 實作固定字元格網（Character Cell Grid：半形 1 欄、CJK 全形 2 欄、Tab 展開對齊 4 欄），徹底解決跨平台等寬字型游標漂移問題。
+  - 支援左側行號欄（Gutter）、方向鍵導覽、Shift 擴展選取、滑鼠點擊/拖曳選取、滾輪捲動、文字增刪、剪貼簿快捷鍵（Ctrl+C/X/A）與狀態列即時 `Ln X, Col Y` 顯示。
 - [x] 狀態列即時顯示（長度、修改狀態標記、解碼警告、模式、換行與編碼）。
-- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼）。
+- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯）。
 
 ### 已知問題（優先處理）
 
 1. ~~**非 UTF-8 檔案存檔即損毀**~~（已於 Phase 1 修正：當 `has_decode_error` 為真時拒絕存檔，並支援重新解碼與轉換編碼）。
 2. ~~**UTF-16 存檔會變成 UTF-8**~~（已於 Phase 1 修正：已自行實作 UTF-16LE/BE 位元組編碼與 BOM 保留）。
-3. **大檔記憶體與效能**：`load_file` 整檔讀入 `Vec<u8>` 並另存一份 `String`；`update_text` 每次按鍵都重新編碼整份文字（預計於 Phase 2 / Phase 3 解決）。
+3. **大檔記憶體與效能**：`load_file` 整檔讀入 `Vec<u8>` 並另存一份 `String`；`update_text` 每次按鍵都重新編碼整份文字（預計於 Phase 3 解決）。
 
 ---
 
@@ -103,15 +109,11 @@ D:\Git\MadEdit-Rust\
 
 接手的 Agent 可依據以下優先順序進行開發：
 
-### Phase 1: 多編碼切換與轉換 (Encoding Support)
-- 先修正第 5 節「已知問題」1、2：無法無損解碼時不可默默存檔（應警告或拒絕），UTF-16 需自行編碼並保留 BOM。
-- 實作編碼選擇選單或下拉選單（UTF-8, UTF-16LE, Big5, GB18030, Shift-JIS, EUC-KR 等）。
-- 支援「以指定編碼重新讀取」與「轉換為指定編碼儲存」。
-- 視需要加入自動編碼偵測（例如 `chardetng`）。
+### Phase 1: 多編碼切換與轉換 (Encoding Support) - [已完成]
+- 已完成字元編碼偵測、轉換、防毀損存檔保護與工具列操作整合。
 
-### Phase 2: 自繪編輯器元件 (Custom Editor View)
-- Slint 內建 `TextEdit` 無法滿足 Phase 3（大檔虛擬捲動）、Phase 4（矩形選取、多游標）、Phase 6（語法著色），必須先有自繪的文字檢視元件（只繪製可見行、自行處理游標與選取）。
-- 這是後續多個 Phase 的前提，請勿在 `TextEdit` 上硬套上述功能。
+### Phase 2: 自繪編輯器元件 (Custom Editor View) - [已完成]
+- 已完成 Slint 可見行虛擬渲染、固定字元格網、行號欄、游標/選取與鍵盤滑鼠互動。
 
 ### Phase 3: 大檔案與核心緩衝區最佳化 (Large File Engine)
 - 目前版本 `DocumentBuffer` 採用記憶體內 `String` + `Vec<u8>`，適用於中小型檔案。

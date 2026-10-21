@@ -3,9 +3,13 @@ mod core;
 use std::cell::RefCell;
 use std::rc::Rc;
 use core::{DocumentBuffer, EditMode, SUPPORTED_ENCODINGS};
-use slint::{ModelRc, SharedString, VecModel};
+use slint::platform::Key;
+use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 slint::include_modules!();
+
+const CELL_WIDTH: f32 = 8.5;
+const LINE_HEIGHT: f32 = 20.0;
 
 /// 產生狀態列顯示字串，包含位元組長度、修改標記與無損解碼錯誤警告
 fn format_status_info(doc: &DocumentBuffer) -> String {
@@ -31,7 +35,26 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_encoding_name(doc.encoding.name().into());
     ui.set_selected_encoding(doc.encoding.name().into());
     ui.set_newline_format(doc.newline_format.as_str().into());
-    ui.set_text_content(doc.text.clone().into());
+
+    // 同步可見行自繪資料
+    let visible_lines_data = doc.editor.generate_visible_lines(CELL_WIDTH);
+    let slint_lines: Vec<VisibleLine> = visible_lines_data
+        .into_iter()
+        .map(|l| VisibleLine {
+            line_number: l.line_number,
+            text: l.text.into(),
+            has_selection: l.has_selection,
+            sel_start_x: l.sel_start_x,
+            sel_width: l.sel_width,
+            has_caret: l.has_caret,
+            caret_x: l.caret_x,
+        })
+        .collect();
+    ui.set_visible_lines(ModelRc::new(VecModel::from(slint_lines)));
+
+    // 同步游標位置座標資訊
+    let head = doc.editor.selection.head;
+    ui.set_cursor_status(format!("Ln {}, Col {}", head.line + 1, head.col + 1).into());
 
     if doc.edit_mode == EditMode::Hex {
         let dump = doc.get_hex_dump();
@@ -55,6 +78,22 @@ fn main() -> Result<(), slint::PlatformError> {
     main_window.set_encoding_list(ModelRc::new(VecModel::from(encoding_items)));
     sync_ui_from_doc(&main_window, &doc.borrow());
 
+    // 游標閃爍計時器（每 500ms 切換閃爍狀態）
+    let caret_timer = Timer::default();
+    {
+        let ui_handle = main_window.as_weak();
+        caret_timer.start(
+            TimerMode::Repeated,
+            std::time::Duration::from_millis(500),
+            move || {
+                if let Some(ui) = ui_handle.upgrade() {
+                    let visible = ui.get_caret_visible();
+                    ui.set_caret_visible(!visible);
+                }
+            },
+        );
+    }
+
     // 開啟舊檔事件綁定
     {
         let ui_handle = main_window.as_weak();
@@ -76,7 +115,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 儲存檔案事件綁定（若檔案含無損解碼錯誤則拒絕存檔並在狀態列提示）
+    // 儲存檔案事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -145,15 +184,145 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 文字內容變更事件綁定
+    // 自繪編輯器鍵盤按鍵事件
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
-        main_window.on_text_changed(move |new_text| {
+        main_window.on_key_pressed(move |key_text, ctrl, shift| {
             let mut d = doc_clone.borrow_mut();
-            d.update_text(new_text.to_string());
+            let key_str = key_text.as_str();
+
+            // 快捷鍵處理
+            if ctrl {
+                match key_str {
+                    "a" | "A" => {
+                        d.editor.select_all();
+                    }
+                    "c" | "C" => {
+                        let text = d.editor.selected_text();
+                        if !text.is_empty() {
+                            // 可擴充寫入系統剪貼簿
+                        }
+                    }
+                    "x" | "X" => {
+                        let text = d.editor.selected_text();
+                        if !text.is_empty() {
+                            d.editor.delete_selection();
+                            d.sync_from_editor();
+                        }
+                    }
+                    _ => return false,
+                }
+                if let Some(ui) = ui_handle.upgrade() {
+                    sync_ui_from_doc(&ui, &d);
+                }
+                return true;
+            }
+
+            // 導覽鍵處理
+            let handled = if key_str.starts_with(char::from(Key::LeftArrow)) {
+                d.editor.move_left(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::RightArrow)) {
+                d.editor.move_right(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::UpArrow)) {
+                d.editor.move_up(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::DownArrow)) {
+                d.editor.move_down(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::Home)) {
+                d.editor.move_home(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::End)) {
+                d.editor.move_end(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::PageUp)) {
+                d.editor.move_page_up(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::PageDown)) {
+                d.editor.move_page_down(shift);
+                true
+            } else if key_str.starts_with(char::from(Key::Backspace)) || key_str == "\u{0008}" {
+                d.editor.delete_backspace();
+                d.sync_from_editor();
+                true
+            } else if key_str.starts_with(char::from(Key::Delete)) || key_str == "\u{007f}" {
+                d.editor.delete_forward();
+                d.sync_from_editor();
+                true
+            } else if key_str.starts_with(char::from(Key::Return)) || key_str == "\n" || key_str == "\r" {
+                d.editor.insert_newline();
+                d.sync_from_editor();
+                true
+            } else if key_str.starts_with(char::from(Key::Tab)) || key_str == "\t" {
+                d.editor.insert_char('\t');
+                d.sync_from_editor();
+                true
+            } else if !key_str.is_empty() && !key_str.chars().any(|c| c.is_control()) {
+                d.editor.insert_text(key_str);
+                d.sync_from_editor();
+                true
+            } else {
+                false
+            };
+
+            if handled {
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_caret_visible(true); // 按鍵時立即顯示游標
+                    sync_ui_from_doc(&ui, &d);
+                }
+            }
+            handled
+        });
+    }
+
+    // 自繪編輯器滑鼠點擊定位
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_mouse_clicked(move |x, y, _is_drag| {
+            let mut d = doc_clone.borrow_mut();
+            let pos = d.editor.pos_from_pixel(x, y, CELL_WIDTH, LINE_HEIGHT);
+            d.editor.set_caret(pos.line, pos.col);
             if let Some(ui) = ui_handle.upgrade() {
-                ui.set_status_info(format_status_info(&d).into());
+                ui.set_caret_visible(true);
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 自繪編輯器滑鼠拖曳選取
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_mouse_dragged(move |x, y| {
+            let mut d = doc_clone.borrow_mut();
+            let pos = d.editor.pos_from_pixel(x, y, CELL_WIDTH, LINE_HEIGHT);
+            d.editor.selection.head = pos;
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 自繪編輯器滾輪捲動
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_scrolled(move |delta_y| {
+            let mut d = doc_clone.borrow_mut();
+            if delta_y > 0.0 {
+                d.editor.viewport.first_visible_line =
+                    d.editor.viewport.first_visible_line.saturating_sub(3);
+            } else if delta_y < 0.0 {
+                let max_first = d.editor.lines.len().saturating_sub(1);
+                d.editor.viewport.first_visible_line =
+                    (d.editor.viewport.first_visible_line + 3).min(max_first);
+            }
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
             }
         });
     }
