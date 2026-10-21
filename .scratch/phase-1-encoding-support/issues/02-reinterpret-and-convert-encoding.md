@@ -4,8 +4,8 @@
 
 **Blocked by:** 01: 開檔自動編碼偵測、BOM 保留與防損毀存檔保護
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `reinterpret_with_encoding` 能以新編碼（如 GB18030、Shift_JIS 等）重新解碼 `raw_bytes` 更新 `text` 與 `has_decode_error`，且 `raw_bytes` 與 `is_modified` 保持不變
-- [ ] `convert_to_encoding` 能將目前 `text` 轉換為目標編碼（包含 UTF-8、Big5、GB18030、UTF-16LE、UTF-16BE 等）更新 `raw_bytes`，清除 `has_decode_error` 並將 `is_modified` 設為 `true`
-- [ ] 所有核心程式碼皆加上清楚的 `zh-TW` 繁體中文註解說明意圖
+- [x] `reinterpret_with_encoding` 能以新編碼（如 GB18030、Shift_JIS 等）重新解碼 `raw_bytes` 更新 `text` 與 `has_decode_error`，且 `raw_bytes` 與 `is_modified` 保持不變
+- [x] `convert_to_encoding` 能將目前 `text` 轉換為目標編碼（包含 UTF-8、Big5、GB18030、UTF-16LE、UTF-16BE 等）更新 `raw_bytes`，清除 `has_decode_error` 並將 `is_modified` 設為 `true`
+- [x] 所有核心程式碼皆加上清楚的 `zh-TW` 繁體中文註解說明意圖

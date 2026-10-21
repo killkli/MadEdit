@@ -10,7 +10,8 @@ export component MainWindow inherits Window {
     in-out property <string> hex-offset-text: "";
     in-out property <string> hex-content-text: "";
     in-out property <string> hex-ascii-text: "";
-    in-out property <int> edit-mode: 0; // 0: Text, 1: Column, 2: Hex
+    in-out property <int> edit-mode: 0; // 0: 文字模式 (Text), 1: 列塊模式 (Column), 2: 十六進位模式 (Hex)
+    in-out property <[string]> encoding-list: ["UTF-8", "UTF-16LE", "UTF-16BE", "Big5", "GBK", "GB18030", "Shift_JIS", "EUC-JP", "EUC-KR", "windows-1252"];
     in-out property <string> encoding-name: "UTF-8";
     in-out property <string> newline-format: "CRLF";
     in-out property <string> status-info: "Ln 1, Col 1";
@@ -18,13 +19,15 @@ export component MainWindow inherits Window {
     callback open-file-clicked();
     callback save-file-clicked();
     callback mode-changed(int);
+    callback reinterpret-encoding-clicked(string);
+    callback convert-encoding-clicked(string);
     callback text-changed(string);
 
     VerticalLayout {
         padding: 4px;
         spacing: 4px;
 
-        // Toolbar
+        // 頂部工具列：提供檔案讀寫、編輯模式切換與字元編碼操作
         HorizontalLayout {
             spacing: 8px;
             height: 32px;
@@ -38,7 +41,7 @@ export component MainWindow inherits Window {
                 clicked => { root.save-file-clicked(); }
             }
 
-            Rectangle { width: 16px; }
+            Rectangle { width: 12px; }
 
             Button {
                 text: "文字模式";
@@ -56,6 +59,22 @@ export component MainWindow inherits Window {
                 clicked => { root.mode-changed(2); }
             }
 
+            Rectangle { width: 12px; }
+
+            ComboBox {
+                width: 130px;
+                model: root.encoding-list;
+                current-value <=> root.encoding-name;
+            }
+            Button {
+                text: "重新解碼";
+                clicked => { root.reinterpret-encoding-clicked(root.encoding-name); }
+            }
+            Button {
+                text: "轉換編碼";
+                clicked => { root.convert-encoding-clicked(root.encoding-name); }
+            }
+
             Rectangle { horizontal-stretch: 1; }
 
             Text {
@@ -65,7 +84,7 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Editor Area
+        // 編輯檢視區：依當前編輯模式切換顯示文字編輯器或十六進位三欄檢視器
         Rectangle {
             vertical-stretch: 1;
             background: #ffffff;
@@ -89,7 +108,7 @@ export component MainWindow inherits Window {
                     spacing: 12px;
                     padding: 8px;
 
-                    // Offset column
+                    // 位址偏移欄（Offset）
                     Text {
                         text: root.hex-offset-text;
                         font-family: "Consolas, Courier New, monospace";
@@ -97,7 +116,7 @@ export component MainWindow inherits Window {
                         color: #00008b;
                     }
 
-                    // Hex dump column
+                    // 十六進位位元組欄（Hex Dump）
                     Text {
                         text: root.hex-content-text;
                         font-family: "Consolas, Courier New, monospace";
@@ -105,7 +124,7 @@ export component MainWindow inherits Window {
                         color: #222222;
                     }
 
-                    // ASCII dump column
+                    // 可視 ASCII 預覽欄（ASCII Dump）
                     Text {
                         text: root.hex-ascii-text;
                         font-family: "Consolas, Courier New, monospace";
@@ -118,7 +137,7 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Status bar
+        // 底部狀態列：顯示位元組長度、修改標記、無損解碼警告、模式、換行與編碼
         Rectangle {
             height: 24px;
             background: #f0f0f0;

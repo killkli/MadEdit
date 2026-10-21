@@ -2,10 +2,23 @@ mod core;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use core::{DocumentBuffer, EditMode};
+use core::{DocumentBuffer, EditMode, SUPPORTED_ENCODINGS};
+use slint::{ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
 
+/// 產生狀態列顯示字串，包含位元組長度、修改標記與無損解碼錯誤警告
+fn format_status_info(doc: &DocumentBuffer) -> String {
+    let modified_mark = if doc.is_modified { " *" } else { "" };
+    let error_warn = if doc.has_decode_error {
+        " [警告: 含無法無損解碼字元，請重新解碼或轉換編碼]"
+    } else {
+        ""
+    };
+    format!("Len: {} bytes{}{}", doc.raw_bytes.len(), modified_mark, error_warn)
+}
+
+/// 將核心 DocumentBuffer 的完整狀態同步至 Slint 主視窗屬性
 fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     let mode_idx = match doc.edit_mode {
         EditMode::Text => 0,
@@ -26,18 +39,22 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
         ui.set_hex_ascii_text(dump.ascii.into());
     }
 
-    let modified_mark = if doc.is_modified { " *" } else { "" };
-    ui.set_status_info(format!("Len: {} bytes{}", doc.raw_bytes.len(), modified_mark).into());
+    ui.set_status_info(format_status_info(doc).into());
 }
 
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
     let doc = Rc::new(RefCell::new(DocumentBuffer::new()));
 
-    // Initial UI state
+    // 初始化支援編碼清單與畫面狀態
+    let encoding_items: Vec<SharedString> = SUPPORTED_ENCODINGS
+        .iter()
+        .map(|&s| SharedString::from(s))
+        .collect();
+    main_window.set_encoding_list(ModelRc::new(VecModel::from(encoding_items)));
     sync_ui_from_doc(&main_window, &doc.borrow());
 
-    // Open file
+    // 開啟舊檔事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -58,7 +75,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // Save file
+    // 儲存檔案事件綁定（若檔案含無損解碼錯誤則拒絕存檔並在狀態列提示）
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -72,6 +89,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 let mut d = doc_clone.borrow_mut();
                 if let Err(e) = d.save_file(Some(path)) {
                     eprintln!("Failed to save file: {}", e);
+                    if let Some(ui) = ui_handle.upgrade() {
+                        ui.set_status_info(format!("存檔拒絕: {}", e).into());
+                    }
                     return;
                 }
                 if let Some(ui) = ui_handle.upgrade() {
@@ -81,7 +101,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // Mode changed
+    // 編輯模式切換事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -96,7 +116,35 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // Text changed
+    // 重新解碼（Reinterpret Encoding）事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_reinterpret_encoding_clicked(move |enc_name| {
+            let mut d = doc_clone.borrow_mut();
+            if d.reinterpret_with_encoding(enc_name.as_str()) {
+                if let Some(ui) = ui_handle.upgrade() {
+                    sync_ui_from_doc(&ui, &d);
+                }
+            }
+        });
+    }
+
+    // 轉換編碼（Convert Encoding）事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_convert_encoding_clicked(move |enc_name| {
+            let mut d = doc_clone.borrow_mut();
+            if d.convert_to_encoding(enc_name.as_str()) {
+                if let Some(ui) = ui_handle.upgrade() {
+                    sync_ui_from_doc(&ui, &d);
+                }
+            }
+        });
+    }
+
+    // 文字內容變更事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -104,8 +152,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let mut d = doc_clone.borrow_mut();
             d.update_text(new_text.to_string());
             if let Some(ui) = ui_handle.upgrade() {
-                let modified_mark = if d.is_modified { " *" } else { "" };
-                ui.set_status_info(format!("Len: {} bytes{}", d.raw_bytes.len(), modified_mark).into());
+                ui.set_status_info(format_status_info(&d).into());
             }
         });
     }

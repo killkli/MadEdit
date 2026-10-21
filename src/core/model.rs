@@ -1,3 +1,4 @@
+/// 編輯器的三種檢視與操作模式：文字模式、列塊模式、十六進位模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditMode {
     Text = 0,
@@ -15,14 +16,16 @@ impl From<i32> for EditMode {
     }
 }
 
+/// 文件行尾換行字元格式（CRLF / LF / CR）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewLineFormat {
-    Dos,  // CRLF
-    Unix, // LF
-    Mac,  // CR
+    Dos,  // CRLF (Windows 標準)
+    Unix, // LF (Unix / macOS 標準)
+    Mac,  // CR (Classic Mac 標準)
 }
 
 impl NewLineFormat {
+    /// 傳回用於狀態列顯示的換行格式說明字串
     pub fn as_str(&self) -> &'static str {
         match self {
             NewLineFormat::Dos => "CRLF (Windows)",
@@ -31,6 +34,7 @@ impl NewLineFormat {
         }
     }
 
+    /// 掃描位元組序列中的第一個換行符號以自動偵測換行格式；若無換行符號則預設為 Dos (CRLF)
     pub fn detect(bytes: &[u8]) -> Self {
         for (i, &b) in bytes.iter().enumerate() {
             if b == b'\r' {

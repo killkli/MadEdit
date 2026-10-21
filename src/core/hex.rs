@@ -1,9 +1,11 @@
+/// 十六進位檢視區的三欄格式化文字結果（位址偏移、十六進位位元組、ASCII 可視字元）
 pub struct HexDump {
     pub offsets: String,
     pub hex: String,
     pub ascii: String,
 }
 
+/// 將原始位元組序列格式化為每列 16 位元組的三欄對照 Hex Dump，最多預覽 max_bytes 位元組以避免 UI 卡頓
 pub fn generate_hex_dump(data: &[u8], max_bytes: usize) -> HexDump {
     let limit = data.len().min(max_bytes);
     let slice = &data[..limit];
@@ -16,7 +18,7 @@ pub fn generate_hex_dump(data: &[u8], max_bytes: usize) -> HexDump {
         let offset = chunk_idx * 16;
         offsets.push_str(&format!("{:08X}\n", offset));
 
-        // Format hex bytes
+        // 格式化每列 16 個十六進位位元組，於第 8 個位元組處額外插入空白以利閱讀對齊
         let mut hex_line = String::with_capacity(50);
         for (i, &b) in chunk.iter().enumerate() {
             if i == 8 {
@@ -25,7 +27,7 @@ pub fn generate_hex_dump(data: &[u8], max_bytes: usize) -> HexDump {
             hex_line.push_str(&format!("{:02X} ", b));
         }
 
-        // Padding if last line has fewer than 16 bytes
+        // 若最末列不滿 16 位元組，補齊空白以維持版面寬度一致
         if chunk.len() < 16 {
             for i in chunk.len()..16 {
                 if i == 8 {
@@ -37,7 +39,7 @@ pub fn generate_hex_dump(data: &[u8], max_bytes: usize) -> HexDump {
         hex.push_str(hex_line.trim_end());
         hex.push('\n');
 
-        // Format ASCII characters
+        // 格式化可列印 ASCII 字元（0x20..=0x7E），控制字元與非 ASCII 位元組以 '.' 代表
         let mut ascii_line = String::with_capacity(16);
         for &b in chunk {
             if b >= 0x20 && b <= 0x7E {

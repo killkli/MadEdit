@@ -5,11 +5,28 @@ use encoding_rs::Encoding;
 use super::hex::{generate_hex_dump, HexDump};
 use super::model::{EditMode, NewLineFormat};
 
+/// 編輯器支援的 10 種常用字元編碼標準名稱清單（依 UI 選單順序排列）
+pub const SUPPORTED_ENCODINGS: &[&str] = &[
+    "UTF-8",
+    "UTF-16LE",
+    "UTF-16BE",
+    "Big5",
+    "GBK",
+    "GB18030",
+    "Shift_JIS",
+    "EUC-JP",
+    "EUC-KR",
+    "windows-1252",
+];
+
+/// 單一開啟或未命名文件的核心狀態容器（DocumentBuffer）
 pub struct DocumentBuffer {
     pub file_path: Option<PathBuf>,
     pub raw_bytes: Vec<u8>,
     pub text: String,
     pub encoding: &'static Encoding,
+    pub has_bom: bool,
+    pub has_decode_error: bool,
     pub newline_format: NewLineFormat,
     pub edit_mode: EditMode,
     pub is_modified: bool,
@@ -22,6 +39,8 @@ impl Default for DocumentBuffer {
             raw_bytes: Vec::new(),
             text: String::new(),
             encoding: encoding_rs::UTF_8,
+            has_bom: false,
+            has_decode_error: false,
             newline_format: NewLineFormat::Dos,
             edit_mode: EditMode::Text,
             is_modified: false,
@@ -34,24 +53,50 @@ impl DocumentBuffer {
         Self::default()
     }
 
+    /// 從磁碟讀取檔案並自動偵測換行格式與字元編碼（優先識別 BOM，其次嚴格 UTF-8，否則 fallback 至 Big5）
     pub fn load_file<P: AsRef<Path>>(&mut self, path: P) -> std::io::Result<()> {
         let p = path.as_ref().to_path_buf();
         let bytes = fs::read(&p)?;
 
         self.file_path = Some(p);
-        self.raw_bytes = bytes.clone();
         self.newline_format = NewLineFormat::detect(&bytes);
 
-        // Try decoding with UTF-8 first, fallback to Big5 or GBK if needed or keep encoding
-        let (decoded, detected_enc, _) = self.encoding.decode(&bytes);
-        self.text = decoded.into_owned();
-        self.encoding = detected_enc;
+        if let Some((bom_enc, bom_len)) = Encoding::for_bom(&bytes) {
+            let (decoded, had_errors) = bom_enc.decode_without_bom_handling(&bytes[bom_len..]);
+            self.text = decoded.into_owned();
+            self.encoding = bom_enc;
+            self.has_bom = true;
+            self.has_decode_error = had_errors;
+        } else if let Some(utf8_text) =
+            encoding_rs::UTF_8.decode_without_bom_handling_and_without_replacement(&bytes)
+        {
+            self.text = utf8_text.into_owned();
+            self.encoding = encoding_rs::UTF_8;
+            self.has_bom = false;
+            self.has_decode_error = false;
+        } else {
+            let (decoded, had_errors) = encoding_rs::BIG5.decode_without_bom_handling(&bytes);
+            self.text = decoded.into_owned();
+            self.encoding = encoding_rs::BIG5;
+            self.has_bom = false;
+            self.has_decode_error = had_errors;
+        }
+
+        self.raw_bytes = bytes;
         self.is_modified = false;
 
         Ok(())
     }
 
+    /// 儲存檔案至指定路徑或原路徑；若當前存在無損解碼錯誤（has_decode_error），拒絕存檔以防止毀損原檔
     pub fn save_file(&mut self, path: Option<PathBuf>) -> std::io::Result<()> {
+        if self.has_decode_error {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "檔案包含無法無損解碼的字元，為避免損毀原始資料已拒絕存檔；請先選擇正確編碼重新解碼或明確轉換編碼",
+            ));
+        }
+
         let target_path = path.or_else(|| self.file_path.clone());
         let Some(p) = target_path else {
             return Err(std::io::Error::new(
@@ -60,10 +105,9 @@ impl DocumentBuffer {
             ));
         };
 
-        // If in text or column mode, encode text back to bytes
+        // 在文字或列塊模式下，依當前編碼與 BOM 設定將文字重新編碼為位元組
         if self.edit_mode != EditMode::Hex {
-            let (encoded_bytes, _, _) = self.encoding.encode(&self.text);
-            self.raw_bytes = encoded_bytes.into_owned();
+            self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
         }
 
         fs::write(&p, &self.raw_bytes)?;
@@ -73,29 +117,85 @@ impl DocumentBuffer {
         Ok(())
     }
 
+    /// 當使用者在文字編輯區修改內容時同步更新文字與底層位元組
     pub fn update_text(&mut self, new_text: String) {
         if self.text != new_text {
             self.text = new_text;
             self.is_modified = true;
-            // Also update raw_bytes if in text mode
-            let (encoded, _, _) = self.encoding.encode(&self.text);
-            self.raw_bytes = encoded.into_owned();
+            if !self.has_decode_error {
+                self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
+            }
         }
     }
 
+    /// 切換編輯模式（Text / Column / Hex）
     pub fn set_edit_mode(&mut self, mode: EditMode) {
         self.edit_mode = mode;
-        if mode == EditMode::Hex {
-            // Ensure raw_bytes is synced with text
-            let (encoded, _, _) = self.encoding.encode(&self.text);
-            self.raw_bytes = encoded.into_owned();
+        if mode == EditMode::Hex && !self.has_decode_error {
+            self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
         }
     }
 
-    pub fn get_hex_dump(&self) -> HexDump {
-        generate_hex_dump(&self.raw_bytes, 1024 * 1024) // up to 1MB preview
+    /// 重新解碼（Reinterpret Encoding）：保留底層 raw_bytes 不變，改以指定編碼重新解碼出 text，不變更修改狀態
+    pub fn reinterpret_with_encoding(&mut self, encoding_label: &str) -> bool {
+        let Some(enc) = Encoding::for_label(encoding_label.as_bytes()) else {
+            return false;
+        };
+        let (slice, has_bom) = match Encoding::for_bom(&self.raw_bytes) {
+            Some((bom_enc, bom_len)) if bom_enc == enc => (&self.raw_bytes[bom_len..], true),
+            _ => (&self.raw_bytes[..], false),
+        };
+        let (decoded, had_errors) = enc.decode_without_bom_handling(slice);
+        self.text = decoded.into_owned();
+        self.encoding = enc;
+        self.has_bom = has_bom;
+        self.has_decode_error = had_errors;
+        true
     }
 
+    /// 轉換編碼（Convert Encoding）：保留當前 text 不變，轉換為目標編碼並更新 raw_bytes，標記為已修改
+    pub fn convert_to_encoding(&mut self, encoding_label: &str) -> bool {
+        let Some(enc) = Encoding::for_label(encoding_label.as_bytes()) else {
+            return false;
+        };
+        self.encoding = enc;
+        // 轉換為 UTF-16LE / UTF-16BE 時預設寫入 BOM，使其他軟體能正確識別位元組序
+        self.has_bom = enc == encoding_rs::UTF_16LE || enc == encoding_rs::UTF_16BE;
+        self.raw_bytes = Self::encode_str(&self.text, enc, self.has_bom);
+        self.has_decode_error = false;
+        self.is_modified = true;
+        true
+    }
+
+    /// 將字串依指定編碼與 BOM 設定轉換為位元組序列（修正 encoding_rs 對 UTF-16 輸出為 UTF-8 的問題）
+    fn encode_str(text: &str, enc: &'static Encoding, has_bom: bool) -> Vec<u8> {
+        let mut out = Vec::new();
+        if enc == encoding_rs::UTF_16LE {
+            if has_bom {
+                out.extend_from_slice(&[0xFF, 0xFE]);
+            }
+            out.extend(text.encode_utf16().flat_map(|u| u.to_le_bytes()));
+        } else if enc == encoding_rs::UTF_16BE {
+            if has_bom {
+                out.extend_from_slice(&[0xFE, 0xFF]);
+            }
+            out.extend(text.encode_utf16().flat_map(|u| u.to_be_bytes()));
+        } else {
+            if enc == encoding_rs::UTF_8 && has_bom {
+                out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+            }
+            let (encoded, _, _) = enc.encode(text);
+            out.extend_from_slice(&encoded);
+        }
+        out
+    }
+
+    /// 產生十六進位檢視區內容（預設最多預覽前 1MB 位元組）
+    pub fn get_hex_dump(&self) -> HexDump {
+        generate_hex_dump(&self.raw_bytes, 1024 * 1024)
+    }
+
+    /// 取得目前開啟檔案的檔名；若尚未指定路徑則傳回 "Untitled"
     pub fn file_name(&self) -> String {
         self.file_path
             .as_ref()
@@ -121,5 +221,108 @@ mod tests {
         doc.set_edit_mode(EditMode::Hex);
         let dump = doc.get_hex_dump();
         assert!(dump.hex.contains("48 65 6C 6C 6F"));
+    }
+
+    #[test]
+    fn test_supported_encodings_and_auto_detect_on_load() {
+        assert_eq!(
+            SUPPORTED_ENCODINGS,
+            &[
+                "UTF-8",
+                "UTF-16LE",
+                "UTF-16BE",
+                "Big5",
+                "GBK",
+                "GB18030",
+                "Shift_JIS",
+                "EUC-JP",
+                "EUC-KR",
+                "windows-1252",
+            ]
+        );
+
+        let temp_dir = std::env::temp_dir();
+
+        // 1. 含 BOM 之 UTF-16LE 檔案（"Hi" -> FF FE 48 00 69 00）
+        let utf16le_path = temp_dir.join("madedit_test_utf16le.txt");
+        let utf16le_bytes = [0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00];
+        fs::write(&utf16le_path, utf16le_bytes).unwrap();
+        let mut doc = DocumentBuffer::new();
+        doc.load_file(&utf16le_path).unwrap();
+        assert_eq!(doc.encoding, encoding_rs::UTF_16LE);
+        assert!(doc.has_bom);
+        assert!(!doc.has_decode_error);
+        assert_eq!(doc.text, "Hi");
+
+        // 驗證 UTF-16LE 編輯後存檔仍保留 BOM 且為真正的 UTF-16LE（不會變成 UTF-8）
+        doc.update_text("Hi!".to_string());
+        doc.save_file(None).unwrap();
+        let saved_utf16le = fs::read(&utf16le_path).unwrap();
+        assert_eq!(saved_utf16le, vec![0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00, 0x21, 0x00]);
+        let _ = fs::remove_file(&utf16le_path);
+
+        // 2. 無 BOM 之 Big5 檔案（"測試" in Big5 -> B4 FA B8 D5）
+        let big5_path = temp_dir.join("madedit_test_big5.txt");
+        fs::write(&big5_path, [0xB4, 0xFA, 0xB8, 0xD5]).unwrap();
+        let mut doc_big5 = DocumentBuffer::new();
+        doc_big5.load_file(&big5_path).unwrap();
+        assert_eq!(doc_big5.encoding, encoding_rs::BIG5);
+        assert!(!doc_big5.has_bom);
+        assert!(!doc_big5.has_decode_error);
+        assert_eq!(doc_big5.text, "測試");
+        assert!(!doc_big5.is_modified);
+        let _ = fs::remove_file(&big5_path);
+
+        // 3. 含無法無損解碼位元組（例如非法 Big5 尾碼 0xFF 0x00）時，has_decode_error 為 true，且拒絕存檔防止毀損原檔
+        let invalid_path = temp_dir.join("madedit_test_invalid_bytes.txt");
+        let original_bytes = vec![0x81, 0x00, 0xFF];
+        fs::write(&invalid_path, &original_bytes).unwrap();
+        let mut doc_invalid = DocumentBuffer::new();
+        doc_invalid.load_file(&invalid_path).unwrap();
+        assert!(doc_invalid.has_decode_error);
+        assert!(doc_invalid.save_file(None).is_err());
+        assert_eq!(fs::read(&invalid_path).unwrap(), original_bytes);
+        let _ = fs::remove_file(&invalid_path);
+    }
+
+    #[test]
+    fn test_reinterpret_and_convert_encoding() {
+        let temp_dir = std::env::temp_dir();
+
+        // GB18030 編碼的 "软件" 位元組（C8 ED BC FE）：無 BOM 且非 UTF-8，開檔時會先 fallback 至 Big5
+        let gb_path = temp_dir.join("madedit_test_gb18030.txt");
+        let raw_gb_bytes = vec![0xC8, 0xED, 0xBC, 0xFE];
+        fs::write(&gb_path, &raw_gb_bytes).unwrap();
+
+        let mut doc = DocumentBuffer::new();
+        doc.load_file(&gb_path).unwrap();
+        assert_eq!(doc.encoding, encoding_rs::BIG5);
+        assert_ne!(doc.text, "软件");
+
+        // 重新解碼（Reinterpret）為 GB18030：raw_bytes 與 is_modified 不變，text 正確顯示為 "软件"
+        assert!(doc.reinterpret_with_encoding("GB18030"));
+        assert_eq!(doc.encoding, encoding_rs::GB18030);
+        assert!(!doc.has_decode_error);
+        assert_eq!(doc.text, "软件");
+        assert_eq!(doc.raw_bytes, raw_gb_bytes);
+        assert!(!doc.is_modified);
+
+        // 轉換編碼（Convert）為 UTF-8：text 維持 "软件"，raw_bytes 更新為 UTF-8 位元組，且標記為已修改
+        assert!(doc.convert_to_encoding("UTF-8"));
+        assert_eq!(doc.encoding, encoding_rs::UTF_8);
+        assert!(!doc.has_decode_error);
+        assert_eq!(doc.text, "软件");
+        assert_eq!(doc.raw_bytes, "软件".as_bytes());
+        assert!(doc.is_modified);
+
+        // 轉換編碼（Convert）為 UTF-16LE：raw_bytes 更新為 BOM (FF FE) + "软件" 的 UTF-16LE 位元組
+        assert!(doc.convert_to_encoding("UTF-16LE"));
+        assert_eq!(doc.encoding, encoding_rs::UTF_16LE);
+        assert!(doc.has_bom);
+        let mut expected_utf16le = vec![0xFF, 0xFE];
+        expected_utf16le.extend("软件".encode_utf16().flat_map(|u| u.to_le_bytes()));
+        assert_eq!(doc.raw_bytes, expected_utf16le);
+
+        let _ = fs::remove_file(&gb_path);
     }
 }
