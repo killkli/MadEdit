@@ -65,6 +65,10 @@ export component MainWindow inherits Window {
     in-out property <string> goto-label-text: "移至行 (1 - 1):";
     in-out property <string> goto-input-text: "1";
 
+    // 外部檔案變更通知屬性
+    in-out property <bool> is-modified: false;
+    in-out property <bool> has-external-change: false;
+
     callback open-file-clicked();
     callback save-file-clicked();
     callback mode-changed(int);
@@ -74,6 +78,8 @@ export component MainWindow inherits Window {
     callback newline-format-changed(string);
     callback goto-confirmed(string);
     callback goto-cancelled();
+    callback reload-file();
+    callback ignore-external-change();
 
     // 搜尋與取代回呼
     callback find-next-clicked();
@@ -326,6 +332,51 @@ export component MainWindow inherits Window {
                     text: "✕";
                     width: 28px;
                     clicked => { root.goto-cancelled(); }
+                }
+            }
+        }
+
+        // 外部檔案變更通知橫幅
+        if root.has-external-change : Rectangle {
+            background: #fffbeb;
+            border-width: 1px;
+            border-color: #fde68a;
+            border-radius: 4px;
+
+            HorizontalLayout {
+                padding: 6px;
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 12px;
+                alignment: center;
+
+                Text {
+                    text: "⚠️ 檔案已被外部程式修改。";
+                    vertical-alignment: center;
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: #92400e;
+                }
+
+                if root.is-modified : Text {
+                    text: "（當前有未儲存修改，重新載入將捨棄變更！）";
+                    vertical-alignment: center;
+                    font-size: 12px;
+                    font-weight: 700;
+                    color: #b91c1c;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                Button {
+                    text: "重新載入";
+                    primary: true;
+                    clicked => { root.reload-file(); }
+                }
+
+                Button {
+                    text: "忽略";
+                    clicked => { root.ignore-external-change(); }
                 }
             }
         }

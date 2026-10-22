@@ -45,6 +45,7 @@ pub struct DocumentBuffer {
     pub current_syntax: String,
     pub editor: EditorState,
     pub hex_start_offset: usize,
+    pub last_modified: Option<std::time::SystemTime>,
 }
 
 impl Default for DocumentBuffer {
@@ -66,6 +67,7 @@ impl Default for DocumentBuffer {
             current_syntax: "Plain Text".to_string(),
             editor: EditorState::default(),
             hex_start_offset: 0,
+            last_modified: None,
         }
     }
 }
@@ -122,7 +124,10 @@ impl DocumentBuffer {
             }
 
             self.text = decoded.into_owned();
-            self.raw_bytes = full_bytes;
+            self.raw_bytes = full_bytes.clone();
+            // 小型檔案直接以記憶體位元組維護 PieceTable，釋放 mmap 檔案控制代碼（避免 Windows 檔案鎖衝突）
+            self.piece_table = PieceTable::from_bytes(full_bytes);
+            self.line_index = LineIndex::build(&self.piece_table);
             self.editor.set_text(&self.text);
         } else {
             // 大型檔案：避免全檔記憶體複製與整檔解碼，依賴 Piece Table 與 LineIndex 按需供應
@@ -136,6 +141,7 @@ impl DocumentBuffer {
 
         self.is_modified = false;
         self.hex_start_offset = 0;
+        self.last_modified = self.disk_mtime();
 
         Ok(())
     }
@@ -308,13 +314,64 @@ impl DocumentBuffer {
 
         // 重新為目標檔案建立 Piece Table 與 LineIndex
         let file = fs::File::open(&p)?;
-        self.piece_table = PieceTable::open_file(&file)?;
+        let mut pt = PieceTable::open_file(&file)?;
+        if pt.len() <= SMALL_FILE_CACHE_LIMIT {
+            let bytes = pt.collect_bytes();
+            pt = PieceTable::from_bytes(bytes);
+        }
+        self.piece_table = pt;
         self.line_index = LineIndex::build(&self.piece_table);
         self.file_path = Some(p);
+        self.last_modified = self.disk_mtime();
         self.is_modified = false;
         self.hex_start_offset = 0;
 
         Ok(())
+    }
+
+    /// 取得目前檔案路徑在磁碟上的修改時間戳記
+    fn disk_mtime(&self) -> Option<std::time::SystemTime> {
+        let p = self.file_path.as_ref()?;
+        fs::metadata(p).and_then(|m| m.modified()).ok()
+    }
+
+    /// 檢查磁碟上的檔案是否被外部程序修改（比對 mtime）
+    pub fn check_external_change(&self) -> bool {
+        let Some(last_mod) = self.last_modified else {
+            return false;
+        };
+        if let Some(current_mod) = self.disk_mtime() {
+            return current_mod > last_mod;
+        }
+        false
+    }
+
+    /// 從磁碟重新載入檔案最新內容，重置修改狀態並智慧保留游標與書籤
+    pub fn reload_file(&mut self) -> std::io::Result<()> {
+        let Some(p) = self.file_path.clone() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "無對應磁碟檔案路徑可供重新載入",
+            ));
+        };
+
+        // 記錄目前的游標位置與行書籤集合
+        let saved_pos = self.editor.selection.head;
+        let saved_bookmarks = self.editor.bookmarks.clone();
+
+        self.load_file(&p)?;
+
+        let is_large = self.piece_table.len() > SMALL_FILE_CACHE_LIMIT;
+        self.editor.restore_state(saved_pos, saved_bookmarks, is_large);
+
+        Ok(())
+    }
+
+    /// 忽略外部修改：將 last_modified 同步為磁碟最新時間，避免後續重複提示
+    pub fn ignore_external_change(&mut self) {
+        if let Some(current_mod) = self.disk_mtime() {
+            self.last_modified = Some(current_mod);
+        }
     }
 
     /// 將 editor 中的最新行內容同步至 text 與 Piece Table（大檔未快取時防護不覆寫）
@@ -1246,6 +1303,52 @@ mod tests {
         doc.save_file(Some(tmp_file.clone())).unwrap();
         let saved_bytes = std::fs::read(&tmp_file).unwrap();
         assert_eq!(saved_bytes, b"A\rB\rC");
+        let _ = std::fs::remove_file(&tmp_file);
+    }
+
+    #[test]
+    fn test_file_watcher_and_reload() {
+        let tmp_file = std::env::temp_dir().join(format!("test_watcher_{}.txt", std::process::id()));
+        std::fs::write(&tmp_file, "Line 1\nLine 2\nLine 3").unwrap();
+
+        let mut doc = DocumentBuffer::new();
+        doc.load_file(&tmp_file).unwrap();
+        assert_eq!(doc.text, "Line 1\nLine 2\nLine 3");
+        assert!(!doc.check_external_change());
+
+        // 在 Line 2 加上書籤，並把游標移到 Line 2, col 2
+        doc.editor.set_caret(1, 2);
+        doc.editor.toggle_bookmark();
+        assert!(doc.editor.bookmarks.contains(&1));
+
+        // 模擬外部程式修改檔案：稍作等待確保 mtime 更新
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::write(&tmp_file, "Line 1 Updated\nLine 2 Updated\nLine 3 Updated\nLine 4").unwrap();
+
+        // 偵測外部變更
+        assert!(doc.check_external_change());
+
+        // 測試忽略外部變更
+        doc.ignore_external_change();
+        assert!(!doc.check_external_change());
+
+        // 再次外部修改
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::write(&tmp_file, "Line 1 New\nLine 2 New").unwrap();
+        assert!(doc.check_external_change());
+
+        // 執行重新載入
+        doc.reload_file().unwrap();
+        assert_eq!(doc.text, "Line 1 New\nLine 2 New");
+        assert!(!doc.is_modified);
+        assert!(!doc.check_external_change());
+
+        // 驗證游標位置與書籤被智慧保留
+        assert_eq!(doc.editor.selection.head.line, 1);
+        assert_eq!(doc.editor.selection.head.col, 2);
+        assert!(doc.editor.bookmarks.contains(&1));
+
+        // 清理暫存檔
         let _ = std::fs::remove_file(&tmp_file);
     }
 }
