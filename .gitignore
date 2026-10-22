@@ -1,1 +1,4 @@
 /target
+
+# macOS App 打包產物
+/dist/

@@ -20,14 +20,16 @@
 ## 2. 核心技術選型
 
 - **程式語言**：Rust (Edition 2024，需 Rust 1.85 以上)
-- **GUI 框架**：[Slint](https://slint.dev/) (v1.18.1)
-  - 優勢：宣告式語法 (`.slint`)、輕量、純 Rust 原生編譯、不依賴繁重的系統 C++ 庫、跨平台 (Windows/macOS/Linux) 表現一致。
-  - 限制：內建 `TextEdit` 不支援虛擬捲動、矩形選取、多游標與分段著色（已於 Phase 2 自繪編輯器元件中完全取代）。
+- **GUI 框架**：[eframe / egui](https://github.com/emilk/egui) (v0.35)，2026-10 由 Slint 改寫（見 [ADR 0011](docs/adr/0011-egui-rewrite.md)）
+  - 選用理由：可逐字量測字寬，支援使用者任選系統字型（含比例字型）；輸入法事件（`Event::Ime`）直接交給自繪編輯區處理。
+  - 編輯區、十六進位檢視、捲軸、尺標皆為自繪（`src/app/view.rs`、`src/app/hexview.rs`）。
+- **系統字型**：`fontique` 列舉並載入系統字型，CJK 字元自動以系統中日韓字型補字。
+- **系統剪貼簿**：`arboard`；**語法突顯**：`syntect`；**拼字檢查**：`spellbook`（Hunspell 字典）。
 - **檔案對話框**：`rfd` (Rust File Dialog) - 支援跨平台原生系統視窗。
 - **編碼轉換**：`encoding_rs` - 高效能多字元編碼支援。
-- **記憶體對映**：`memmap2` - 支援超大檔案零拷貝秒開與隨機分頁存取。
+- **大檔讀取**：Piece Table 以定位讀取（pread）分頁快取原始檔案，不使用 mmap（避免檔案被外部截短時 SIGBUS）。
 - **應用程式圖示**：`embed-resource`（build-dependency） - 僅於 Windows 目標平台啟用，將 `assets/madedit-icon.ico` 嵌入 `.exe` 資源；其他平台為空操作。
-- **設計哲學**：**KISS 原則 (Keep It Simple, Stupid)**，避免過度抽象與過早最佳化；核心資料邏輯（`src/core/`）與 UI 展現層（`ui/`）保持分離。
+- **設計哲學**：**KISS 原則 (Keep It Simple, Stupid)**，避免過度抽象與過早最佳化；核心資料邏輯（`src/core/`）與 UI 展現層（`src/app/`）保持分離。
 
 ---
 
@@ -37,31 +39,49 @@
 D:\Git\MadEdit\
 ├── Cargo.toml              # 專案相依性與套件設定
 ├── Cargo.lock              # 相依性鎖定檔（需納入版控）
-├── build.rs                # Slint UI 編譯腳本 (slint_build::compile) + Windows 圖示資源嵌入
+├── build.rs                # Windows 圖示資源嵌入
 ├── .gitignore
 ├── assets\                 # 圖示資產與桌面整合檔
-│   ├── madedit-icon.svg    # 應用程式圖示來源真檔（唯一真實來源，人工編輯此檔）
-│   ├── madedit-icon.png    # Slint 視窗圖示（@image-url 內嵌）
-│   ├── madedit-icon.ico    # Windows 執行檔圖示資源
+│   ├── madedit-icon.png    # 視窗與 macOS 圖示（沿用原版 madedit-mod.png，include_bytes 內嵌）
+│   ├── madedit-icon.ico    # Windows 執行檔圖示資源（沿用原版 images/Mad2.ico）
 │   ├── madedit.desktop     # Linux 桌面整合項目
-│   ├── make_icons.py       # 由 SVG 重新產生 PNG / ICO 的腳本
 │   ├── icons-src\          # 原版 MadEdit 工具列圖示來源（XPM，勿手動修改）
 │   │   └── README.md       # 圖示來源與 GNU GPL 授權說明
 │   ├── icons\              # 由 icons-src 轉換而來的 PNG（勿手動修改）
-│   └── make_toolbar_icons.py # XPM → PNG 轉換腳本（純標準函式庫）
-├── ui\
-│   ├── theme.slint         # 經典樣式元件庫（配色、按鈕、輸入框、核取方塊）
-│   ├── menubar.slint       # 經典選單列與彈出選單元件
-│   └── appwindow.slint     # 主視窗 Slint UI 介面（選單列、工具列、分頁、編輯區、狀態列）
+│   ├── make_toolbar_icons.py # XPM → PNG 轉換腳本（純標準函式庫）
+│   └── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
+├── scripts\
+│   └── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
 ├── src\
-│   ├── main.rs             # 應用程式入口點，負責 Slint UI 與 Core 狀態雙向綁定
-│   └── core\
-│       ├── mod.rs          # 核心模組匯出
-│       ├── model.rs        # 編輯模式 (EditMode) 與換行偵測 (NewLineFormat)
-│       ├── editor.rs       # 游標模型、選取範圍、字元格網與可見行切片產生
-│       ├── piece_table.rs  # Piece Table 核心資料結構與 LineIndex 行索引
-│       ├── hex.rs          # 十六進位 Hex Dump 格式化邏輯 (Offset / Hex / ASCII)
-│       └── buffer.rs       # DocumentBuffer，封裝檔案 I/O、編碼解碼與內容同步
+│   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
+│   ├── app\                # egui 介面層
+│   │   ├── mod.rs          # App 狀態、分頁、存檔／關閉流程、狀態列、主迴圈
+│   │   ├── commands.rs     # 命令表（依原版 CommandTable，165 個命令）與快捷鍵解析
+│   │   ├── actions.rs      # 所有命令的實作（App::run）
+│   │   ├── menus.rs        # 選單列與工具列
+│   │   ├── dialogs.rs      # 選項、字型、排序、遞增數字、在檔案中尋找等對話框與確認視窗
+│   │   ├── view.rs         # 自繪文字編輯區（格網／比例排版、換行、輸入法、拼字底線）
+│   │   ├── hexview.rs      # 自繪十六進位檢視
+│   │   ├── find.rs         # 搜尋／取代列與跳行列
+│   │   ├── findfiles.rs    # 在多個檔案中尋找／取代（背景執行緒）
+│   │   ├── macros.rs       # 巨集錄製與播放（JSON 步驟清單）
+│   │   ├── print.rs        # 列印與預覽（產生 HTML 交給瀏覽器）
+│   │   ├── fonts.rs        # 系統字型列舉與 egui 字型鏈
+│   │   ├── ui_tests.rs     # egui_kittest 鍵盤／輸入法互動測試
+│   │   └── visual_tests.rs # 離屏繪製截圖（預設略過）
+│   └── core\               # 與 UI 無關的核心邏輯
+│       ├── document.rs     # 單一文件：檔案 I/O、編碼、復原／重做、十六進位模式
+│       ├── editor.rs       # 行陣列、游標、選取（含矩形）、字元格網
+│       ├── piece_table.rs  # 十六進位模式與大檔用的 Piece Table（定位讀取分頁快取）
+│       ├── hexbuf.rs       # 十六進位編輯緩衝區
+│       ├── encoding.rs     # 編碼偵測、解碼與編碼
+│       ├── search.rs       # 搜尋引擎（純文字／Regex／Hex）
+│       ├── syntax.rs       # syntect 語法突顯與主題
+│       ├── settings.rs     # 設定檔（JSON）、歷史紀錄、工作階段
+│       ├── textops.rs      # 文字轉換（大小寫、全半形、排序、格式化 JSON/XML 等）
+│       ├── chinese.rs      # 簡繁／日文漢字轉換（對照表 chinese_tables.rs 取自原版）
+│       ├── spell.rs        # 拼字檢查
+│       └── model.rs        # EditMode、NewLineFormat
 ├── docs\
 │   ├── adr\                # 架構決策紀錄 (ADR)
 │   └── agents\             # Agent skills 設定（issue tracker、triage labels、domain docs）
@@ -78,17 +98,21 @@ D:\Git\MadEdit\
   ```powershell
   cargo check
   ```
-- **執行單元測試**：
+- **執行單元測試**（含 egui_kittest 互動測試）：
   ```powershell
   cargo test
+  ```
+- **離屏截圖**（無法開視窗時檢查畫面）：
+  ```bash
+  MADEDIT_SHOT_OUT=out.png MADEDIT_SHOT_FILE=檔案 MADEDIT_SHOT_CMDS=menuHexMode cargo test shot -- --ignored
+  ```
+- **打包 macOS App**：
+  ```bash
+  cargo build --release && ./scripts/make_appbundle.sh
   ```
 - **啟動應用程式**：
   ```powershell
   cargo run
-  ```
-- **重新產生應用程式圖示**（修改 `assets/madedit-icon.svg` 後執行）：
-  ```bash
-  python3 assets/make_icons.py
   ```
 - **重新產生工具列圖示**（修改 `assets/icons-src/*.xpm` 後執行）：
   ```bash
@@ -99,13 +123,30 @@ D:\Git\MadEdit\
 
 ## 5. 當前完成進度
 
+> **2026-10-23 起介面已改寫為 egui**（[ADR 0011](docs/adr/0011-egui-rewrite.md)）。以下 Phase 1–10 為 Slint 時期的歷程紀錄，
+> 其中提到的 `.slint` 檔、`buffer.rs`、`hex.rs`、`memmap2` 已移除；功能皆已在 egui 版重新實作。
+
+- [x] **egui 全面改寫與原版功能補齊**（feat/egui-rewrite）：
+  - 多文件分頁、復原／重做、系統剪貼簿、設定檔與工作階段保存（最近檔案、游標位置、視窗尺寸）。
+  - 使用者可選系統字型與字級（含比例字型）、CJK 自動補字、行距、深淺色主題與語法主題選擇。
+  - macOS 輸入法（注音、倉頡等）預編輯顯示與候選窗定位；⌘ 與 Option 快捷鍵依 macOS 慣例。
+  - 依原版命令表補齊 165 個命令：檔案（另存副本、全部儲存、關閉左／右／其他、唯讀旗標、最近檔案清單、列印與預覽）、
+    編輯（剪下整行、合併行、刪除空行與行尾空白、書籤行操作、Hex 字串互轉、縮排、註解、大小寫、全半形、Tab 與空白互轉、
+    遞增數字、排序、欄位對齊、日期時間）、搜尋（在多個檔案中尋找／取代、跳至對應括號、上一個／下一個位置）、
+    檢視（自動換行三種模式、行號、書籤欄、尺標、控制字元、目前行、欄位提示線、打字機模式、RTL 鏡像、Markdown／HTML 預覽）、
+    巨集（錄製、播放、多次播放、存檔、暫存巨集）、工具（選項、快捷鍵重新指派、拼字檢查與個人字典、字數統計、
+    簡繁與日文漢字轉換、JSON／XML 格式化、Markdown 轉 HTML、HTML 轉純文字、AStyle 格式化）、視窗（視窗清單、全螢幕、置頂）。
+  - 修正 problem.md 的 P0–P3 項目（輸入法、深色模式配色、CJK 補字、Hex 搜尋 panic、編碼損毀、大檔編輯與搜尋、
+    存檔失敗清空內容、狀態訊息不顯示、外部變更橫幅、取代不更新書籤、存檔前檢查外部修改、mmap SIGBUS、暫存檔名、emoji 寬度、
+    視窗尺寸未傳入可視範圍）。
+  - 改寫期間另修：主題目前行底色與註解同色導致文字看不見、程式字型把 `->` `=>` 連字、第一幀字型家族未註冊造成 panic。
 - [x] 專案基礎骨架與 Git 版本控制初始化。
 - [x] 專案正式更名為 MadEdit（移除 `-Rust` 套件後綴）：
   - `Cargo.toml` 套件名 `MadEdit-Rust` → `MadEdit`，建置產出的執行檔命名為 `MadEdit`（Windows 為 `MadEdit.exe`）。
   - Slint 主視窗標題同步改為 `MadEdit`；專案目錄更名為 `MadEdit`。
   - 全面同步 `AGENTS.md`、`GLOSSARY.md`、ADR 與 `.scratch/` specs 中的專案名稱。
 - [x] 應用程式圖示與工作列整合：
-  - `assets/madedit-icon.svg` 為圖示唯一真實來源，`assets/make_icons.py` 產生 `madedit-icon.png`（Slint 視窗圖示）與多尺寸 `madedit-icon.ico`（Windows 執行檔圖示）。
+  - 圖示沿用原版 MadEdit（madedit-mod）：`madedit-icon.png` 取自 `madedit-mod.png`（視窗圖示與 macOS icns 來源），`madedit-icon.ico` 取自 `images/Mad2.ico`（Windows 執行檔圖示）。
   - Slint `Window` 設定 `icon` 屬性，工作列 / 標題列顯示專屬圖示。
   - `build.rs` 於 Windows 目標平台透過 `embed-resource` 將 `.ico` 嵌入 `.exe` 資源（缺少 RC.EXE / windres 時僅發警告、不中斷建置）；其他平台空操作。
   - 提供 `assets/madedit.desktop` 供 Linux 桌面環境（啟動器 / 工作列）整合。
@@ -220,6 +261,10 @@ D:\Git\MadEdit\
 
 ### Phase 9: 外部檔案變更監控 (File Watcher & Auto Reload) - [已完成]
 - 已完成檔案時間戳記 (`mtime`) 比對、Windows 記憶體對映解鎖、Slint 定時器、頂部內嵌黃色通知橫幅與游標/書籤智慧保留重新載入。
+
+### Phase 11: egui 全面改寫與原版功能補齊 - [已完成]
+- 見第 5 節與 [ADR 0011](docs/adr/0011-egui-rewrite.md)。未實作項目：單一執行個體、介面語言切換、檔案關聯、真正的 bidi、
+  語法配色逐項自訂、跨行 Regex、Python 巨集（改為 JSON 步驟清單）。
 
 ### Phase 10: 經典 MadEdit 風格介面重塑 (Classic UI Redesign) - [已完成]
 - 已完成經典 Windows 風格選單列、彈出選單、原版圖示工具列、分頁列與六欄位狀態列。
