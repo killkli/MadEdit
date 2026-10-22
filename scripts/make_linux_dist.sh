@@ -59,13 +59,14 @@ PREFIX="${PREFIX:-${HOME}/.local}"
 APP_DIR="${PREFIX}/lib/madedit"
 
 mkdir -p "${APP_DIR}" "${PREFIX}/bin" \
-         "${PREFIX}/share/applications" "${PREFIX}/share/icons/hicolor/256x256/apps"
+         "${PREFIX}/share/applications" "${PREFIX}/share/icons/hicolor/48x48/apps"
 rm -rf "${APP_DIR}/dictionaries"
-cp "${SRC}/MadEdit" "${APP_DIR}/"
+# install 會先移除舊檔再寫入，程式執行中也能升級（cp 會因「文字檔忙碌中」失敗）
+install -m 755 "${SRC}/MadEdit" "${APP_DIR}/MadEdit"
 cp -r "${SRC}/dictionaries" "${APP_DIR}/"
 ln -sf "${APP_DIR}/MadEdit" "${PREFIX}/bin/MadEdit"
 cp "${SRC}/madedit.desktop" "${PREFIX}/share/applications/"
-cp "${SRC}/madedit-icon.png" "${PREFIX}/share/icons/hicolor/256x256/apps/"
+cp "${SRC}/madedit-icon.png" "${PREFIX}/share/icons/hicolor/48x48/apps/"
 command -v update-desktop-database >/dev/null && update-desktop-database -q "${PREFIX}/share/applications" || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "${PREFIX}/share/icons/hicolor" || true
 
