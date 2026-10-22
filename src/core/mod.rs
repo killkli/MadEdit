@@ -3,6 +3,7 @@ pub mod editor;
 pub mod hex;
 pub mod model;
 pub mod piece_table;
+pub mod search;
 
 pub use buffer::{DocumentBuffer, SUPPORTED_ENCODINGS};
 #[allow(unused_imports)]
@@ -14,3 +15,8 @@ pub use editor::{
 pub use model::{EditMode, NewLineFormat};
 #[allow(unused_imports)]
 pub use piece_table::{BufferSource, LineIndex, OriginalBuffer, Piece, PieceTable};
+#[allow(unused_imports)]
+pub use search::{
+    build_regex, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
+    parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
+};
