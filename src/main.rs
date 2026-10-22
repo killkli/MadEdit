@@ -788,6 +788,40 @@ fn handle_menu_action(ui: &MainWindow, doc: &mut DocumentBuffer, action: &str) {
     }
 }
 
+/// 將 RGBA 像素緩衝區儲存為未壓縮之 32-bit BMP 圖片
+fn save_rgba_as_bmp(path: &str, width: u32, height: u32, rgba_data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::File::create(path)?;
+    let row_size = width * 4;
+    let image_size = row_size * height;
+    let file_size = 54 + image_size;
+
+    // BMP Header (14 bytes)
+    file.write_all(b"BM")?;
+    file.write_all(&file_size.to_le_bytes())?;
+    file.write_all(&0u32.to_le_bytes())?;
+    file.write_all(&54u32.to_le_bytes())?;
+
+    // DIB Header (40 bytes)
+    file.write_all(&40u32.to_le_bytes())?;
+    file.write_all(&(width as i32).to_le_bytes())?;
+    file.write_all(&(-(height as i32)).to_le_bytes())?; // top-down
+    file.write_all(&1u16.to_le_bytes())?;
+    file.write_all(&32u16.to_le_bytes())?;
+    file.write_all(&0u32.to_le_bytes())?;
+    file.write_all(&image_size.to_le_bytes())?;
+    file.write_all(&2835u32.to_le_bytes())?;
+    file.write_all(&2835u32.to_le_bytes())?;
+    file.write_all(&0u32.to_le_bytes())?;
+    file.write_all(&0u32.to_le_bytes())?;
+
+    // 像素排列轉為 BGRA
+    for chunk in rgba_data.chunks_exact(4) {
+        file.write_all(&[chunk[2], chunk[1], chunk[0], chunk[3]])?;
+    }
+    Ok(())
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
     let doc = Rc::new(RefCell::new(DocumentBuffer::new()));
@@ -1548,6 +1582,15 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // 命令列指定的檔案：於啟動時直接開啟（對應原版 MadEdit 的行為）
     {
+        if std::env::args().any(|arg| arg == "--show-replace") {
+            main_window.set_show_search_panel(true);
+            main_window.set_show_replace(true);
+        }
+        if std::env::args().any(|arg| arg == "--test-light") {
+            main_window.set_is_dark_mode(false);
+            doc.borrow_mut().is_dark_mode = false;
+        }
+
         let startup_path = std::env::args()
             .skip(1)
             .find(|arg| !arg.starts_with('-') && std::path::Path::new(arg).is_file());
@@ -1560,6 +1603,39 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         }
     }
+
+    // 支援自動截圖測試：--screenshot <path>
+    let screenshot_arg = std::env::args()
+        .position(|arg| arg == "--screenshot")
+        .and_then(|idx| std::env::args().nth(idx + 1));
+
+    let _screenshot_timer = screenshot_arg.map(|out_path| {
+        let win = main_window.as_weak();
+        let timer = Timer::default();
+        timer.start(
+            TimerMode::SingleShot,
+            std::time::Duration::from_millis(200),
+            move || {
+                if let Some(w) = win.upgrade() {
+                    match w.window().take_snapshot() {
+                        Ok(buf) => {
+                            let width = buf.width();
+                            let height = buf.height();
+                            let bytes = buf.as_bytes();
+                            if let Err(e) = save_rgba_as_bmp(&out_path, width, height, bytes) {
+                                eprintln!("Failed to save screenshot: {}", e);
+                            } else {
+                                println!("Screenshot saved to {}", out_path);
+                            }
+                        }
+                        Err(e) => eprintln!("Snapshot failed: {:?}", e),
+                    }
+                    let _ = slint::quit_event_loop();
+                }
+            },
+        );
+        timer
+    });
 
     main_window.run()
 }

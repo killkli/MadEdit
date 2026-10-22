@@ -445,9 +445,11 @@ export component MainWindow inherits Window {
 
                 HorizontalLayout {
                     spacing: 6px;
-                    alignment: center;
+                    alignment: start;
 
                     Text {
+                        width: 64px;
+                        horizontal-alignment: right;
                         text: "尋找(&N):";
                         vertical-alignment: center;
                         font-size: 13px;
@@ -510,6 +512,7 @@ export component MainWindow inherits Window {
                     ClassicButton {
                         is-dark: root.is-dark-mode;
                         text: root.show-replace ? "隱藏取代" : "展開取代";
+                        width: 76px;
                         clicked => { root.toggle-replace-clicked(); }
                     }
 
@@ -526,9 +529,11 @@ export component MainWindow inherits Window {
                 // 第二行：取代列
                 if root.show-replace : HorizontalLayout {
                     spacing: 6px;
-                    alignment: center;
+                    alignment: start;
 
                     Text {
+                        width: 64px;
+                        horizontal-alignment: right;
                         text: "取代(&R):";
                         vertical-alignment: center;
                         font-size: 13px;
