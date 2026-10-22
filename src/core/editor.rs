@@ -1388,7 +1388,7 @@ mod tests {
     #[test]
     fn test_char_pos_counts_newlines() {
         // 三行內容："abc" / "de" / "f"
-        let mut editor = EditorState::from_text("abc\nde\nf");
+        let editor = EditorState::from_text("abc\nde\nf");
 
         // 第一行開頭
         assert_eq!(editor.char_pos(TextPosition::new(0, 0)), 0);
