@@ -141,7 +141,7 @@ impl DocumentBuffer {
 
         self.is_modified = false;
         self.hex_start_offset = 0;
-        self.last_modified = fs::metadata(&p).and_then(|m| m.modified()).ok();
+        self.last_modified = self.disk_mtime();
 
         Ok(())
     }
@@ -321,26 +321,27 @@ impl DocumentBuffer {
         }
         self.piece_table = pt;
         self.line_index = LineIndex::build(&self.piece_table);
-        self.last_modified = fs::metadata(&p).and_then(|m| m.modified()).ok();
         self.file_path = Some(p);
+        self.last_modified = self.disk_mtime();
         self.is_modified = false;
         self.hex_start_offset = 0;
 
         Ok(())
     }
 
+    /// 取得目前檔案路徑在磁碟上的修改時間戳記
+    fn disk_mtime(&self) -> Option<std::time::SystemTime> {
+        let p = self.file_path.as_ref()?;
+        fs::metadata(p).and_then(|m| m.modified()).ok()
+    }
+
     /// 檢查磁碟上的檔案是否被外部程序修改（比對 mtime）
     pub fn check_external_change(&self) -> bool {
-        let Some(p) = &self.file_path else {
-            return false;
-        };
         let Some(last_mod) = self.last_modified else {
             return false;
         };
-        if let Ok(metadata) = fs::metadata(p) {
-            if let Ok(current_mod) = metadata.modified() {
-                return current_mod > last_mod;
-            }
+        if let Some(current_mod) = self.disk_mtime() {
+            return current_mod > last_mod;
         }
         false
     }
@@ -360,29 +361,16 @@ impl DocumentBuffer {
 
         self.load_file(&p)?;
 
-        // 智慧保留游標（自動 clamp 防止越界）
-        let max_line = self.editor.lines.len().saturating_sub(1);
-        let target_line = saved_pos.line.min(max_line);
-        let target_col = saved_pos.col.min(self.editor.line_char_count(target_line));
-        self.editor.set_caret(target_line, target_col);
-
-        // 智慧保留在合法行範圍內的書籤
-        self.editor.bookmarks = saved_bookmarks
-            .into_iter()
-            .filter(|&line| line <= max_line)
-            .collect();
+        let is_large = self.piece_table.len() > SMALL_FILE_CACHE_LIMIT;
+        self.editor.restore_state(saved_pos, saved_bookmarks, is_large);
 
         Ok(())
     }
 
     /// 忽略外部修改：將 last_modified 同步為磁碟最新時間，避免後續重複提示
     pub fn ignore_external_change(&mut self) {
-        if let Some(p) = &self.file_path {
-            if let Ok(metadata) = fs::metadata(p) {
-                if let Ok(current_mod) = metadata.modified() {
-                    self.last_modified = Some(current_mod);
-                }
-            }
+        if let Some(current_mod) = self.disk_mtime() {
+            self.last_modified = Some(current_mod);
         }
     }
 

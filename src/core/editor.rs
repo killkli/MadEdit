@@ -539,6 +539,33 @@ impl EditorState {
         true
     }
 
+    /// 重新載入或重構後恢復游標位置與書籤集合，並自動進行行與欄的邊界防護
+    pub fn restore_state(
+        &mut self,
+        saved_pos: TextPosition,
+        saved_bookmarks: BTreeSet<usize>,
+        is_large_file: bool,
+    ) {
+        let max_line = self.lines.len().saturating_sub(1);
+        let target_line = saved_pos.line.min(max_line);
+        let target_col = if is_large_file
+            && self
+                .lines
+                .get(target_line)
+                .map(|l| l.is_empty())
+                .unwrap_or(true)
+        {
+            saved_pos.col
+        } else {
+            saved_pos.col.min(self.line_char_count(target_line))
+        };
+        self.set_caret(target_line, target_col);
+        self.bookmarks = saved_bookmarks
+            .into_iter()
+            .filter(|&line| line <= max_line)
+            .collect();
+    }
+
     /// 當自指定行開始刪除了 count 行時，同步校正書籤集合
     fn adjust_bookmarks_after_removal(&mut self, start_line: usize, count: usize) {
         if count == 0 {

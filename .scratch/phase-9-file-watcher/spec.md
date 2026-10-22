@@ -36,3 +36,7 @@
 1. 使用 `slint::Timer` 每 1.5 秒執行一次無負載的 `doc.lock().unwrap().check_external_change()`。
 2. 若為真且 `has-external-change` 尚未開啟，透過 `upgrade_in_event_loop` 啟用橫幅提示。
 3. 綁定 `reload_file` 與 `ignore_external_change` 回呼，重新同步文字、可視行、語法、狀態列並關閉橫幅。
+
+### 2.4 跨平台檔案鎖處理（Windows 相容性保證）
+- Windows 平台在檔案有活動之 `memmap2::Mmap` 映射時，會禁止任何行程寫入該檔案（Win32 1224: `ERROR_USER_MAPPED_FILE`）。
+- 為確保外部程序（如 Git、其他編輯器、腳本）能自由寫入檔案以利本功能正常運作，小型檔案（<= 512KB）在載入後將 `PieceTable` 轉為純記憶體位元組持有，徹底釋放檔案映射控制代碼。

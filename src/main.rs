@@ -152,6 +152,7 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     }
 
     ui.set_is_modified(doc.is_modified);
+    ui.set_has_external_change(false);
     ui.set_status_info(format_status_info(doc).into());
 }
 
@@ -208,11 +209,11 @@ fn main() -> Result<(), slint::PlatformError> {
             move || {
                 let has_change = doc_clone.borrow().check_external_change();
                 if has_change {
-                    if let Some(ui) = ui_handle.upgrade() {
+                    let _ = ui_handle.upgrade_in_event_loop(|ui| {
                         if !ui.get_has_external_change() {
                             ui.set_has_external_change(true);
                         }
-                    }
+                    });
                 }
             },
         );
@@ -234,7 +235,6 @@ fn main() -> Result<(), slint::PlatformError> {
             }
 
             if let Some(ui) = ui_handle.upgrade() {
-                ui.set_has_external_change(false);
                 sync_ui_from_doc(&ui, &d);
             }
         });
@@ -260,7 +260,6 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 }
                 if let Some(ui) = ui_handle.upgrade() {
-                    ui.set_has_external_change(false);
                     sync_ui_from_doc(&ui, &d);
                 }
             }
@@ -278,7 +277,6 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             }
             if let Some(ui) = ui_handle.upgrade() {
-                ui.set_has_external_change(false);
                 sync_ui_from_doc(&ui, &d);
             }
         });
@@ -292,7 +290,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let mut d = doc_clone.borrow_mut();
             d.ignore_external_change();
             if let Some(ui) = ui_handle.upgrade() {
-                ui.set_has_external_change(false);
+                sync_ui_from_doc(&ui, &d);
             }
         });
     }
