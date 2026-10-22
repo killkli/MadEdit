@@ -17,16 +17,19 @@ fn embed_windows_icon() {
     }
 
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let icon_path = manifest_dir.join("assets").join("madedit-icon.ico");
+    let icon_src = manifest_dir.join("assets").join("madedit-icon.ico");
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let icon_dst = out_dir.join("madedit-icon.ico");
     let rc_path = out_dir.join("madedit.rc");
 
-    // 資源檔需要的是絕對路徑，才能不受建置工作目錄影響
-    println!("cargo:rerun-if-changed={}", icon_path.display());
-    std::fs::write(&rc_path, format!("1 ICON \"{}\"\n", icon_path.display())).unwrap();
+    println!("cargo:rerun-if-changed={}", icon_src.display());
+    // 以平台原生路徑（PathBuf::join，相當於 C# Path.Combine）將圖示複製至 OUT_DIR，
+    // 讓 .rc 內僅需寫純檔名 "madedit-icon.ico"，避免 C 前置處理器將路徑分隔符 `\` 當作跳脫字元（如 `\a`）
+    std::fs::copy(&icon_src, &icon_dst).unwrap();
+    std::fs::write(&rc_path, "1 ICON \"madedit-icon.ico\"\n").unwrap();
 
     // .manifest_optional()：圖示屬於裝飾性資源，缺失時不視為建置失敗
-    if let Err(err) = embed_resource::compile(rc_path.to_str().unwrap(), embed_resource::NONE)
+    if let Err(err) = embed_resource::compile(&rc_path, embed_resource::NONE)
         .manifest_optional()
     {
         println!(
