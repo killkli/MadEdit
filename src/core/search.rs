@@ -60,6 +60,10 @@ pub fn parse_hex_query(query: &str) -> Result<Vec<u8>, String> {
     if clean.is_empty() {
         return Err("搜尋內容不可為空".to_string());
     }
+    // 先確認全為 ASCII 十六進位數字：之後以位元組切片取兩字一組才安全（中文等多位元組字元會切在字元中間而 panic）
+    if let Some(c) = clean.chars().find(|c| !c.is_ascii_hexdigit()) {
+        return Err(format!("無效的十六進位字元: {}", c));
+    }
     if clean.len() % 2 != 0 {
         return Err("十六進位序列長度必須為偶數".to_string());
     }
@@ -277,6 +281,15 @@ mod tests {
         let data = b"Header...Hello World...Hello!";
         let matches = find_hex_matches(data, &parsed);
         assert_eq!(matches, vec![9, 23]);
+    }
+
+    #[test]
+    fn test_hex_query_rejects_non_hex_without_panic() {
+        // 位元組長度為偶數的多位元組字元曾因位元組切片落在字元中間而 panic
+        assert!(parse_hex_query("中文").is_err());
+        assert!(parse_hex_query("A中").is_err());
+        // from_str_radix 會接受正號，必須明確拒絕
+        assert!(parse_hex_query("+1").is_err());
     }
 
     #[test]
