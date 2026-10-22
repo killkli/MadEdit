@@ -12,6 +12,11 @@ use crate::core::spell;
 use crate::core::syntax;
 use crate::core::textops::{self, WordCount};
 
+/// 對話框視窗：第一次出現時置於主視窗中央（之後可自由拖曳）
+fn dialog_window(ctx: &egui::Context, title: impl Into<egui::WidgetText>) -> egui::Window<'static> {
+    egui::Window::new(title).pivot(egui::Align2::CENTER_CENTER).default_pos(ctx.content_rect().center())
+}
+
 /// 選項對話框的狀態
 #[derive(Default)]
 pub struct OptionsState {
@@ -99,7 +104,7 @@ impl App {
         match &mut dlg {
             Dialog::Options(st) => self.options_dialog(ctx, st, &mut open),
             Dialog::Font { filter, family, size } => {
-                egui::Window::new("字型").open(&mut open).default_size([420.0, 460.0]).show(ctx, |ui| {
+                dialog_window(ctx, "字型").open(&mut open).default_size([420.0, 460.0]).show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label("篩選：");
                         ui.text_edit_singleline(filter);
@@ -133,7 +138,7 @@ impl App {
                 });
             }
             Dialog::PageSetup => {
-                egui::Window::new("頁面設定").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "頁面設定").open(&mut open).show(ctx, |ui| {
                     print_options_ui(ui, &mut self.settings.print);
                     ui.label("列印時會以瀏覽器開啟排版後的頁面，紙張大小與邊界請在瀏覽器的列印對話框中設定。");
                     if ui.button("關閉").clicked() {
@@ -143,7 +148,7 @@ impl App {
             }
             Dialog::RecentFiles { filter } => {
                 let mut chosen = None;
-                egui::Window::new("最近使用的檔案").open(&mut open).default_size([520.0, 360.0]).show(ctx, |ui| {
+                dialog_window(ctx, "最近使用的檔案").open(&mut open).default_size([520.0, 360.0]).show(ctx, |ui| {
                     let resp = ui.add(egui::TextEdit::singleline(filter).hint_text("篩選"));
                     resp.request_focus();
                     let f = filter.to_lowercase();
@@ -166,7 +171,7 @@ impl App {
             }
             Dialog::Width { full } => {
                 let full = *full;
-                egui::Window::new(if full { "依選項轉為全形" } else { "依選項轉為半形" }).open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, if full { "依選項轉為全形" } else { "依選項轉為半形" }).open(&mut open).show(ctx, |ui| {
                     width_options_ui(ui, &mut self.settings.width);
                     ui.horizontal(|ui| {
                         if ui.button("確定").clicked() {
@@ -191,7 +196,7 @@ impl App {
                 });
             }
             Dialog::InsertNumbers => {
-                egui::Window::new("插入遞增數字").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "插入遞增數字").open(&mut open).show(ctx, |ui| {
                     let n = &mut self.settings.numbers;
                     egui::Grid::new("numbers").num_columns(2).show(ui, |ui| {
                         ui.label("起始值：");
@@ -237,7 +242,7 @@ impl App {
                 });
             }
             Dialog::Sort => {
-                egui::Window::new("排序選項").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "排序選項").open(&mut open).show(ctx, |ui| {
                     let s = &mut self.settings.sort;
                     ui.horizontal(|ui| {
                         ui.radio_value(&mut s.descending, false, "遞增");
@@ -259,7 +264,7 @@ impl App {
             }
             Dialog::FindInFiles { query, replacement } => {
                 let mut start: Option<Option<String>> = None;
-                egui::Window::new("在檔案中尋找／取代").open(&mut open).default_width(520.0).show(ctx, |ui| {
+                dialog_window(ctx, "在檔案中尋找／取代").open(&mut open).default_width(520.0).show(ctx, |ui| {
                     let o = &mut self.settings.find_in_files;
                     egui::Grid::new("fif").num_columns(2).show(ui, |ui| {
                         ui.label("尋找：");
@@ -311,7 +316,7 @@ impl App {
                 }
             }
             Dialog::TempMacro { script, error } => {
-                egui::Window::new("執行暫存巨集").open(&mut open).default_size([520.0, 420.0]).show(ctx, |ui| {
+                dialog_window(ctx, "執行暫存巨集").open(&mut open).default_size([520.0, 420.0]).show(ctx, |ui| {
                     ui.label("巨集為 JSON 格式的步驟清單（可由「開始錄製」產生後在此修改）：");
                     egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                         ui.add(egui::TextEdit::multiline(script).code_editor().desired_width(f32::INFINITY));
@@ -336,7 +341,7 @@ impl App {
                 });
             }
             Dialog::Highlighting => {
-                egui::Window::new("語法突顯設定").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "語法突顯設定").open(&mut open).show(ctx, |ui| {
                     let themes = syntax::theme_names();
                     ui.horizontal(|ui| {
                         ui.label("淺色主題：");
@@ -370,7 +375,7 @@ impl App {
                 });
             }
             Dialog::SourceFormatter => {
-                egui::Window::new("原始碼格式化設定（AStyle）").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "原始碼格式化設定（AStyle）").open(&mut open).show(ctx, |ui| {
                     ui.label("AStyle 命令列選項：");
                     ui.add(egui::TextEdit::singleline(&mut self.settings.astyle_options).desired_width(380.0));
                     ui.label(RichText::new("需要系統已安裝 astyle 執行檔。選項說明請見 https://astyle.sourceforge.net/astyle.html").small());
@@ -380,7 +385,7 @@ impl App {
                 });
             }
             Dialog::PurgeHistories => {
-                egui::Window::new("清除歷史紀錄").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "清除歷史紀錄").open(&mut open).show(ctx, |ui| {
                     ui.label("要清除最近使用的檔案、搜尋與取代紀錄、資料夾紀錄與游標位置紀錄嗎？");
                     ui.horizontal(|ui| {
                         if ui.button("清除").clicked() {
@@ -395,7 +400,7 @@ impl App {
                 });
             }
             Dialog::ConvertEncoding { encoding, bom } => {
-                egui::Window::new("轉換檔案編碼").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "轉換檔案編碼").open(&mut open).show(ctx, |ui| {
                     ui.label(format!("目前編碼：{}", self.doc().encoding.name()));
                     ui.horizontal(|ui| {
                         ui.label("轉換為：");
@@ -423,7 +428,7 @@ impl App {
                 });
             }
             Dialog::WordCount(wc, sel) => {
-                egui::Window::new("字數統計").open(&mut open).show(ctx, |ui| {
+                dialog_window(ctx, "字數統計").open(&mut open).show(ctx, |ui| {
                     ui.label(if *sel { "（選取範圍）" } else { "（整份文件）" });
                     egui::Grid::new("wc").num_columns(2).show(ui, |ui| {
                         for (k, v) in [
@@ -448,7 +453,7 @@ impl App {
             Dialog::WindowList => {
                 let mut go = None;
                 let mut close_ids = Vec::new();
-                egui::Window::new("視窗清單").open(&mut open).default_size([480.0, 320.0]).show(ctx, |ui| {
+                dialog_window(ctx, "視窗清單").open(&mut open).default_size([480.0, 320.0]).show(ctx, |ui| {
                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                         for (i, t) in self.tabs.iter().enumerate() {
                             ui.horizontal(|ui| {
@@ -475,7 +480,7 @@ impl App {
                 }
             }
             Dialog::About => {
-                egui::Window::new("關於 MadEdit").open(&mut open).collapsible(false).show(ctx, |ui| {
+                dialog_window(ctx, "關於 MadEdit").open(&mut open).collapsible(false).show(ctx, |ui| {
                     ui.heading(format!("MadEdit {}", env!("CARGO_PKG_VERSION")));
                     ui.label("以 Rust 與 egui 重製的文字／十六進位編輯器。");
                     ui.label("原版 MadEdit 由 Alston Chen 開發，MadEdit-Mod 由 Minggang Li 維護（GPL）。");
@@ -563,7 +568,7 @@ impl App {
                 st.capturing = None;
             }
         }
-        egui::Window::new("選項").open(open).default_size([620.0, 480.0]).show(ctx, |ui| {
+        dialog_window(ctx, "選項").open(open).default_size([620.0, 480.0]).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 for (i, name) in ["一般", "編輯", "新文件", "列印", "按鍵", "拼字檢查"].iter().enumerate() {
                     ui.selectable_value(&mut st.tab, i, *name);
