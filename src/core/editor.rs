@@ -270,6 +270,67 @@ pub fn expand_tabs(line: &str, tab_size: usize) -> String {
     out
 }
 
+/// 將語法突顯後的分段套用可視控制字元標記（半形空白轉為 '·'、Tab 展開處轉為 '»' 與空白，並套用獨立柔和青綠色）
+pub fn apply_visible_whitespace(
+    raw_line: &str,
+    spans: Vec<HighlightSpan>,
+    is_dark: bool,
+) -> Vec<HighlightSpan> {
+    if raw_line.is_empty() || spans.is_empty() {
+        return spans;
+    }
+
+    let ws_color = if is_dark {
+        (82, 165, 130)
+    } else {
+        (120, 165, 140)
+    };
+
+    // 建立與 expand_tabs(raw_line, 4) 字元一對一對齊的控制字元遮罩
+    let mut mask: Vec<Option<char>> = Vec::new();
+    let mut visual_col = 0;
+    for c in raw_line.chars() {
+        if c == '\t' {
+            let next_tab = ((visual_col / 4) + 1) * 4;
+            let spaces = next_tab - visual_col;
+            mask.push(Some('»'));
+            for _ in 1..spaces {
+                mask.push(Some(' '));
+            }
+            visual_col = next_tab;
+        } else if c == ' ' {
+            mask.push(Some('·'));
+            visual_col += 1;
+        } else {
+            mask.push(None);
+            visual_col += char_visual_columns(c);
+        }
+    }
+
+    let mut out_spans: Vec<HighlightSpan> = Vec::new();
+    let mut char_idx = 0;
+
+    for span in spans {
+        for ch in span.text.chars() {
+            let (out_ch, out_color) = match mask.get(char_idx).copied().flatten() {
+                Some(ctrl_ch) => (ctrl_ch, ws_color),
+                None => (ch, span.color_rgb),
+            };
+            char_idx += 1;
+
+            if let Some(last) = out_spans.last_mut() {
+                if last.color_rgb == out_color {
+                    last.text.push(out_ch);
+                    continue;
+                }
+            }
+            out_spans.push(HighlightSpan::new(out_ch.to_string(), out_color));
+        }
+    }
+
+    out_spans
+}
+
 /// 核心編輯狀態：管理行清單快取、選取狀態、游標導覽、書籤與基礎編輯邏輯
 #[derive(Debug, Clone)]
 pub struct EditorState {
@@ -278,6 +339,7 @@ pub struct EditorState {
     pub viewport: Viewport,
     pub clipboard: String,
     pub bookmarks: BTreeSet<usize>,
+    pub overwrite_mode: bool,
 }
 
 impl Default for EditorState {
@@ -288,6 +350,7 @@ impl Default for EditorState {
             viewport: Viewport::default(),
             clipboard: String::new(),
             bookmarks: BTreeSet::new(),
+            overwrite_mode: false,
         }
     }
 }
@@ -304,6 +367,7 @@ pub struct VisibleLineData {
     pub has_caret: bool,
     pub caret_x: f32,
     pub has_bookmark: bool,
+    pub eol_x: f32,
 }
 
 #[allow(dead_code)]
@@ -882,15 +946,25 @@ impl EditorState {
             self.scroll_caret_into_view();
             return;
         }
-        self.delete_selection();
+        let had_sel = self.delete_selection();
         let head = self.selection.head;
         let mut chars: Vec<char> = self.lines[head.line].chars().collect();
-        chars.insert(head.col, c);
+        if self.overwrite_mode && !had_sel && c != '\t' && head.col < chars.len() {
+            chars[head.col] = c;
+        } else {
+            chars.insert(head.col, c);
+        }
         self.lines[head.line] = chars.into_iter().collect();
 
         let new_pos = TextPosition::new(head.line, head.col + 1);
         self.selection = Selection::caret(new_pos);
         self.scroll_caret_into_view();
+    }
+
+    /// 切換插入 (Insert) 與覆寫 (Overwrite) 模式，回傳切換後是否為覆寫模式
+    pub fn toggle_overwrite_mode(&mut self) -> bool {
+        self.overwrite_mode = !self.overwrite_mode;
+        self.overwrite_mode
     }
 
     /// 在游標位置插入字串
@@ -1153,6 +1227,9 @@ impl EditorState {
                 sel_width = width_cols as f32 * cell_width;
             }
 
+            let line_end_vcol = char_col_to_visual_col(line_text, line_text.chars().count());
+            let eol_x = line_end_vcol as f32 * cell_width;
+
             result.push(VisibleLineData {
                 line_number,
                 text: expand_tabs(line_text, 4),
@@ -1163,6 +1240,7 @@ impl EditorState {
                 has_caret,
                 caret_x,
                 has_bookmark: self.bookmarks.contains(&line_idx),
+                eol_x,
             });
         }
         result
@@ -1601,5 +1679,28 @@ mod tests {
         assert_eq!(ed2.lines, vec!["FirstSecondThird"]);
         // 合併後 Third 行被刪除，書籤自動清理
         assert!(ed2.bookmarks.is_empty());
+    }
+
+    #[test]
+    fn test_overwrite_mode_and_visible_whitespace() {
+        let mut editor = EditorState::from_text("abc\tdef");
+        editor.set_caret(0, 1); // 游標在 'b'
+        assert!(editor.toggle_overwrite_mode());
+        editor.insert_char('X');
+        assert_eq!(editor.lines[0], "aXc\tdef");
+        assert_eq!(editor.selection.head.col, 2);
+
+        // 驗證 eol_x 與 apply_visible_whitespace
+        let vlines = editor.generate_visible_lines(10.0);
+        assert_eq!(vlines.len(), 1);
+        // "aXc\tdef" 展開後為 "aXc def" 共 7 欄 -> eol_x = 70.0
+        assert_eq!(vlines[0].eol_x, 70.0);
+
+        let raw = "\ta b";
+        let expanded = expand_tabs(raw, 4);
+        let base_spans = vec![HighlightSpan::new(expanded, (200, 200, 200))];
+        let ws_spans = apply_visible_whitespace(raw, base_spans, true);
+        let joined: String = ws_spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(joined, "»   a·b");
     }
 }

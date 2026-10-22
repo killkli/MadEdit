@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use encoding_rs::Encoding;
 
-use super::editor::{EditorState, Selection};
+use super::editor::{apply_visible_whitespace, EditorState, Selection};
 use super::hex::HexDump;
 use super::model::{EditMode, NewLineFormat};
 use super::piece_table::{LineIndex, PieceTable};
@@ -10,7 +10,7 @@ use super::search::{
     build_regex, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
     parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
 };
-use super::syntax::{detect_syntax_from_path, highlight_lines};
+use super::syntax::{detect_syntax_from_path, highlight_lines_with_theme};
 
 /// 編輯器支援的 10 種常用字元編碼標準名稱清單（依 UI 選單順序排列）
 pub const SUPPORTED_ENCODINGS: &[&str] = &[
@@ -46,6 +46,8 @@ pub struct DocumentBuffer {
     pub editor: EditorState,
     pub hex_start_offset: usize,
     pub last_modified: Option<std::time::SystemTime>,
+    pub is_dark_mode: bool,
+    pub show_control_chars: bool,
 }
 
 impl Default for DocumentBuffer {
@@ -68,6 +70,8 @@ impl Default for DocumentBuffer {
             editor: EditorState::default(),
             hex_start_offset: 0,
             last_modified: None,
+            is_dark_mode: false,
+            show_control_chars: false,
         }
     }
 }
@@ -238,30 +242,112 @@ impl DocumentBuffer {
             && self.editor.lines.len() == self.line_index.line_count()
             && self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT;
 
-        let mut lines = if has_cached_lines {
+        let raw_lines: Vec<String> = if has_cached_lines {
             let end_line = (start_line + count).min(self.editor.lines.len());
-            let slice = if start_line < self.editor.lines.len() {
-                &self.editor.lines[start_line..end_line]
+            if start_line < self.editor.lines.len() {
+                self.editor.lines[start_line..end_line].to_vec()
             } else {
-                &[]
-            };
-            self.editor.generate_visible_lines_with_text(slice, cell_width)
+                Vec::new()
+            }
         } else {
             // 從 Piece Table 透過 LineIndex 按需解碼當前可見的行
-            let visible_texts = self
-                .line_index
-                .fetch_lines(&self.piece_table, self.encoding, start_line, count);
-            self.editor.generate_visible_lines_with_text(&visible_texts, cell_width)
+            self.line_index
+                .fetch_lines(&self.piece_table, self.encoding, start_line, count)
         };
 
-        // 依據當前設定之語法為可視行產生多色分段（Viewport 按需高亮，支援多行註解與字串）
+        let mut lines = self
+            .editor
+            .generate_visible_lines_with_text(&raw_lines, cell_width);
+
+        // 依據當前設定之語法與深淺色主題為可視行產生多色分段（Viewport 按需高亮，支援多行註解與字串）
         let line_texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
-        let spans_batch = highlight_lines(&self.current_syntax, &line_texts);
-        for (line_data, spans) in lines.iter_mut().zip(spans_batch) {
-            line_data.spans = spans;
+        let spans_batch =
+            highlight_lines_with_theme(&self.current_syntax, &line_texts, self.is_dark_mode);
+        for ((line_data, spans), raw_line) in
+            lines.iter_mut().zip(spans_batch).zip(raw_lines.iter())
+        {
+            if self.show_control_chars {
+                line_data.spans = apply_visible_whitespace(raw_line, spans, self.is_dark_mode);
+            } else {
+                line_data.spans = spans;
+            }
         }
 
         lines
+    }
+
+    /// 計算原版 MadEdit 狀態列所需之游標位置與選取統計：(char_offset, byte_offset, sel_chars, sel_bytes)
+    pub fn cursor_and_selection_metrics(&self) -> (usize, usize, usize, usize) {
+        if self.edit_mode == EditMode::Hex {
+            return (self.hex_start_offset, self.hex_start_offset, 0, 0);
+        }
+
+        let sel_text = self.editor.selected_text();
+        let sel_chars = sel_text.chars().count();
+        let sel_bytes = if sel_chars > 0 {
+            Self::encode_str(&sel_text, self.encoding, false).len()
+        } else {
+            0
+        };
+
+        let head = self.editor.selection.head;
+        let has_cached_lines = !self.editor.lines.is_empty()
+            && self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT;
+
+        if has_cached_lines {
+            let nl_str = self.newline_format.newline_str();
+            let nl_chars = nl_str.chars().count();
+            let nl_bytes = Self::encode_str(nl_str, self.encoding, false).len();
+            let bom_bytes = if self.has_bom {
+                if self.encoding == encoding_rs::UTF_8 {
+                    3
+                } else if self.encoding == encoding_rs::UTF_16LE
+                    || self.encoding == encoding_rs::UTF_16BE
+                {
+                    2
+                } else {
+                    0
+                }
+            } else {
+                0
+            };
+
+            let mut char_offset = 0;
+            let mut byte_offset = bom_bytes;
+
+            for line_idx in 0..head.line.min(self.editor.lines.len()) {
+                let line = &self.editor.lines[line_idx];
+                char_offset += line.chars().count() + nl_chars;
+                byte_offset += Self::encode_str(line, self.encoding, false).len() + nl_bytes;
+            }
+
+            if let Some(cur_line) = self.editor.lines.get(head.line) {
+                let prefix: String = cur_line.chars().take(head.col).collect();
+                char_offset += prefix.chars().count();
+                byte_offset += Self::encode_str(&prefix, self.encoding, false).len();
+            }
+
+            (char_offset, byte_offset, sel_chars, sel_bytes)
+        } else {
+            let byte_offset = self
+                .line_index
+                .line_byte_range(head.line)
+                .map(|(s, _)| s + head.col)
+                .unwrap_or(0)
+                .min(self.piece_table.len());
+            (byte_offset, byte_offset, sel_chars, sel_bytes)
+        }
+    }
+
+    /// 產生原版 MadEdit 風格的編碼與換行狀態碼（如 "UTF-8.BOM.DOS" 或 "UTF-8.UNIX"）
+    pub fn encoding_status_code(&self) -> String {
+        let bom_part = if self.has_bom { ".BOM" } else { "" };
+        format!(
+            "{}{}.{}",
+            self.encoding.name(),
+            bom_part,
+            self.newline_format.short_code()
+        )
     }
 
     /// 手動設定編輯器語法突顯語言（如 "Rust", "Python", "Plain Text"）
@@ -1350,6 +1436,26 @@ mod tests {
 
         // 清理暫存檔
         let _ = std::fs::remove_file(&tmp_file);
+    }
+
+    #[test]
+    fn test_cursor_and_selection_metrics_and_encoding_code() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("Hello\nWorld".to_string());
+        doc.newline_format = NewLineFormat::Dos; // CRLF = 2 chars, 2 bytes
+        doc.has_bom = true;
+
+        assert_eq!(doc.encoding_status_code(), "UTF-8.BOM.DOS");
+
+        // 游標移至第 2 行 (line 1) 第 2 個字元 ('r' 之前)
+        doc.editor.set_caret(1, 2);
+        let (char_off, byte_off, sel_chars, sel_bytes) = doc.cursor_and_selection_metrics();
+        // Line 0 ("Hello" = 5) + CRLF (2) + "Wo" (2) = 9 chars
+        assert_eq!(char_off, 9);
+        // UTF-8 BOM (3) + 9 bytes = 12 bytes
+        assert_eq!(byte_off, 12);
+        assert_eq!(sel_chars, 0);
+        assert_eq!(sel_bytes, 0);
     }
 }
 

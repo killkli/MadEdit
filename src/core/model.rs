@@ -48,6 +48,14 @@ impl NewLineFormat {
         }
     }
 
+    pub fn short_code(&self) -> &'static str {
+        match self {
+            NewLineFormat::Dos => "DOS",
+            NewLineFormat::Unix => "UNIX",
+            NewLineFormat::Mac => "MAC",
+        }
+    }
+
     pub fn from_label(label: &str) -> Option<Self> {
         let trimmed = label.trim();
         if trimmed.starts_with("CRLF") || trimmed == "Dos" {
