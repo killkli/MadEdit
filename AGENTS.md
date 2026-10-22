@@ -51,7 +51,8 @@ D:\Git\MadEdit\
 │   ├── make_toolbar_icons.py # XPM → PNG 轉換腳本（純標準函式庫）
 │   └── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
 ├── scripts\
-│   └── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
+│   ├── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
+│   └── make_linux_dist.sh  # 產生 Linux x86_64 發行壓縮檔（cargo-zigbuild，glibc 2.28）
 ├── src\
 │   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
 │   ├── app\                # egui 介面層
@@ -109,6 +110,10 @@ D:\Git\MadEdit\
 - **打包 macOS App**：
   ```bash
   cargo build --release && ./scripts/make_appbundle.sh
+  ```
+- **打包 Linux 發行檔**（需 `cargo-zigbuild` 與 zig，輸出至 `dist/`）：
+  ```bash
+  CARGO_ZIGBUILD_ZIG_PATH=$(which python-zig) ./scripts/make_linux_dist.sh
   ```
 - **啟動應用程式**：
   ```powershell
