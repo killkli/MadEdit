@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 02: 搜尋導覽定位與取代操作
 
