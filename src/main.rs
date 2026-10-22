@@ -55,11 +55,9 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     // 同步游標位置座標資訊（列塊模式下顯示選取幾行幾欄）
     let head = doc.editor.selection.head;
     if doc.editor.selection.is_block() && !doc.editor.selection.is_empty() {
-        let (min_l, max_l, min_v, max_v) = doc.editor.selection.visual_bounds(&doc.editor);
-        let lines = max_l - min_l + 1;
-        let cols = max_v.saturating_sub(min_v);
+        let bounds = doc.editor.selection.visual_bounds(&doc.editor);
         ui.set_caret_status(
-            format!("Block: {}x{} (Ln {}, Col {})", lines, cols, head.line + 1, head.col + 1).into(),
+            format!("Block: {}x{} (Ln {}, Col {})", bounds.line_count(), bounds.col_width(), head.line + 1, head.col + 1).into(),
         );
     } else {
         ui.set_caret_status(format!("Ln {}, Col {}", head.line + 1, head.col + 1).into());
@@ -326,12 +324,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let target_vcol = (x / CELL_WIDTH).max(0.0).round() as usize;
             let pos = d.editor.pos_from_pixel(x, y, CELL_WIDTH, LINE_HEIGHT);
             if is_block_mode {
-                let anchor = d.editor.selection.anchor;
-                let anchor_vcol = d.editor.selection.anchor_vcol.unwrap_or_else(|| {
-                    let line_text = d.editor.lines.get(anchor.line).map(|s| s.as_str()).unwrap_or("");
-                    char_col_to_visual_col(line_text, anchor.col)
-                });
-                d.editor.selection = Selection::block(anchor, pos, anchor_vcol, target_vcol);
+                d.editor.update_block_selection(pos, target_vcol);
             } else {
                 d.editor.selection.head = pos;
             }

@@ -19,6 +19,33 @@ pub enum SelectionKind {
     Block,
 }
 
+/// 矩形選取的二維視覺幾何邊界
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisualBounds {
+    pub min_line: usize,
+    pub max_line: usize,
+    pub min_vcol: usize,
+    pub max_vcol: usize,
+}
+
+impl VisualBounds {
+    pub fn new(min_line: usize, max_line: usize, min_vcol: usize, max_vcol: usize) -> Self {
+        Self { min_line, max_line, min_vcol, max_vcol }
+    }
+
+    pub fn line_count(&self) -> usize {
+        self.max_line - self.min_line + 1
+    }
+
+    pub fn col_width(&self) -> usize {
+        self.max_vcol.saturating_sub(self.min_vcol)
+    }
+
+    pub fn is_vertical_line(&self) -> bool {
+        self.min_vcol == self.max_vcol && self.max_line > self.min_line
+    }
+}
+
 /// 文件中的文字選取範圍（由錨點 anchor、游標頭部 head 與選取種類組成）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Selection {
@@ -50,7 +77,8 @@ impl Selection {
         }
     }
 
-    pub fn visual_bounds(&self, editor: &EditorState) -> (usize, usize, usize, usize) {
+    /// 計算矩形選取的二維邊界範圍
+    pub fn visual_bounds(&self, editor: &EditorState) -> VisualBounds {
         let min_line = self.anchor.line.min(self.head.line);
         let max_line = self.anchor.line.max(self.head.line);
 
@@ -65,7 +93,7 @@ impl Selection {
 
         let min_vcol = v1.min(v2);
         let max_vcol = v1.max(v2);
-        (min_line, max_line, min_vcol, max_vcol)
+        VisualBounds::new(min_line, max_line, min_vcol, max_vcol)
     }
     pub fn new(anchor: TextPosition, head: TextPosition) -> Self {
         Self {
@@ -184,7 +212,6 @@ pub fn extract_visual_slice(
     line: &str,
     min_vcol: usize,
     max_vcol: usize,
-    pad_spaces: bool,
 ) -> (String, usize, usize) {
     let mut current_vcol = 0;
     let mut start_char = None;
@@ -216,16 +243,6 @@ pub fn extract_visual_slice(
     let char_count = line.chars().count();
     let s_char = start_char.unwrap_or(char_count);
     let e_char = end_char.unwrap_or(s_char);
-
-    if pad_spaces && max_vcol > min_vcol {
-        let actual_end_vcol = current_vcol.max(min_vcol);
-        if actual_end_vcol < max_vcol {
-            let pad_count = max_vcol - actual_end_vcol;
-            for _ in 0..pad_count {
-                result.push(' ');
-            }
-        }
-    }
 
     (result, s_char, e_char)
 }
@@ -286,6 +303,16 @@ pub struct VisibleLineData {
 impl EditorState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 更新列塊矩形選取的頭部位置與目標視覺欄位
+    pub fn update_block_selection(&mut self, head_pos: TextPosition, target_vcol: usize) {
+        let anchor = self.selection.anchor;
+        let anchor_vcol = self.selection.anchor_vcol.unwrap_or_else(|| {
+            let line_text = self.lines.get(anchor.line).map(|s| s.as_str()).unwrap_or("");
+            char_col_to_visual_col(line_text, anchor.col)
+        });
+        self.selection = Selection::block(anchor, head_pos, anchor_vcol, target_vcol);
     }
 
     /// 從整篇文字內容初始化行列表
@@ -439,11 +466,11 @@ impl EditorState {
             return String::new();
         }
         if self.selection.is_block() {
-            let (min_line, max_line, min_vcol, max_vcol) = self.selection.visual_bounds(self);
+            let bounds = self.selection.visual_bounds(self);
             let mut result = Vec::new();
-            for line_idx in min_line..=max_line {
+            for line_idx in bounds.min_line..=bounds.max_line {
                 if let Some(line) = self.lines.get(line_idx) {
-                    let (slice, _, _) = extract_visual_slice(line, min_vcol, max_vcol, false);
+                    let (slice, _, _) = extract_visual_slice(line, bounds.min_vcol, bounds.max_vcol);
                     result.push(slice);
                 }
             }
@@ -479,10 +506,10 @@ impl EditorState {
             return false;
         }
         if self.selection.is_block() {
-            let (min_line, max_line, min_vcol, max_vcol) = self.selection.visual_bounds(self);
-            for line_idx in min_line..=max_line {
+            let bounds = self.selection.visual_bounds(self);
+            for line_idx in bounds.min_line..=bounds.max_line {
                 if line_idx < self.lines.len() {
-                    let (_, start_c, end_c) = extract_visual_slice(&self.lines[line_idx], min_vcol, max_vcol, false);
+                    let (_, start_c, end_c) = extract_visual_slice(&self.lines[line_idx], bounds.min_vcol, bounds.max_vcol);
                     if end_c > start_c {
                         let mut chars: Vec<char> = self.lines[line_idx].chars().collect();
                         let end_bound = end_c.min(chars.len());
@@ -493,11 +520,21 @@ impl EditorState {
                 }
             }
             let head_line = self.selection.head.line.min(self.lines.len().saturating_sub(1));
+            let anchor_line = self.selection.anchor.line.min(self.lines.len().saturating_sub(1));
             let head_char = visual_col_to_char_col(
                 self.lines.get(head_line).map(|s| s.as_str()).unwrap_or(""),
-                min_vcol,
+                bounds.min_vcol,
             );
-            self.selection = Selection::caret(TextPosition::new(head_line, head_char));
+            let anchor_char = visual_col_to_char_col(
+                self.lines.get(anchor_line).map(|s| s.as_str()).unwrap_or(""),
+                bounds.min_vcol,
+            );
+            self.selection = Selection::block(
+                TextPosition::new(anchor_line, anchor_char),
+                TextPosition::new(head_line, head_char),
+                bounds.min_vcol,
+                bounds.min_vcol,
+            );
             self.clamp_caret();
             self.scroll_caret_into_view();
             return true;
@@ -533,26 +570,38 @@ impl EditorState {
             self.insert_newline();
             return;
         }
-        if self.selection.is_block() && !self.selection.is_empty() {
-            let (min_line, max_line, min_vcol, _) = self.selection.visual_bounds(self);
-            self.delete_selection();
-            for line_idx in min_line..=max_line {
+        if self.selection.is_block() {
+            let bounds = self.selection.visual_bounds(self);
+            if !self.selection.is_empty() {
+                self.delete_selection();
+            }
+            for line_idx in bounds.min_line..=bounds.max_line {
                 if line_idx < self.lines.len() {
                     let line_text = &self.lines[line_idx];
-                    let char_col = visual_col_to_char_col(line_text, min_vcol);
+                    let char_col = visual_col_to_char_col(line_text, bounds.min_vcol);
                     let mut chars: Vec<char> = line_text.chars().collect();
                     let insert_pos = char_col.min(chars.len());
                     chars.insert(insert_pos, c);
                     self.lines[line_idx] = chars.into_iter().collect();
                 }
             }
-            let next_vcol = min_vcol + char_visual_columns(c);
+            let next_vcol = bounds.min_vcol + char_visual_columns(c);
             let head_line = self.selection.head.line.min(self.lines.len().saturating_sub(1));
+            let anchor_line = self.selection.anchor.line.min(self.lines.len().saturating_sub(1));
             let head_char = visual_col_to_char_col(
                 self.lines.get(head_line).map(|s| s.as_str()).unwrap_or(""),
                 next_vcol,
             );
-            self.selection = Selection::caret(TextPosition::new(head_line, head_char));
+            let anchor_char = visual_col_to_char_col(
+                self.lines.get(anchor_line).map(|s| s.as_str()).unwrap_or(""),
+                next_vcol,
+            );
+            self.selection = Selection::block(
+                TextPosition::new(anchor_line, anchor_char),
+                TextPosition::new(head_line, head_char),
+                next_vcol,
+                next_vcol,
+            );
             self.scroll_caret_into_view();
             return;
         }
@@ -569,16 +618,11 @@ impl EditorState {
 
     /// 在游標位置插入字串
     pub fn insert_text(&mut self, text: &str) {
-        self.delete_selection();
         for c in text.chars() {
             if c == '\r' {
                 continue;
             }
-            if c == '\n' {
-                self.insert_newline();
-            } else {
-                self.insert_char(c);
-            }
+            self.insert_char(c);
         }
     }
 
@@ -666,37 +710,40 @@ impl EditorState {
             return;
         }
         if self.selection.is_block() {
-            let (min_line, max_line, min_vcol, _) = self.selection.visual_bounds(self);
-            self.delete_selection();
+            let bounds = self.selection.visual_bounds(self);
+            if !self.selection.is_empty() {
+                self.delete_selection();
+            }
             let clip_lines: Vec<&str> = self.clipboard.split('\n').map(|s| s.trim_end_matches('\r')).collect();
+            let target_line_count = if clip_lines.len() > bounds.line_count() {
+                clip_lines.len()
+            } else {
+                bounds.line_count()
+            };
 
-            for (idx, line_idx) in (min_line..=max_line).enumerate() {
-                if line_idx < self.lines.len() {
-                    let text_to_insert = if clip_lines.len() == 1 {
-                        clip_lines[0]
-                    } else if idx < clip_lines.len() {
-                        clip_lines[idx]
-                    } else {
-                        ""
-                    };
-                    if !text_to_insert.is_empty() {
-                        let line_text = &self.lines[line_idx];
-                        let char_col = visual_col_to_char_col(line_text, min_vcol);
-                        let mut chars: Vec<char> = line_text.chars().collect();
-                        let insert_pos = char_col.min(chars.len());
-                        for (ci, ch) in text_to_insert.chars().enumerate() {
-                            chars.insert(insert_pos + ci, ch);
-                        }
-                        self.lines[line_idx] = chars.into_iter().collect();
+            for idx in 0..target_line_count {
+                let line_idx = bounds.min_line + idx;
+                while line_idx >= self.lines.len() {
+                    self.lines.push(String::new());
+                }
+                if idx < clip_lines.len() {
+                    let text_to_insert = clip_lines[idx];
+                    let line_text = &self.lines[line_idx];
+                    let char_col = visual_col_to_char_col(line_text, bounds.min_vcol);
+                    let mut chars: Vec<char> = line_text.chars().collect();
+                    let insert_pos = char_col.min(chars.len());
+                    for (ci, ch) in text_to_insert.chars().enumerate() {
+                        chars.insert(insert_pos + ci, ch);
                     }
+                    self.lines[line_idx] = chars.into_iter().collect();
                 }
             }
-            let head_line = self.selection.head.line.min(self.lines.len().saturating_sub(1));
+            let final_line = bounds.min_line + target_line_count.saturating_sub(1);
             let head_char = visual_col_to_char_col(
-                self.lines.get(head_line).map(|s| s.as_str()).unwrap_or(""),
-                min_vcol,
+                self.lines.get(final_line).map(|s| s.as_str()).unwrap_or(""),
+                bounds.min_vcol,
             );
-            self.selection = Selection::caret(TextPosition::new(head_line, head_char));
+            self.selection = Selection::caret(TextPosition::new(final_line, head_char));
             self.scroll_caret_into_view();
             return;
         }
@@ -756,22 +803,32 @@ impl EditorState {
             (TextPosition::default(), TextPosition::default())
         };
 
-        let (min_b_line, max_b_line, min_b_vcol, max_b_vcol) = if has_sel && is_block {
+        let bounds = if is_block {
             self.selection.visual_bounds(self)
         } else {
-            (0, 0, 0, 0)
+            VisualBounds::new(0, 0, 0, 0)
         };
 
         for (i, line_text) in visible_texts.iter().enumerate() {
             let line_idx = start_line + i;
             let line_number = (line_idx + 1) as i32;
 
-            // 游標判斷
-            let has_caret = self.selection.head.line == line_idx;
+            // 游標判斷：在列塊模式或垂直游標線下，覆蓋每行游標繪製
+            let is_in_block_lines = is_block && line_idx >= bounds.min_line && line_idx <= bounds.max_line;
+            let has_caret = if is_in_block_lines && (bounds.is_vertical_line() || !self.selection.is_empty()) {
+                true
+            } else {
+                self.selection.head.line == line_idx
+            };
+
             let caret_x = if has_caret {
-                let vcol = self.selection.head_vcol.unwrap_or_else(|| {
+                let vcol = if is_block {
+                    self.selection.head_vcol.unwrap_or_else(|| {
+                        char_col_to_visual_col(line_text, self.selection.head.col)
+                    })
+                } else {
                     char_col_to_visual_col(line_text, self.selection.head.col)
-                });
+                };
                 vcol as f32 * cell_width
             } else {
                 0.0
@@ -783,10 +840,10 @@ impl EditorState {
             let mut sel_width = 0.0;
 
             if has_sel && is_block {
-                if line_idx >= min_b_line && line_idx <= max_b_line && max_b_vcol > min_b_vcol {
+                if line_idx >= bounds.min_line && line_idx <= bounds.max_line && bounds.max_vcol > bounds.min_vcol {
                     line_has_sel = true;
-                    sel_start_x = min_b_vcol as f32 * cell_width;
-                    sel_width = (max_b_vcol - min_b_vcol) as f32 * cell_width;
+                    sel_start_x = bounds.min_vcol as f32 * cell_width;
+                    sel_width = (bounds.max_vcol - bounds.min_vcol) as f32 * cell_width;
                 }
             } else if has_sel && line_idx >= sel_start.line && line_idx <= sel_end.line {
                 line_has_sel = true;
@@ -976,24 +1033,23 @@ mod tests {
     #[test]
     fn test_extract_visual_slice() {
         let line = "Hello 世界\tEnd";
-        // "Hello " (0..6), "世界" (6..10, 2 cols each), "\t" (10..12 to reach col 12), "End" (12..15)
 
         // 擷取 "Hello" (0..5)
-        let (s1, start1, end1) = extract_visual_slice(line, 0, 5, false);
+        let (s1, start1, end1) = extract_visual_slice(line, 0, 5);
         assert_eq!(s1, "Hello");
         assert_eq!(start1, 0);
         assert_eq!(end1, 5);
 
         // 擷取 "世界" (6..10)
-        let (s2, start2, end2) = extract_visual_slice(line, 6, 10, false);
+        let (s2, start2, end2) = extract_visual_slice(line, 6, 10);
         assert_eq!(s2, "世界");
         assert_eq!(start2, 6);
         assert_eq!(end2, 8);
 
-        // 擷取短行並要求補空白
-        let short_line = "ABC"; // vcol 0..3
-        let (s3, start3, end3) = extract_visual_slice(short_line, 2, 6, true);
-        assert_eq!(s3, "C   ");
+        // 擷取短行超出範圍
+        let short_line = "ABC";
+        let (s3, start3, end3) = extract_visual_slice(short_line, 2, 6);
+        assert_eq!(s3, "C");
         assert_eq!(start3, 2);
         assert_eq!(end3, 3);
     }
@@ -1001,7 +1057,6 @@ mod tests {
     #[test]
     fn test_block_selection_and_rendering() {
         let mut editor = EditorState::from_text("123456789\n123456789\n123456789");
-        // 建立矩形選取：行 0 到 行 2，視覺欄位 2 到 6
         editor.selection = Selection::block(
             TextPosition::new(0, 2),
             TextPosition::new(2, 6),
@@ -1009,26 +1064,26 @@ mod tests {
             6,
         );
         assert!(editor.selection.is_block());
-        let (min_l, max_l, min_v, max_v) = editor.selection.visual_bounds(&editor);
-        assert_eq!(min_l, 0);
-        assert_eq!(max_l, 2);
-        assert_eq!(min_v, 2);
-        assert_eq!(max_v, 6);
+        let bounds = editor.selection.visual_bounds(&editor);
+        assert_eq!(bounds.min_line, 0);
+        assert_eq!(bounds.max_line, 2);
+        assert_eq!(bounds.min_vcol, 2);
+        assert_eq!(bounds.max_vcol, 6);
 
         // 驗證矩形可見行渲染
         let visible = editor.generate_visible_lines(10.0);
         assert_eq!(visible.len(), 3);
         for line in &visible {
             assert!(line.has_selection);
-            assert_eq!(line.sel_start_x, 20.0); // 2 * 10.0
-            assert_eq!(line.sel_width, 40.0);   // (6 - 2) * 10.0
+            assert_eq!(line.sel_start_x, 20.0);
+            assert_eq!(line.sel_width, 40.0);
+            assert!(line.has_caret); // 矩形選取覆蓋多行游標
         }
     }
 
     #[test]
     fn test_block_editing_operations() {
         let mut editor = EditorState::from_text("ABCDEF\nGHIJKL\nMNOPQR");
-        // 選取各行的中間欄位 [2, 4) -> "CD", "IJ", "OP"
         editor.selection = Selection::block(
             TextPosition::new(0, 2),
             TextPosition::new(2, 4),
@@ -1044,24 +1099,19 @@ mod tests {
         editor.delete_selection();
         assert_eq!(editor.lines, vec!["ABEF", "GHKL", "MNQR"]);
 
-        // 3. 驗證多行矩形同步打字：在各行位置插入 'X'
-        editor.selection = Selection::block(
-            TextPosition::new(0, 2),
-            TextPosition::new(2, 2),
-            2,
-            2,
-        );
+        // 3. 驗證多行矩形連續同步打字（不退化為單行）
         editor.insert_char('X');
-        assert_eq!(editor.lines, vec!["ABXEF", "GHXKL", "MNXQR"]);
+        editor.insert_char('Y');
+        assert_eq!(editor.lines, vec!["ABXYEF", "GHXYKL", "MNXYQR"]);
 
         // 4. 驗證列塊貼上：將剛才複製的 "CD\nIJ\nOP" 貼入第 1 欄
         editor.selection = Selection::block(
             TextPosition::new(0, 1),
-            TextPosition::new(2, 1),
+            TextPosition::new(0, 1),
             1,
             1,
         );
         editor.paste_from_clipboard();
-        assert_eq!(editor.lines, vec!["ACDBXEF", "GIJHXKL", "MOPNXQR"]);
+        assert_eq!(editor.lines, vec!["ACDBXYEF", "GIJHXYKL", "MOPNXYQR"]);
     }
 }
