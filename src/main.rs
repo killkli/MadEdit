@@ -2,7 +2,9 @@ mod core;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use core::{char_col_to_visual_col, DocumentBuffer, EditMode, Selection, SUPPORTED_ENCODINGS};
+use core::{
+    char_col_to_visual_col, DocumentBuffer, EditMode, SearchOptions, Selection, SUPPORTED_ENCODINGS,
+};
 use slint::platform::Key;
 use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
 
@@ -10,6 +12,51 @@ slint::include_modules!();
 
 const CELL_WIDTH: f32 = 8.5;
 const LINE_HEIGHT: f32 = 20.0;
+
+/// 從 UI 狀態提取目前設定的搜尋選項
+fn get_search_options(ui: &MainWindow) -> SearchOptions {
+    SearchOptions::new(
+        ui.get_search_match_case(),
+        ui.get_search_whole_word(),
+        ui.get_search_use_regex(),
+    )
+}
+
+/// 更新 UI 中的搜尋狀態計數（如 "3/15" 或 "查無結果"）
+fn update_search_status_ui(ui: &MainWindow, doc: &DocumentBuffer) {
+    let query = ui.get_search_query();
+    if query.is_empty() {
+        ui.set_search_status_text("".into());
+        return;
+    }
+    let opts = get_search_options(ui);
+    let (cur, total) = doc.get_search_status(query.as_str(), &opts);
+    if total == 0 {
+        ui.set_search_status_text("查無結果".into());
+    } else {
+        ui.set_search_status_text(format!("{}/{}", cur, total).into());
+    }
+}
+
+/// 統一更新搜尋結果 UI 反饋（DRY 萃取共用邏輯）
+fn update_search_ui_feedback(ui: &MainWindow, res: Option<(usize, usize)>, query: &str) {
+    if query.is_empty() {
+        ui.set_search_status_text("".into());
+    } else if let Some((cur, total)) = res {
+        ui.set_search_status_text(format!("{}/{}", cur, total).into());
+    } else {
+        ui.set_search_status_text("查無結果".into());
+    }
+}
+
+/// 若編輯器當前選取非空單行文字，自動填入搜尋關鍵字輸入框（DRY 萃取共用邏輯）
+fn populate_search_query_from_selection(ui: &MainWindow, doc: &DocumentBuffer) {
+    let selected = doc.editor.selected_text();
+    if !selected.is_empty() && !selected.contains('\n') {
+        ui.set_search_query(selected.into());
+        update_search_status_ui(ui, doc);
+    }
+}
 
 /// 產生狀態列顯示字串，包含位元組長度、修改標記與無損解碼錯誤警告
 fn format_status_info(doc: &DocumentBuffer) -> String {
@@ -191,6 +238,113 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // 搜尋面板關閉事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        main_window.on_close_search_panel(move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_show_search_panel(false);
+            }
+        });
+    }
+
+    // 取代列展開/收合事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        main_window.on_toggle_replace_clicked(move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                let show = ui.get_show_replace();
+                ui.set_show_replace(!show);
+            }
+        });
+    }
+
+    // 搜尋關鍵字即時變更事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_search_query_changed(move |_| {
+            if let Some(ui) = ui_handle.upgrade() {
+                let d = doc_clone.borrow();
+                update_search_status_ui(&ui, &d);
+            }
+        });
+    }
+
+    // 搜尋選項切換事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_search_options_changed(move || {
+            if let Some(ui) = ui_handle.upgrade() {
+                let d = doc_clone.borrow();
+                update_search_status_ui(&ui, &d);
+            }
+        });
+    }
+
+    // 尋找下一個匹配項事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_find_next_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let query = ui.get_search_query();
+            let opts = get_search_options(&ui);
+            let mut d = doc_clone.borrow_mut();
+            let res = d.find_next(query.as_str(), &opts);
+            update_search_ui_feedback(&ui, res, query.as_str());
+            sync_ui_from_doc(&ui, &d);
+        });
+    }
+
+    // 尋找上一個匹配項事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_find_prev_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let query = ui.get_search_query();
+            let opts = get_search_options(&ui);
+            let mut d = doc_clone.borrow_mut();
+            let res = d.find_prev(query.as_str(), &opts);
+            update_search_ui_feedback(&ui, res, query.as_str());
+            sync_ui_from_doc(&ui, &d);
+        });
+    }
+
+    // 單次取代事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_replace_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let query = ui.get_search_query();
+            let replace_with = ui.get_replace_text();
+            let opts = get_search_options(&ui);
+            let mut d = doc_clone.borrow_mut();
+            d.replace_current(query.as_str(), replace_with.as_str(), &opts);
+            update_search_status_ui(&ui, &d);
+            sync_ui_from_doc(&ui, &d);
+        });
+    }
+
+    // 全部取代事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_replace_all_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let query = ui.get_search_query();
+            let replace_with = ui.get_replace_text();
+            let opts = get_search_options(&ui);
+            let mut d = doc_clone.borrow_mut();
+            let count = d.replace_all(query.as_str(), replace_with.as_str(), &opts);
+            ui.set_search_status_text(format!("已取代 {} 處", count).into());
+            sync_ui_from_doc(&ui, &d);
+        });
+    }
+
     // 自繪編輯器鍵盤按鍵事件
     {
         let ui_handle = main_window.as_weak();
@@ -215,6 +369,19 @@ fn main() -> Result<(), slint::PlatformError> {
                     "v" | "V" => {
                         d.editor.paste_from_clipboard();
                         d.sync_from_editor();
+                    }
+                    "f" | "F" => {
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_show_search_panel(true);
+                            populate_search_query_from_selection(&ui, &d);
+                        }
+                    }
+                    "h" | "H" => {
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.set_show_search_panel(true);
+                            ui.set_show_replace(true);
+                            populate_search_query_from_selection(&ui, &d);
+                        }
                     }
                     _ => return false,
                 }
@@ -265,6 +432,29 @@ fn main() -> Result<(), slint::PlatformError> {
                 d.editor.insert_char('\t');
                 d.sync_from_editor();
                 true
+            } else if key_str.starts_with(char::from(Key::F3)) {
+                if let Some(ui) = ui_handle.upgrade() {
+                    let query = ui.get_search_query();
+                    let opts = get_search_options(&ui);
+                    let res = if shift {
+                        d.find_prev(query.as_str(), &opts)
+                    } else {
+                        d.find_next(query.as_str(), &opts)
+                    };
+                    update_search_ui_feedback(&ui, res, query.as_str());
+                }
+                true
+            } else if key_str.starts_with(char::from(Key::Escape)) {
+                if let Some(ui) = ui_handle.upgrade() {
+                    if ui.get_show_search_panel() {
+                        ui.set_show_search_panel(false);
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
             } else if !key_str.is_empty() && !key_str.chars().any(|c| c.is_control()) {
                 d.editor.insert_text(key_str);
                 d.sync_from_editor();

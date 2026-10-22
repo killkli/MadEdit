@@ -1,4 +1,4 @@
-import { Button, ComboBox, ScrollView } from "std-widgets.slint";
+import { Button, ComboBox, ScrollView, LineEdit, CheckBox } from "std-widgets.slint";
 
 export struct VisibleLine {
     line_number: int,
@@ -35,11 +35,31 @@ export component MainWindow inherits Window {
     in-out property <string> hex-content-text: "";
     in-out property <string> hex-ascii-text: "";
 
+    // 搜尋與取代面板屬性
+    in-out property <bool> show-search-panel: false;
+    in-out property <bool> show-replace: false;
+    in-out property <string> search-query: "";
+    in-out property <string> replace-text: "";
+    in-out property <string> search-status-text: "";
+    in-out property <bool> search-match-case: false;
+    in-out property <bool> search-whole-word: false;
+    in-out property <bool> search-use-regex: false;
+
     callback open-file-clicked();
     callback save-file-clicked();
     callback mode-changed(int);
     callback reinterpret-encoding-clicked(string);
     callback convert-encoding-clicked(string);
+
+    // 搜尋與取代回呼
+    callback find-next-clicked();
+    callback find-prev-clicked();
+    callback replace-clicked();
+    callback replace-all-clicked();
+    callback close-search-panel();
+    callback search-options-changed();
+    callback search-query-changed(string);
+    callback toggle-replace-clicked();
 
     // 編輯器互動回呼
     callback key-pressed(string, bool, bool, bool) -> bool;
@@ -105,6 +125,119 @@ export component MainWindow inherits Window {
                 vertical-alignment: center;
                 text: "檔案: " + root.file-path;
                 color: #555555;
+            }
+        }
+
+        // 搜尋與取代面板（支援條件展開與收合）
+        if root.show-search-panel : Rectangle {
+            background: #f4f4f4;
+            border-width: 1px;
+            border-color: #cccccc;
+            border-radius: 4px;
+
+            VerticalLayout {
+                padding: 6px;
+                spacing: 6px;
+
+                // 第一行：搜尋列
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: center;
+
+                    Text {
+                        text: "尋找:";
+                        vertical-alignment: center;
+                        font-size: 13px;
+                    }
+
+                    search-input := LineEdit {
+                        width: 200px;
+                        placeholder-text: "輸入關鍵字...";
+                        text <=> root.search-query;
+                        edited(t) => { root.search-query-changed(t); }
+                        accepted => { root.find-next-clicked(); }
+                        init => { self.focus(); }
+                    }
+
+                    Button {
+                        text: "◀";
+                        width: 32px;
+                        clicked => { root.find-prev-clicked(); }
+                    }
+                    Button {
+                        text: "▶";
+                        width: 32px;
+                        clicked => { root.find-next-clicked(); }
+                    }
+
+                    Text {
+                        vertical-alignment: center;
+                        text: root.search-status-text;
+                        font-size: 12px;
+                        color: #666666;
+                        width: 80px;
+                    }
+
+                    CheckBox {
+                        text: "大小寫";
+                        checked <=> root.search-match-case;
+                        toggled => { root.search-options-changed(); }
+                    }
+                    CheckBox {
+                        text: "全字";
+                        checked <=> root.search-whole-word;
+                        toggled => { root.search-options-changed(); }
+                    }
+                    CheckBox {
+                        text: "Regex";
+                        checked <=> root.search-use-regex;
+                        toggled => { root.search-options-changed(); }
+                    }
+
+                    Button {
+                        text: root.show-replace ? "隱藏取代" : "展開取代";
+                        clicked => { root.toggle-replace-clicked(); }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Button {
+                        text: "✕";
+                        width: 28px;
+                        clicked => { root.close-search-panel(); }
+                    }
+                }
+
+                // 第二行：取代列（若 show-replace 為 true 時顯示）
+                if root.show-replace : HorizontalLayout {
+                    spacing: 6px;
+                    alignment: center;
+
+                    Text {
+                        text: "取代:";
+                        vertical-alignment: center;
+                        font-size: 13px;
+                    }
+
+                    LineEdit {
+                        width: 200px;
+                        placeholder-text: "輸入取代內容...";
+                        text <=> root.replace-text;
+                        accepted => { root.replace-clicked(); }
+                    }
+
+                    Button {
+                        text: "取代";
+                        clicked => { root.replace-clicked(); }
+                    }
+
+                    Button {
+                        text: "全部取代";
+                        clicked => { root.replace-all-clicked(); }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+                }
             }
         }
 

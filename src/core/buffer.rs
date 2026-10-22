@@ -2,10 +2,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use encoding_rs::Encoding;
 
-use super::editor::EditorState;
+use super::editor::{EditorState, Selection};
 use super::hex::{generate_hex_dump, HexDump};
 use super::model::{EditMode, NewLineFormat};
 use super::piece_table::{LineIndex, PieceTable};
+use super::search::{
+    build_regex, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
+    parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
+};
 
 /// 編輯器支援的 10 種常用字元編碼標準名稱清單（依 UI 選單順序排列）
 pub const SUPPORTED_ENCODINGS: &[&str] = &[
@@ -401,11 +405,214 @@ impl DocumentBuffer {
             .unwrap_or("Untitled")
             .to_string()
     }
+
+    /// 取得目前文字在搜尋條件下的所有匹配項目列表
+    pub fn find_all(&self, query: &str, options: &SearchOptions) -> Result<Vec<SearchMatch>, String> {
+        find_all_matches(&self.editor.lines, query, options)
+    }
+
+    /// 計算符合搜尋條件之匹配總次數（支援文字模式與十六進位 Hex 模式）
+    #[allow(dead_code)]
+    pub fn count_matches(&self, query: &str, options: &SearchOptions) -> usize {
+        if query.is_empty() {
+            return 0;
+        }
+        if self.edit_mode == EditMode::Hex {
+            self.find_hex(query).map(|m| m.len()).unwrap_or(0)
+        } else {
+            self.find_all(query, options).map(|m| m.len()).unwrap_or(0)
+        }
+    }
+
+    /// 取得搜尋匹配統計資訊：回傳 (當前選取匹配項索引1-based, 總匹配次數)
+    #[allow(dead_code)]
+    pub fn get_search_status(&self, query: &str, options: &SearchOptions) -> (usize, usize) {
+        if query.is_empty() {
+            return (0, 0);
+        }
+        if self.edit_mode == EditMode::Hex {
+            let offsets = match self.find_hex(query) {
+                Ok(o) => o,
+                Err(_) => return (0, 0),
+            };
+            let total = offsets.len();
+            return if total > 0 { (1, total) } else { (0, 0) };
+        }
+        let matches = match self.find_all(query, options) {
+            Ok(m) => m,
+            Err(_) => return (0, 0),
+        };
+        let total = matches.len();
+        if total == 0 {
+            return (0, 0);
+        }
+
+        // 判斷當前選取是否正好命中某個匹配項
+        let current_pos = self.editor.selection.start();
+        for (idx, m) in matches.iter().enumerate() {
+            if m.start == current_pos && m.end == self.editor.selection.end() {
+                return (idx + 1, total);
+            }
+        }
+
+        // 若未直接命中選取，計算目前游標位於第幾個匹配項
+        let head = self.editor.selection.head;
+        for (idx, m) in matches.iter().enumerate() {
+            if m.start >= head {
+                return (idx + 1, total);
+            }
+        }
+
+        (total, total)
+    }
+
+    /// 尋找游標後的下一個匹配項目，並自動更新選取區與捲動可視範圍
+    /// 回傳 Some((當前匹配索引1-based, 總匹配次數))，若無匹配或查詢無效則回傳 None
+    pub fn find_next(&mut self, query: &str, options: &SearchOptions) -> Option<(usize, usize)> {
+        if query.is_empty() {
+            return None;
+        }
+        if self.edit_mode == EditMode::Hex {
+            let offsets = self.find_hex(query).ok()?;
+            if offsets.is_empty() {
+                return None;
+            }
+            return Some((1, offsets.len()));
+        }
+        let matches = self.find_all(query, options).ok()?;
+        if matches.is_empty() {
+            return None;
+        }
+        let total = matches.len();
+
+        // 若目前已有非空選取，從選取結尾之後開始搜尋，避免原地停留；否則以游標為起點
+        let search_start = if !self.editor.selection.is_empty() {
+            self.editor.selection.end()
+        } else {
+            self.editor.selection.head
+        };
+
+        let (idx, m) = find_next_match(&matches, search_start)?;
+        self.editor.selection = Selection::new(m.start, m.end);
+        self.editor.scroll_caret_into_view();
+
+        Some((idx + 1, total))
+    }
+
+    /// 尋找游標前的上一個匹配項目，並自動更新選取區與捲動可視範圍
+    /// 回傳 Some((當前匹配索引1-based, 總匹配次數))，若無匹配或查詢無效則回傳 None
+    pub fn find_prev(&mut self, query: &str, options: &SearchOptions) -> Option<(usize, usize)> {
+        if query.is_empty() {
+            return None;
+        }
+        if self.edit_mode == EditMode::Hex {
+            let offsets = self.find_hex(query).ok()?;
+            if offsets.is_empty() {
+                return None;
+            }
+            return Some((offsets.len(), offsets.len()));
+        }
+        let matches = self.find_all(query, options).ok()?;
+        if matches.is_empty() {
+            return None;
+        }
+        let total = matches.len();
+
+        // 若目前已有非空選取，從選取起點之前開始搜尋；否則以游標為起點
+        let search_start = if !self.editor.selection.is_empty() {
+            self.editor.selection.start()
+        } else {
+            self.editor.selection.head
+        };
+
+        let (idx, m) = find_prev_match(&matches, search_start)?;
+        self.editor.selection = Selection::new(m.start, m.end);
+        self.editor.scroll_caret_into_view();
+
+        Some((idx + 1, total))
+    }
+
+    /// 取代目前選取之匹配項，並自動尋找下一個
+    /// 若目前選取區未符合 query，則先自動尋找並選取下一個匹配項
+    pub fn replace_current(&mut self, query: &str, replace_with: &str, options: &SearchOptions) -> bool {
+        if query.is_empty() {
+            return false;
+        }
+
+        // 檢查當前選取是否完全匹配搜尋條件
+        let is_match = if !self.editor.selection.is_empty() {
+            let selected = self.editor.selected_text();
+            if let Ok(re) = build_regex(query, options) {
+                re.find(&selected).map(|m| m.as_str() == selected).unwrap_or(false)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if is_match {
+            let selected = self.editor.selected_text();
+            let replacement = if options.use_regex {
+                if let Ok(re) = build_regex(query, options) {
+                    re.replace(&selected, replace_with).to_string()
+                } else {
+                    replace_with.to_string()
+                }
+            } else {
+                replace_with.to_string()
+            };
+
+            // 刪除選取並插入替換文字
+            self.editor.delete_selection();
+            self.editor.insert_text(&replacement);
+            self.sync_from_editor();
+
+            // 自動跳轉選取下一個匹配項
+            self.find_next(query, options);
+            true
+        } else {
+            // 目前未選取匹配項，先行選取下一個匹配項
+            self.find_next(query, options).is_some()
+        }
+    }
+
+    /// 全部取代：將文件中所有符合條件之字串替換，同步底層 Piece Table 並回傳精確取代總筆數
+    pub fn replace_all(&mut self, query: &str, replace_with: &str, options: &SearchOptions) -> usize {
+        if query.is_empty() {
+            return 0;
+        }
+
+        let Ok((new_lines, count)) = replace_all_matches(&self.editor.lines, query, replace_with, options) else {
+            return 0;
+        };
+
+        if count > 0 {
+            self.editor.lines = new_lines;
+            self.editor.clamp_caret();
+            self.sync_from_editor();
+        }
+
+        count
+    }
+
+    /// 在底層位元組中搜尋十六進位序列（Hex Byte Search），回傳所有匹配之 Byte Offsets
+    #[allow(dead_code)]
+    pub fn find_hex(&self, hex_query: &str) -> Result<Vec<usize>, String> {
+        let pattern = parse_hex_query(hex_query)?;
+        let bytes = if !self.raw_bytes.is_empty() || self.piece_table.len() == 0 {
+            self.raw_bytes.clone()
+        } else {
+            self.piece_table.collect_bytes()
+        };
+        Ok(find_hex_matches(&bytes, &pattern))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::editor::TextPosition;
     use std::io::Write;
 
     #[test]
@@ -643,6 +850,121 @@ mod tests {
         assert_eq!(visible[2].sel_start_x, 20.0);
         assert_eq!(visible[2].sel_width, 20.0);
         assert!(!visible[3].has_selection);
+    }
+
+    #[test]
+    fn test_buffer_find_next_and_prev_navigation() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("apple banana\ncherry apple\norange apple".to_string());
+
+        let opts = SearchOptions::default();
+        // 初始狀態下游標在 (0, 0)
+        let res1 = doc.find_next("apple", &opts);
+        assert_eq!(res1, Some((1, 3)));
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(0, 0));
+        assert_eq!(doc.editor.selection.end(), TextPosition::new(0, 5));
+
+        // 找第 2 個
+        let res2 = doc.find_next("apple", &opts);
+        assert_eq!(res2, Some((2, 3)));
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(1, 7));
+        assert_eq!(doc.editor.selection.end(), TextPosition::new(1, 12));
+
+        // 找第 3 個
+        let res3 = doc.find_next("apple", &opts);
+        assert_eq!(res3, Some((3, 3)));
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(2, 7));
+        assert_eq!(doc.editor.selection.end(), TextPosition::new(2, 12));
+
+        // 第 4 次 find_next（繞回首項）
+        let res4 = doc.find_next("apple", &opts);
+        assert_eq!(res4, Some((1, 3)));
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(0, 0));
+        assert_eq!(doc.editor.selection.end(), TextPosition::new(0, 5));
+
+        // find_prev（從首項往回繞至末項）
+        let prev1 = doc.find_prev("apple", &opts);
+        assert_eq!(prev1, Some((3, 3)));
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(2, 7));
+        assert_eq!(doc.editor.selection.end(), TextPosition::new(2, 12));
+
+        // 再次 find_prev
+        let prev2 = doc.find_prev("apple", &opts);
+        assert_eq!(prev2, Some((2, 3)));
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(1, 7));
+        assert_eq!(doc.editor.selection.end(), TextPosition::new(1, 12));
+
+        // 驗證 get_search_status
+        assert_eq!(doc.get_search_status("apple", &opts), (2, 3));
+        assert_eq!(doc.get_search_status("notfound", &opts), (0, 0));
+    }
+
+    #[test]
+    fn test_buffer_replace_current_and_sync() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("foo bar foo".to_string());
+        let opts = SearchOptions::default();
+
+        // 第一次呼叫：當前未選中匹配項，先跳轉選取第 1 個 "foo"
+        let ok1 = doc.replace_current("foo", "baz", &opts);
+        assert!(ok1);
+        assert_eq!(doc.editor.selected_text(), "foo");
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(0, 0));
+
+        // 第二次呼叫：已選中第 1 個 "foo"，將其取代為 "baz"，並自動跳至第 2 個 "foo"
+        let ok2 = doc.replace_current("foo", "baz", &opts);
+        assert!(ok2);
+        assert!(doc.is_modified);
+        assert_eq!(doc.text(), "baz bar foo");
+        assert_eq!(doc.editor.selected_text(), "foo");
+        assert_eq!(doc.editor.selection.start(), TextPosition::new(0, 8));
+
+        // 第三次呼叫：取代第 2 個 "foo" 為 "baz"，此時無更多匹配項
+        let ok3 = doc.replace_current("foo", "baz", &opts);
+        assert!(ok3);
+        assert_eq!(doc.text(), "baz bar baz");
+        assert!(doc.editor.selection.is_empty());
+    }
+
+    #[test]
+    fn test_buffer_replace_all_regex() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("user_id: 100, order_id: 200".to_string());
+
+        let opts = SearchOptions::new(true, false, true);
+        let count = doc.replace_all(r"(\w+)_id: (\d+)", "id_$1=$2", &opts);
+        assert_eq!(count, 2);
+        assert!(doc.is_modified);
+        assert_eq!(doc.text(), "id_user=100, id_order=200");
+    }
+
+    #[test]
+    fn test_buffer_find_hex() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("ABCDEF".to_string());
+
+        let offsets = doc.find_hex("43 44").unwrap();
+        assert_eq!(offsets, vec![2]);
+
+        let offsets_prefix = doc.find_hex("0x41 0x42").unwrap();
+        assert_eq!(offsets_prefix, vec![0]);
+    }
+
+    #[test]
+    fn test_buffer_count_matches_and_hex_dispatch() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("ABCDEF ABCDEF".to_string());
+        let opts = SearchOptions::default();
+
+        // 文字模式計數
+        assert_eq!(doc.count_matches("ABC", &opts), 2);
+        assert_eq!(doc.count_matches("XYZ", &opts), 0);
+
+        // 切換至 Hex 模式
+        doc.set_edit_mode(EditMode::Hex);
+        assert_eq!(doc.count_matches("41 42", &opts), 2);
+        assert_eq!(doc.find_next("41 42", &opts), Some((1, 2)));
+        assert_eq!(doc.find_prev("41 42", &opts), Some((2, 2)));
     }
 }
 

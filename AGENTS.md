@@ -87,6 +87,11 @@ D:\Git\MadEdit-Rust\
   - 支援工具列「列塊模式」切換與文字模式下 Alt+滑鼠拖曳 / Alt+Shift+方向鍵 觸發矩形選取。
   - 支援矩形選取複製（Ctrl+C）、剪下（Ctrl+X）、列塊對齊貼上（Ctrl+V）、多行同步打字與 Backspace/Delete 區塊切除，短行自動補齊與防越界安全防護。
   - 狀態列即時顯示矩形維度（如 `Block: 3x4`）。
+- [x] 搜尋與取代引擎及內嵌式面板（Phase 5 完成）：
+  - 實作核心搜尋引擎（`src/core/search.rs`），支援純文字、區分大小寫 (Match Case)、全字匹配 (Whole Word)、正規表達式 (Regex) 以及十六進位位元組 (Hex Byte Pattern) 搜尋。
+  - 實作環狀循環導覽（`find_next`、`find_prev`）與單次/全部取代（`replace_current`、`replace_all`），自動高亮選取並捲動可視範圍，精確統計取代計數。
+  - 在 Slint UI 實作編輯區頂部內嵌式可收合面板，包含搜尋框、取代框、核取方塊、即時匹配統計（如 `3/15`）、上一個/下一個、取代/全部取代與關閉按鈕。
+  - 支援全套快捷鍵：`Ctrl+F`（開啟搜尋列並自動帶入選取文字與聚焦）、`Ctrl+H`（開啟搜尋與取代列）、`Esc`（收合面板）、`F3`（尋找下一個）、`Shift+F3`（尋找上一個）。
 - [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
   - 已優化：直接自 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體拷貝。
 - [x] 換行格式自動偵測（CRLF / LF / CR），目前僅顯示，不支援轉換。
@@ -130,10 +135,9 @@ D:\Git\MadEdit-Rust\
 ### Phase 4: 列塊模式 (Column/Block Mode) 與游標系統 - [已完成]
 - 已完成二維視覺矩形選取模型、字元格網視覺切片、列塊剪貼簿（複製/剪下/貼上）、多行同步輸入與刪除、以及 Slint UI Alt 鍵拖曳整合。
 
-### Phase 5: 搜尋與取代 (Find & Replace)
-- 彈出式搜尋與取代面板。
-- 支援大小寫匹配、全字匹配、正規表達式 (Regex)。
-- 支援十六進位模式下的 Hex Byte 搜尋。
+### Phase 5: 搜尋與取代 (Find & Replace) - [已完成]
+- 已完成核心搜尋引擎（純文字/大小寫/全字/Regex/Hex Byte）、環狀循環導覽、取代與全部取代。
+- 已完成 Slint 內嵌可收合面板、即時進度（`3/15`）、快捷鍵（Ctrl+F、Ctrl+H、Esc、F3、Shift+F3）與自動聚焦。
 
 ### Phase 6: 語法突顯 (Syntax Highlighting)
 - 整合 `syntect` 或自建輕量詞法分析器，為各程式語言提供語法突顯功能。
