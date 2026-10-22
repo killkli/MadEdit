@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Phase 5: 搜尋與取代 (Find & Replace)
 

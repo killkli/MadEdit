@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 03: Slint 內嵌式搜尋取代面板與快捷鍵
 

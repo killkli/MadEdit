@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use encoding_rs::Encoding;
 
-use super::editor::{EditorState, Selection, TextPosition};
+use super::editor::{EditorState, Selection};
 use super::hex::{generate_hex_dump, HexDump};
 use super::model::{EditMode, NewLineFormat};
 use super::piece_table::{LineIndex, PieceTable};
@@ -562,6 +562,7 @@ impl DocumentBuffer {
     }
 
     /// 在底層位元組中搜尋十六進位序列（Hex Byte Search），回傳所有匹配之 Byte Offsets
+    #[allow(dead_code)]
     pub fn find_hex(&self, hex_query: &str) -> Result<Vec<usize>, String> {
         let pattern = parse_hex_query(hex_query)?;
         let bytes = if !self.raw_bytes.is_empty() || self.piece_table.len() == 0 {
@@ -576,6 +577,7 @@ impl DocumentBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::editor::TextPosition;
     use std::io::Write;
 
     #[test]
