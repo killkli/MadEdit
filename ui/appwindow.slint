@@ -346,7 +346,7 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // 3. 文字內容層（頂層：支援語法多色分段渲染）
+                        // 3. 文字內容層（頂層：支援語法多色分段渲染與單色回退）
                         for line[i] in root.visible-lines : HorizontalLayout {
                             x: 0;
                             y: i * root.line-height;
@@ -354,11 +354,22 @@ export component MainWindow inherits Window {
                             spacing: 0px;
                             alignment: start;
 
-                            for span in line.spans : Text {
-                                text: span.text;
+                            if line.spans.length > 0 : HorizontalLayout {
+                                spacing: 0px;
+                                for span in line.spans : Text {
+                                    text: span.text;
+                                    font-family: "Consolas, Courier New, monospace";
+                                    font-size: 14px;
+                                    color: span.color;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if line.spans.length == 0 : Text {
+                                text: line.text;
                                 font-family: "Consolas, Courier New, monospace";
                                 font-size: 14px;
-                                color: span.color;
+                                color: #222222;
                                 vertical-alignment: center;
                             }
                         }

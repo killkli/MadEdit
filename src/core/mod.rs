@@ -22,4 +22,4 @@ pub use search::{
     parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
 };
 #[allow(unused_imports)]
-pub use syntax::{detect_syntax_from_path, highlight_line, HighlightSpan, SUPPORTED_SYNTAXES};
+pub use syntax::{detect_syntax_from_path, highlight_line, highlight_lines, HighlightSpan, SUPPORTED_SYNTAXES};

@@ -23,39 +23,16 @@ pub const SUPPORTED_SYNTAXES: &[&str] = &[
     "SQL",
 ];
 
-/// 單一語法高亮文字區段（包含文字內容與 RGB / 十六進位顏色）
+/// 單一語法高亮文字區段（包含文字內容與 RGB 色彩數值）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HighlightSpan {
     pub text: String,
     pub color_rgb: (u8, u8, u8),
-    pub color_hex: String,
 }
 
 impl HighlightSpan {
     pub fn new(text: String, color_rgb: (u8, u8, u8)) -> Self {
-        let color_hex = format!("#{:02X}{:02X}{:02X}", color_rgb.0, color_rgb.1, color_rgb.2);
-        Self {
-            text,
-            color_rgb,
-            color_hex,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn from_hex(text: String, color_hex: String) -> Self {
-        let rgb = if color_hex.starts_with('#') && color_hex.len() == 7 {
-            let r = u8::from_str_radix(&color_hex[1..3], 16).unwrap_or(34);
-            let g = u8::from_str_radix(&color_hex[3..5], 16).unwrap_or(34);
-            let b = u8::from_str_radix(&color_hex[5..7], 16).unwrap_or(34);
-            (r, g, b)
-        } else {
-            (34, 34, 34)
-        };
-        Self {
-            text,
-            color_rgb: rgb,
-            color_hex,
-        }
+        Self { text, color_rgb }
     }
 }
 
@@ -110,10 +87,17 @@ pub fn detect_syntax_from_path<P: AsRef<Path>>(path: P) -> &'static str {
     }
 }
 
-/// 將單行文字依指定語法進行詞法分析並轉為色彩分段列表
-pub fn highlight_line(syntax_name: &str, line: &str) -> Vec<HighlightSpan> {
-    if syntax_name == "Plain Text" || line.is_empty() {
-        return vec![HighlightSpan::new(line.to_string(), (34, 34, 34))];
+/// 批次將多行文字依指定語法進行詞法分析並轉為色彩分段列表（在同一狀態下依序推進，支援多行註解與多行字串）
+pub fn highlight_lines(syntax_name: &str, lines: &[String]) -> Vec<Vec<HighlightSpan>> {
+    if lines.is_empty() {
+        return Vec::new();
+    }
+
+    if syntax_name == "Plain Text" {
+        return lines
+            .iter()
+            .map(|l| vec![HighlightSpan::new(l.clone(), (34, 34, 34))])
+            .collect();
     }
 
     let ps = get_syntax_set();
@@ -124,35 +108,59 @@ pub fn highlight_line(syntax_name: &str, line: &str) -> Vec<HighlightSpan> {
         .or_else(|| ps.find_syntax_by_extension(syntax_name.to_lowercase().as_str()));
 
     let Some(syntax) = syntax else {
-        return vec![HighlightSpan::new(line.to_string(), (34, 34, 34))];
+        return lines
+            .iter()
+            .map(|l| vec![HighlightSpan::new(l.clone(), (34, 34, 34))])
+            .collect();
     };
 
     let mut h = HighlightLines::new(syntax, theme);
-    let line_with_nl = if line.ends_with('\n') {
-        line.to_string()
-    } else {
-        format!("{}\n", line)
-    };
+    let mut result = Vec::with_capacity(lines.len());
 
-    let Ok(ranges) = h.highlight_line(&line_with_nl, ps) else {
-        return vec![HighlightSpan::new(line.to_string(), (34, 34, 34))];
-    };
-
-    let mut spans = Vec::new();
-    for (style, text) in ranges {
-        let clean_text = text.trim_end_matches(['\r', '\n']);
-        if clean_text.is_empty() {
+    for line in lines {
+        if line.is_empty() {
+            result.push(vec![HighlightSpan::new(String::new(), (34, 34, 34))]);
             continue;
         }
-        let color = style.foreground;
-        spans.push(HighlightSpan::new(clean_text.to_string(), (color.r, color.g, color.b)));
+
+        let line_with_nl = if line.ends_with('\n') {
+            line.to_string()
+        } else {
+            format!("{}\n", line)
+        };
+
+        let Ok(ranges) = h.highlight_line(&line_with_nl, ps) else {
+            result.push(vec![HighlightSpan::new(line.clone(), (34, 34, 34))]);
+            continue;
+        };
+
+        let mut spans = Vec::new();
+        for (style, text) in ranges {
+            let clean_text = text.trim_end_matches(['\r', '\n']);
+            if clean_text.is_empty() {
+                continue;
+            }
+            let color = style.foreground;
+            spans.push(HighlightSpan::new(clean_text.to_string(), (color.r, color.g, color.b)));
+        }
+
+        if spans.is_empty() {
+            spans.push(HighlightSpan::new(line.clone(), (34, 34, 34)));
+        }
+
+        result.push(spans);
     }
 
-    if spans.is_empty() && !line.is_empty() {
-        spans.push(HighlightSpan::new(line.to_string(), (34, 34, 34)));
-    }
+    result
+}
 
-    spans
+/// 將單行文字依指定語法進行詞法分析並轉為色彩分段列表
+#[allow(dead_code)]
+pub fn highlight_line(syntax_name: &str, line: &str) -> Vec<HighlightSpan> {
+    highlight_lines(syntax_name, &[line.to_string()])
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| vec![HighlightSpan::new(line.to_string(), (34, 34, 34))])
 }
 
 #[cfg(test)]
@@ -180,7 +188,7 @@ mod tests {
         let spans = highlight_line("Plain Text", line);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].text, line);
-        assert_eq!(spans[0].color_hex, "#222222");
+        assert_eq!(spans[0].color_rgb, (34, 34, 34));
     }
 
     #[test]
@@ -196,7 +204,28 @@ mod tests {
         // 驗證關鍵字與字串有不同的顏色
         let has_distinct_colors = spans
             .windows(2)
-            .any(|w| w[0].color_hex != w[1].color_hex);
+            .any(|w| w[0].color_rgb != w[1].color_rgb);
         assert!(has_distinct_colors);
+    }
+
+    #[test]
+    fn test_multiline_syntax_state_propagation() {
+        let lines = vec![
+            "/* 開始多行註解".to_string(),
+            "   這是第二行註解".to_string(),
+            "   這是第三行註解 */".to_string(),
+            "let code = 100;".to_string(),
+        ];
+        let highlighted = highlight_lines("Rust", &lines);
+        assert_eq!(highlighted.len(), 4);
+
+        // 驗證第二行（註解內部）與第一行的顏色一致（皆為註解色）
+        let comment_color_line1 = highlighted[0][0].color_rgb;
+        let comment_color_line2 = highlighted[1][0].color_rgb;
+        assert_eq!(comment_color_line1, comment_color_line2);
+
+        // 驗證第四行的 let 關鍵字顏色與註解色不同
+        let let_keyword_color = highlighted[3][0].color_rgb;
+        assert_ne!(let_keyword_color, comment_color_line1);
     }
 }

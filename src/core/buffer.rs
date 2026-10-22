@@ -10,7 +10,7 @@ use super::search::{
     build_regex, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
     parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
 };
-use super::syntax::{detect_syntax_from_path, highlight_line, HighlightSpan};
+use super::syntax::{detect_syntax_from_path, highlight_lines};
 
 /// 編輯器支援的 10 種常用字元編碼標準名稱清單（依 UI 選單順序排列）
 pub const SUPPORTED_ENCODINGS: &[&str] = &[
@@ -245,15 +245,11 @@ impl DocumentBuffer {
             self.editor.generate_visible_lines_with_text(&visible_texts, cell_width)
         };
 
-        // 依據當前設定之語法為可視行產生多色分段（Viewport 按需高亮）
-        if self.current_syntax != "Plain Text" {
-            for line_data in &mut lines {
-                line_data.spans = highlight_line(&self.current_syntax, &line_data.text);
-            }
-        } else {
-            for line_data in &mut lines {
-                line_data.spans = vec![HighlightSpan::new(line_data.text.clone(), (34, 34, 34))];
-            }
+        // 依據當前設定之語法為可視行產生多色分段（Viewport 按需高亮，支援多行註解與字串）
+        let line_texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
+        let spans_batch = highlight_lines(&self.current_syntax, &line_texts);
+        for (line_data, spans) in lines.iter_mut().zip(spans_batch) {
+            line_data.spans = spans;
         }
 
         lines
@@ -999,7 +995,7 @@ mod tests {
         let visible_plain = doc.generate_visible_lines(10.0);
         assert_eq!(visible_plain.len(), 3);
         assert_eq!(visible_plain[0].spans.len(), 1);
-        assert_eq!(visible_plain[0].spans[0].color_hex, "#222222");
+        assert_eq!(visible_plain[0].spans[0].color_rgb, (34, 34, 34));
 
         // 切換至 Rust 語法
         doc.set_syntax("Rust");
