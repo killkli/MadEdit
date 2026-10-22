@@ -437,6 +437,120 @@ impl EditorState {
         self.update_caret(TextPosition::new(head.line, col), expand_selection);
     }
 
+    /// 智慧行首（首次按下 Home 移動至縮排後第一個非空白字元，再次按下時移動至欄位 0）
+    pub fn move_home_smart(&mut self, expand_selection: bool) {
+        let head = self.selection.head;
+        let line_text = self.lines.get(head.line).map(|s| s.as_str()).unwrap_or("");
+        let first_non_ws = line_text.chars().position(|c| !c.is_whitespace());
+
+        let target_col = match first_non_ws {
+            Some(idx) => {
+                if head.col > idx {
+                    idx
+                } else if head.col == idx {
+                    0
+                } else {
+                    idx
+                }
+            }
+            None => 0,
+        };
+        self.update_caret(TextPosition::new(head.line, target_col), expand_selection);
+    }
+
+    /// 跳轉至指定的行號與欄位（0-based，具備自動 clamp 與視窗滾動）
+    pub fn goto_line_col(&mut self, line: usize, col: usize) {
+        self.set_caret(line, col);
+    }
+
+    /// 將當前行或選取行整塊往上移動一行
+    pub fn move_lines_up(&mut self) -> bool {
+        if self.lines.is_empty() {
+            return false;
+        }
+        let min_line = self.selection.start().line;
+        let max_line = self.selection.end().line;
+        if min_line == 0 {
+            return false;
+        }
+
+        // 把 min_line - 1 這行抽出，插入到 max_line 的位置
+        let removed = self.lines.remove(min_line - 1);
+        self.lines.insert(max_line, removed);
+
+        self.selection.anchor.line -= 1;
+        self.selection.head.line -= 1;
+        self.clamp_caret();
+        self.scroll_caret_into_view();
+        true
+    }
+
+    /// 將當前行或選取行整塊往下移動一行
+    pub fn move_lines_down(&mut self) -> bool {
+        if self.lines.is_empty() {
+            return false;
+        }
+        let min_line = self.selection.start().line;
+        let max_line = self.selection.end().line;
+        if max_line + 1 >= self.lines.len() {
+            return false;
+        }
+
+        // 把 max_line + 1 這行抽出，插入到 min_line 的位置
+        let removed = self.lines.remove(max_line + 1);
+        self.lines.insert(min_line, removed);
+
+        self.selection.anchor.line += 1;
+        self.selection.head.line += 1;
+        self.clamp_caret();
+        self.scroll_caret_into_view();
+        true
+    }
+
+    /// 複製當前行或選取區涵蓋的所有行至下方
+    pub fn duplicate_lines(&mut self) {
+        if self.lines.is_empty() {
+            return;
+        }
+        let min_line = self.selection.start().line;
+        let max_line = self.selection.end().line;
+
+        let cloned_lines: Vec<String> = self.lines[min_line..=max_line].to_vec();
+        let delta = max_line - min_line + 1;
+
+        for (offset, line_str) in cloned_lines.into_iter().enumerate() {
+            self.lines.insert(max_line + 1 + offset, line_str);
+        }
+
+        // 游標與選區移動至新複製出的區塊
+        self.selection.anchor.line += delta;
+        self.selection.head.line += delta;
+        self.clamp_caret();
+        self.scroll_caret_into_view();
+    }
+
+    /// 刪除當前行或選取區涵蓋的所有行
+    pub fn delete_lines(&mut self) {
+        if self.lines.is_empty() {
+            self.lines.push(String::new());
+            self.selection = Selection::caret(TextPosition::new(0, 0));
+            return;
+        }
+        let min_line = self.selection.start().line;
+        let max_line = self.selection.end().line;
+
+        self.lines.drain(min_line..=max_line);
+        if self.lines.is_empty() {
+            self.lines.push(String::new());
+        }
+
+        let new_line = min_line.min(self.lines.len() - 1);
+        let col = self.selection.head.col.min(self.line_char_count(new_line));
+        self.selection = Selection::caret(TextPosition::new(new_line, col));
+        self.clamp_caret();
+        self.scroll_caret_into_view();
+    }
+
     pub fn move_page_up(&mut self, expand_selection: bool) {
         let page_size = self.viewport.visible_line_count.max(1);
         let head = self.selection.head;
@@ -1117,5 +1231,103 @@ mod tests {
         );
         editor.paste_from_clipboard();
         assert_eq!(editor.lines, vec!["ACDBXYEF", "GIJHXYKL", "MOPNXYQR"]);
+    }
+
+    #[test]
+    fn test_goto_line_col() {
+        let mut editor = EditorState::from_text("line1\nline2\nline3\nline4");
+        editor.goto_line_col(2, 3);
+        assert_eq!(editor.selection.head, TextPosition::new(2, 3));
+        assert_eq!(editor.selection.anchor, TextPosition::new(2, 3));
+
+        // 測試超出最大行數時 clamp
+        editor.goto_line_col(10, 2);
+        assert_eq!(editor.selection.head, TextPosition::new(3, 2));
+
+        // 測試超出最大欄位時 clamp
+        editor.goto_line_col(1, 100);
+        assert_eq!(editor.selection.head, TextPosition::new(1, 5));
+    }
+
+    #[test]
+    fn test_move_lines_up_and_down() {
+        let mut editor = EditorState::from_text("Line A\nLine B\nLine C\nLine D");
+        
+        // 游標在第 1 行 (Line B)
+        editor.set_caret(1, 2);
+        assert!(editor.move_lines_up());
+        assert_eq!(editor.lines, vec!["Line B", "Line A", "Line C", "Line D"]);
+        assert_eq!(editor.selection.head, TextPosition::new(0, 2));
+
+        // 已經在首行，無法再上移
+        assert!(!editor.move_lines_up());
+
+        // 往下移動
+        assert!(editor.move_lines_down());
+        assert_eq!(editor.lines, vec!["Line A", "Line B", "Line C", "Line D"]);
+        assert_eq!(editor.selection.head, TextPosition::new(1, 2));
+
+        // 測試多行選取整塊移動
+        editor.selection = Selection::new(TextPosition::new(1, 0), TextPosition::new(2, 6));
+        assert!(editor.move_lines_down());
+        assert_eq!(editor.lines, vec!["Line A", "Line D", "Line B", "Line C"]);
+        assert_eq!(editor.selection.anchor.line, 2);
+        assert_eq!(editor.selection.head.line, 3);
+    }
+
+    #[test]
+    fn test_duplicate_lines() {
+        let mut editor = EditorState::from_text("First\nSecond\nThird");
+        
+        // 單行無選取複製
+        editor.set_caret(1, 3);
+        editor.duplicate_lines();
+        assert_eq!(editor.lines, vec!["First", "Second", "Second", "Third"]);
+        assert_eq!(editor.selection.head, TextPosition::new(2, 3));
+
+        // 多行選取複製
+        editor.selection = Selection::new(TextPosition::new(0, 0), TextPosition::new(1, 6));
+        editor.duplicate_lines();
+        assert_eq!(editor.lines, vec!["First", "Second", "First", "Second", "Second", "Third"]);
+    }
+
+    #[test]
+    fn test_delete_lines() {
+        let mut editor = EditorState::from_text("Row 1\nRow 2\nRow 3\nRow 4");
+        
+        // 單行刪除
+        editor.set_caret(1, 2);
+        editor.delete_lines();
+        assert_eq!(editor.lines, vec!["Row 1", "Row 3", "Row 4"]);
+        assert_eq!(editor.selection.head, TextPosition::new(1, 2));
+
+        // 多行選取刪除
+        editor.selection = Selection::new(TextPosition::new(0, 0), TextPosition::new(1, 5));
+        editor.delete_lines();
+        assert_eq!(editor.lines, vec!["Row 4"]);
+        assert_eq!(editor.selection.head.line, 0);
+
+        // 刪除最後剩餘行：保證 lines 不為空
+        editor.delete_lines();
+        assert_eq!(editor.lines, vec![""]);
+        assert_eq!(editor.selection.head, TextPosition::new(0, 0));
+    }
+
+    #[test]
+    fn test_move_home_smart() {
+        let mut editor = EditorState::from_text("    let x = 10;");
+        
+        // 游標在行末 (col 15)，第一次按 Home 應跳到第一個非空白字元 (col 4)
+        editor.set_caret(0, 15);
+        editor.move_home_smart(false);
+        assert_eq!(editor.selection.head, TextPosition::new(0, 4));
+
+        // 游標已在第一個非空白字元 (col 4)，第二次按 Home 應跳到第 0 欄
+        editor.move_home_smart(false);
+        assert_eq!(editor.selection.head, TextPosition::new(0, 0));
+
+        // 游標在第 0 欄，再次按 Home 應跳回第一個非空白字元 (col 4)
+        editor.move_home_smart(false);
+        assert_eq!(editor.selection.head, TextPosition::new(0, 4));
     }
 }

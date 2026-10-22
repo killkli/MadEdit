@@ -4,7 +4,12 @@ pub struct HexDump {
     pub ascii: String,
 }
 
+#[allow(dead_code)]
 pub fn generate_hex_dump(data: &[u8], max_bytes: usize) -> HexDump {
+    generate_hex_dump_with_offset(data, 0, max_bytes)
+}
+
+pub fn generate_hex_dump_with_offset(data: &[u8], base_offset: usize, max_bytes: usize) -> HexDump {
     let limit = data.len().min(max_bytes);
     let slice = &data[..limit];
 
@@ -13,7 +18,7 @@ pub fn generate_hex_dump(data: &[u8], max_bytes: usize) -> HexDump {
     let mut ascii = String::new();
 
     for (chunk_idx, chunk) in slice.chunks(16).enumerate() {
-        let offset = chunk_idx * 16;
+        let offset = base_offset + chunk_idx * 16;
         offsets.push_str(&format!("{:08X}\n", offset));
 
         // Format hex bytes
@@ -72,6 +77,15 @@ mod tests {
         let data = b"Hello, World!";
         let dump = generate_hex_dump(data, 100);
         assert!(dump.offsets.starts_with("00000000"));
+        assert!(dump.hex.contains("48 65 6C 6C 6F"));
+        assert!(dump.ascii.contains("Hello, World!"));
+    }
+
+    #[test]
+    fn test_generate_hex_dump_with_offset() {
+        let data = b"Hello, World!";
+        let dump = generate_hex_dump_with_offset(data, 0x1000, 100);
+        assert!(dump.offsets.starts_with("00001000"));
         assert!(dump.hex.contains("48 65 6C 6C 6F"));
         assert!(dump.ascii.contains("Hello, World!"));
     }

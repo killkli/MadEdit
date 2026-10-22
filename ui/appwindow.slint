@@ -55,12 +55,20 @@ export component MainWindow inherits Window {
     in-out property <[string]> syntax-list: ["Plain Text"];
     in-out property <string> current-syntax: "Plain Text";
 
+    // 指定行號跳轉面板屬性
+    in-out property <bool> show-goto-panel: false;
+    in-out property <string> goto-label-text: "移至行 (1 - 1):";
+    in-out property <string> goto-input-text: "1";
+
     callback open-file-clicked();
     callback save-file-clicked();
     callback mode-changed(int);
     callback reinterpret-encoding-clicked(string);
     callback convert-encoding-clicked(string);
     callback syntax-changed(string);
+    callback open-goto-panel-clicked();
+    callback goto-confirmed(string);
+    callback goto-cancelled();
 
     // 搜尋與取代回呼
     callback find-next-clicked();
@@ -112,6 +120,10 @@ export component MainWindow inherits Window {
                 text: "十六進位模式";
                 primary: root.edit-mode == 2;
                 clicked => { root.mode-changed(2); }
+            }
+            Button {
+                text: "跳轉";
+                clicked => { root.open-goto-panel-clicked(); }
             }
 
             Rectangle { width: 12px; }
@@ -257,6 +269,53 @@ export component MainWindow inherits Window {
                     }
 
                     Rectangle { horizontal-stretch: 1; }
+                }
+            }
+        }
+
+        // 指定行號跳轉面板（支援條件展開與收合）
+        if root.show-goto-panel : Rectangle {
+            background: #f4f4f4;
+            border-width: 1px;
+            border-color: #cccccc;
+            border-radius: 4px;
+
+            HorizontalLayout {
+                padding: 6px;
+                spacing: 8px;
+                alignment: center;
+
+                Text {
+                    text: root.goto-label-text;
+                    vertical-alignment: center;
+                    font-size: 13px;
+                }
+
+                goto-input := LineEdit {
+                    width: 160px;
+                    placeholder-text: "例如: 42 或 42:10";
+                    text <=> root.goto-input-text;
+                    accepted => { root.goto-confirmed(self.text); }
+                    init => { self.focus(); }
+                }
+
+                Button {
+                    text: "跳轉";
+                    primary: true;
+                    clicked => { root.goto-confirmed(goto-input.text); }
+                }
+
+                Button {
+                    text: "取消";
+                    clicked => { root.goto-cancelled(); }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                Button {
+                    text: "✕";
+                    width: 28px;
+                    clicked => { root.goto-cancelled(); }
                 }
             }
         }

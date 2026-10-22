@@ -59,6 +59,60 @@ fn populate_search_query_from_selection(ui: &MainWindow, doc: &DocumentBuffer) {
     }
 }
 
+/// 解析跳轉行號與欄位字串（支援 "42", "42:15", "42, 15"）
+fn parse_goto_line_col(input: &str) -> Option<(usize, usize)> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = trimmed
+        .split(|c| c == ':' || c == ',')
+        .map(|s| s.trim())
+        .collect();
+
+    let line = parts.first()?.parse::<usize>().ok()?;
+    let col = if parts.len() > 1 {
+        parts[1].parse::<usize>().unwrap_or(1)
+    } else {
+        1
+    };
+    Some((line, col))
+}
+
+/// 解析 Hex 模式位移字串（支援 "0x1A0", "1A0", "256"）
+fn parse_goto_offset(input: &str) -> Option<usize> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
+        let hex_str = &trimmed[2..];
+        usize::from_str_radix(hex_str, 16).ok()
+    } else if trimmed.chars().any(|c| ('a'..='f').contains(&c) || ('A'..='F').contains(&c)) {
+        usize::from_str_radix(trimmed, 16).ok()
+    } else {
+        trimmed.parse::<usize>().ok()
+    }
+}
+
+/// 開啟並設定跳轉面板預設內容
+fn open_goto_panel(ui: &MainWindow, doc: &DocumentBuffer) {
+    ui.set_show_search_panel(false);
+    ui.set_show_goto_panel(true);
+
+    if doc.edit_mode == EditMode::Hex {
+        let max_offset = doc.len();
+        ui.set_goto_label_text(format!("移至位移 Offset (0x0 - 0x{:X}):", max_offset).into());
+        ui.set_goto_input_text(format!("0x{:X}", doc.hex_start_offset).into());
+    } else {
+        let total_lines = doc.editor.line_count().max(1);
+        let cur_line = doc.editor.selection.head.line + 1;
+        let cur_col = doc.editor.selection.head.col + 1;
+        ui.set_goto_label_text(format!("移至行 (1 - {}):", total_lines).into());
+        ui.set_goto_input_text(format!("{}:{}", cur_line, cur_col).into());
+    }
+}
+
 /// 產生狀態列顯示字串，包含位元組長度、修改標記與無損解碼錯誤警告
 fn format_status_info(doc: &DocumentBuffer) -> String {
     let modified_mark = if doc.is_modified { " *" } else { "" };
@@ -379,6 +433,47 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // 工具列開啟跳轉面板事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_open_goto_panel_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let d = doc_clone.borrow();
+            open_goto_panel(&ui, &d);
+        });
+    }
+
+    // 跳轉確認事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_goto_confirmed(move |input_text| {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let mut d = doc_clone.borrow_mut();
+            ui.set_show_goto_panel(false);
+
+            if d.edit_mode == EditMode::Hex {
+                if let Some(offset) = parse_goto_offset(input_text.as_str()) {
+                    d.goto_offset(offset);
+                }
+            } else if let Some((line, col)) = parse_goto_line_col(input_text.as_str()) {
+                d.goto_line_col(line, col);
+            }
+
+            sync_ui_from_doc(&ui, &d);
+        });
+    }
+
+    // 跳轉取消事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        main_window.on_goto_cancelled(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            ui.set_show_goto_panel(false);
+        });
+    }
+
     // 自繪編輯器鍵盤按鍵事件
     {
         let ui_handle = main_window.as_weak();
@@ -389,40 +484,82 @@ fn main() -> Result<(), slint::PlatformError> {
 
             // 快捷鍵處理
             if ctrl {
-                match key_str {
-                    "a" | "A" => {
-                        d.editor.select_all();
-                    }
-                    "c" | "C" => {
-                        d.editor.copy_to_clipboard();
-                    }
-                    "x" | "X" => {
-                        d.editor.cut_to_clipboard();
-                        d.sync_from_editor();
-                    }
-                    "v" | "V" => {
-                        d.editor.paste_from_clipboard();
-                        d.sync_from_editor();
-                    }
-                    "f" | "F" => {
-                        if let Some(ui) = ui_handle.upgrade() {
-                            ui.set_show_search_panel(true);
-                            populate_search_query_from_selection(&ui, &d);
+                if shift {
+                    match key_str {
+                        "d" | "D" => {
+                            d.editor.duplicate_lines();
+                            d.sync_from_editor();
                         }
-                    }
-                    "h" | "H" => {
-                        if let Some(ui) = ui_handle.upgrade() {
-                            ui.set_show_search_panel(true);
-                            ui.set_show_replace(true);
-                            populate_search_query_from_selection(&ui, &d);
+                        "k" | "K" => {
+                            d.editor.delete_lines();
+                            d.sync_from_editor();
                         }
+                        _ => return false,
                     }
-                    _ => return false,
+                } else {
+                    match key_str {
+                        "a" | "A" => {
+                            d.editor.select_all();
+                        }
+                        "c" | "C" => {
+                            d.editor.copy_to_clipboard();
+                        }
+                        "x" | "X" => {
+                            d.editor.cut_to_clipboard();
+                            d.sync_from_editor();
+                        }
+                        "v" | "V" => {
+                            d.editor.paste_from_clipboard();
+                            d.sync_from_editor();
+                        }
+                        "f" | "F" => {
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_show_search_panel(true);
+                                populate_search_query_from_selection(&ui, &d);
+                            }
+                        }
+                        "h" | "H" => {
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.set_show_search_panel(true);
+                                ui.set_show_replace(true);
+                                populate_search_query_from_selection(&ui, &d);
+                            }
+                        }
+                        "g" | "G" => {
+                            if let Some(ui) = ui_handle.upgrade() {
+                                if ui.get_show_goto_panel() {
+                                    ui.set_show_goto_panel(false);
+                                } else {
+                                    open_goto_panel(&ui, &d);
+                                }
+                            }
+                        }
+                        _ => return false,
+                    }
                 }
                 if let Some(ui) = ui_handle.upgrade() {
                     sync_ui_from_doc(&ui, &d);
                 }
                 return true;
+            }
+
+            // Alt+方向鍵 行上下移動
+            if alt && !ctrl && !shift {
+                if key_str.starts_with(char::from(Key::UpArrow)) {
+                    d.editor.move_lines_up();
+                    d.sync_from_editor();
+                    if let Some(ui) = ui_handle.upgrade() {
+                        sync_ui_from_doc(&ui, &d);
+                    }
+                    return true;
+                } else if key_str.starts_with(char::from(Key::DownArrow)) {
+                    d.editor.move_lines_down();
+                    d.sync_from_editor();
+                    if let Some(ui) = ui_handle.upgrade() {
+                        sync_ui_from_doc(&ui, &d);
+                    }
+                    return true;
+                }
             }
 
             // 導覽鍵處理
@@ -439,7 +576,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 d.editor.move_down(shift);
                 true
             } else if key_str.starts_with(char::from(Key::Home)) {
-                d.editor.move_home(shift);
+                d.editor.move_home_smart(shift);
                 true
             } else if key_str.starts_with(char::from(Key::End)) {
                 d.editor.move_end(shift);
@@ -480,7 +617,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 true
             } else if key_str.starts_with(char::from(Key::Escape)) {
                 if let Some(ui) = ui_handle.upgrade() {
-                    if ui.get_show_search_panel() {
+                    if ui.get_show_goto_panel() {
+                        ui.set_show_goto_panel(false);
+                        true
+                    } else if ui.get_show_search_panel() {
                         ui.set_show_search_panel(false);
                         true
                     } else {
@@ -576,4 +716,30 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     main_window.run()
+}
+
+#[cfg(test)]
+mod main_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_goto_line_col() {
+        assert_eq!(parse_goto_line_col("42"), Some((42, 1)));
+        assert_eq!(parse_goto_line_col("  42  "), Some((42, 1)));
+        assert_eq!(parse_goto_line_col("42:15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col("42, 15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col("42: 15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col(""), None);
+        assert_eq!(parse_goto_line_col("abc"), None);
+    }
+
+    #[test]
+    fn test_parse_goto_offset() {
+        assert_eq!(parse_goto_offset("0x1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("0X1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("256"), Some(256));
+        assert_eq!(parse_goto_offset(""), None);
+        assert_eq!(parse_goto_offset("xyz"), None);
+    }
 }
