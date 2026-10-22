@@ -1,13 +1,13 @@
-# MadEdit-Rust
+# MadEdit Rust 重製版
 
-**以現代 Rust 與 egui 打造的跨平台、輕量、極速文字 / 列塊 / 十六進位編輯器**  
+**以現代 Rust 與 egui 重新打造的跨平台、輕量、極速文字 / 列塊 / 十六進位編輯器**  
 *A modern, lightweight, cross-platform Text / Column / Hex editor inspired by classic MadEdit, written in pure Rust.*
 
 ---
 
 ## 📖 專案背景與願景
 
-原版 C++ / wxWidgets 架構的 **MadEdit** 是許多開發者與資料處理人員心目中的經典工具（支援列塊編輯、Hex 檢視與多國語系編碼切換），但隨著時間推移，龐雜的 C++ 跨平台依賴與編譯鏈在現代 Windows、macOS 與 Linux 環境下日益難以維護。
+原版 C++ / wxWidgets 架構的 **MadEdit** 是許多開發者與資料處理人員心目中的經典工具（支援列塊編輯、Hex 檢視與多國語系編碼切換），但隨著時間推移，龐雜的 C++ 跨平台依賴與編譯鏈在現代 Windows、macOS 與 Linux 環境下日益難以維護。在下原本也由 MadEdit-Mod 的原始碼重新建置出 Mac 版本與 Linux 版本，但是速度慢，有許多功能在非Windows難以正常實現，尤其是字型顯示，修改後各平臺不一致，於是才使用 Rust 重製。
 
 **MadEdit-Rust** 以 **Rust (Edition 2024)** 與即時模式 GUI 框架 **[egui / eframe](https://github.com/emilk/egui)** 重新打造，遵循 **KISS (Keep It Simple, Stupid)** 設計原則，在零 C++ GUI 系統庫依賴的前提下，重現原版 MadEdit 的經典介面與命令集（依原版命令表實作 165 個命令）。
 
