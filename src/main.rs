@@ -19,7 +19,7 @@ fn format_status_info(doc: &DocumentBuffer) -> String {
     } else {
         ""
     };
-    format!("Len: {} bytes{}{}", doc.raw_bytes.len(), modified_mark, error_warn)
+    format!("Len: {} bytes{}{}", doc.len(), modified_mark, error_warn)
 }
 
 /// 將核心 DocumentBuffer 的完整狀態同步至 Slint 主視窗屬性
@@ -37,7 +37,7 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_newline_format(doc.newline_format.as_str().into());
 
     // 同步可見行自繪資料
-    let visible_lines_data = doc.editor.generate_visible_lines(CELL_WIDTH);
+    let visible_lines_data = doc.generate_visible_lines(CELL_WIDTH);
     let slint_lines: Vec<VisibleLine> = visible_lines_data
         .into_iter()
         .map(|l| VisibleLine {

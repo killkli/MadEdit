@@ -21,6 +21,9 @@ pub const SUPPORTED_ENCODINGS: &[&str] = &[
     "windows-1252",
 ];
 
+/// 小型檔案快取門檻（512 KB）：小於此門檻之檔案直接載入記憶體供編輯器互動，大於此門檻則採按需解碼
+pub const SMALL_FILE_CACHE_LIMIT: usize = 512 * 1024;
+
 /// 單一開啟或未命名文件的核心狀態容器（DocumentBuffer）
 pub struct DocumentBuffer {
     pub file_path: Option<PathBuf>,
@@ -107,28 +110,117 @@ impl DocumentBuffer {
 
         self.line_index = LineIndex::build(&self.piece_table);
 
-        // 同步載入文字供編輯器使用
-        let full_bytes = self.piece_table.collect_bytes();
-        let decode_slice = if self.has_bom && full_bytes.len() >= bom_len {
-            &full_bytes[bom_len..]
-        } else {
-            &full_bytes[..]
-        };
+        let file_size = self.piece_table.len();
+        if file_size <= SMALL_FILE_CACHE_LIMIT {
+            // 小型檔案：快取整份文字與位元組供編輯器與快速存取
+            let full_bytes = self.piece_table.collect_bytes();
+            let decode_slice = if self.has_bom && full_bytes.len() >= bom_len {
+                &full_bytes[bom_len..]
+            } else {
+                &full_bytes[..]
+            };
 
-        let (decoded, had_errors) = self.encoding.decode_without_bom_handling(decode_slice);
-        if had_errors {
-            self.has_decode_error = true;
+            let (decoded, had_errors) = self.encoding.decode_without_bom_handling(decode_slice);
+            if had_errors {
+                self.has_decode_error = true;
+            }
+
+            self.text = decoded.into_owned();
+            self.raw_bytes = full_bytes;
+            self.editor.set_text(&self.text);
+        } else {
+            // 大型檔案：避免全檔記憶體複製與整檔解碼，依賴 Piece Table 與 LineIndex 按需供應
+            self.text.clear();
+            self.raw_bytes.clear();
+            let count = self.line_index.line_count().max(1);
+            self.editor.lines = vec![String::new(); count];
+            self.editor.selection = super::editor::Selection::caret(super::editor::TextPosition::new(0, 0));
+            self.editor.clamp_caret();
         }
 
-        self.text = decoded.into_owned();
-        self.raw_bytes = full_bytes;
-        self.editor.set_text(&self.text);
         self.is_modified = false;
 
         Ok(())
     }
 
-    /// 儲存檔案至指定路徑或原路徑；若當前存在無損解碼錯誤（has_decode_error），拒絕存檔以防止毀損原檔
+    /// 將當前 text 編碼同步至底層位元組與 Piece Table（DRY 萃取共用邏輯）
+    fn sync_bytes_to_piece_table(&mut self) {
+        if !self.has_decode_error {
+            self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
+            self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
+            self.line_index = LineIndex::build(&self.piece_table);
+        }
+    }
+
+    /// 取得目前文件的位元組長度
+    pub fn len(&self) -> usize {
+        self.piece_table.len()
+    }
+
+    /// 是否為空檔案
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.piece_table.len() == 0
+    }
+
+    /// 取得目前完整底層位元組（相容性查詢介面：若未快取則自 Piece Table 串流收集）
+    #[allow(dead_code)]
+    pub fn raw_bytes(&self) -> Vec<u8> {
+        if !self.raw_bytes.is_empty() || self.piece_table.len() == 0 {
+            self.raw_bytes.clone()
+        } else {
+            self.piece_table.collect_bytes()
+        }
+    }
+
+    /// 取得目前文字內容（相容性查詢介面：若未快取則自 Piece Table 解碼）
+    #[allow(dead_code)]
+    pub fn text(&self) -> String {
+        if !self.text.is_empty() || self.piece_table.len() == 0 {
+            self.text.clone()
+        } else {
+            let bytes = self.piece_table.collect_bytes();
+            let decode_slice = if self.has_bom {
+                if let Some((_, len)) = Encoding::for_bom(&bytes) {
+                    &bytes[len..]
+                } else {
+                    &bytes[..]
+                }
+            } else {
+                &bytes[..]
+            };
+            let (decoded, _) = self.encoding.decode_without_bom_handling(decode_slice);
+            decoded.into_owned()
+        }
+    }
+
+    /// 根據可視視窗（Viewport）與字元格網寬度產生可見行繪製資料（支援大檔案按需解碼）
+    pub fn generate_visible_lines(&self, cell_width: f32) -> Vec<super::editor::VisibleLineData> {
+        let start_line = self.editor.viewport.first_visible_line;
+        let count = self.editor.viewport.visible_line_count;
+
+        let has_cached_lines = !self.editor.lines.is_empty()
+            && self.editor.lines.len() == self.line_index.line_count()
+            && self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT;
+
+        if has_cached_lines {
+            let end_line = (start_line + count).min(self.editor.lines.len());
+            let slice = if start_line < self.editor.lines.len() {
+                &self.editor.lines[start_line..end_line]
+            } else {
+                &[]
+            };
+            self.editor.generate_visible_lines_with_text(slice, cell_width)
+        } else {
+            // 從 Piece Table 透過 LineIndex 按需解碼當前可見的行
+            let visible_texts = self
+                .line_index
+                .fetch_lines(&self.piece_table, self.encoding, start_line, count);
+            self.editor.generate_visible_lines_with_text(&visible_texts, cell_width)
+        }
+    }
+
+    /// 儲存檔案至指定路徑或原路徑；採用原子寫入機制（先寫暫存檔再替換），並在存在無損解碼錯誤時拒絕存檔防毀損
     pub fn save_file(&mut self, path: Option<PathBuf>) -> std::io::Result<()> {
         if self.has_decode_error {
             return Err(std::io::Error::new(
@@ -145,15 +237,42 @@ impl DocumentBuffer {
             ));
         };
 
-        // 在文字或列塊模式下，依當前編碼與 BOM 設定更新位元組緩衝區與 Piece Table
-        if self.edit_mode != EditMode::Hex {
-            self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
-            self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
-            self.line_index = LineIndex::build(&self.piece_table);
+        // 僅在小檔且有快取文字時，確保最新文字已同步至 Piece Table
+        if self.edit_mode != EditMode::Hex
+            && self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT
+            && !self.text.is_empty()
+        {
+            self.sync_bytes_to_piece_table();
         }
 
-        let mut file = fs::File::create(&p)?;
-        self.piece_table.write_to(&mut file)?;
+        // 產生同目錄下的暫存檔案路徑
+        let tmp_path = p.with_extension(format!("tmp.{}", std::process::id()));
+        {
+            let mut tmp_file = fs::File::create(&tmp_path)?;
+            self.piece_table.write_to(&mut tmp_file)?;
+            tmp_file.sync_all()?;
+        }
+
+        // 釋放既有 piece_table（以關閉在 Windows 下可能持有的 mmap 檔案控制代碼）
+        self.piece_table = PieceTable::new();
+
+        // 以原子替換將暫存檔更名為目標檔
+        if let Err(e) = fs::rename(&tmp_path, &p) {
+            // 若更名失敗，嘗試清理暫存檔後回傳錯誤
+            let _ = fs::remove_file(&tmp_path);
+            return Err(e);
+        }
+
+        // 重新為目標檔案建立 Piece Table 與 LineIndex
+        let file = fs::File::open(&p)?;
+        let file_len = file.metadata()?.len();
+        self.piece_table = if file_len > 0 {
+            let mmap = unsafe { memmap2::Mmap::map(&file)? };
+            PieceTable::from_mmap(mmap)
+        } else {
+            PieceTable::new()
+        };
+        self.line_index = LineIndex::build(&self.piece_table);
         self.file_path = Some(p);
         self.is_modified = false;
 
@@ -165,11 +284,7 @@ impl DocumentBuffer {
         let new_text = self.editor.to_text(self.newline_format.newline_str());
         self.text = new_text;
         self.is_modified = true;
-        if !self.has_decode_error {
-            self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
-            self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
-            self.line_index = LineIndex::build(&self.piece_table);
-        }
+        self.sync_bytes_to_piece_table();
     }
 
     /// 當使用者在外部或模式切換修改內容時同步更新文字與底層位元組
@@ -178,11 +293,7 @@ impl DocumentBuffer {
         if self.text != new_text {
             self.text = new_text;
             self.is_modified = true;
-            if !self.has_decode_error {
-                self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
-                self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
-                self.line_index = LineIndex::build(&self.piece_table);
-            }
+            self.sync_bytes_to_piece_table();
             self.editor.set_text(&self.text);
         }
     }
@@ -190,10 +301,11 @@ impl DocumentBuffer {
     /// 切換編輯模式（Text / Column / Hex）
     pub fn set_edit_mode(&mut self, mode: EditMode) {
         self.edit_mode = mode;
-        if mode == EditMode::Hex && !self.has_decode_error {
-            self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
-            self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
-            self.line_index = LineIndex::build(&self.piece_table);
+        if mode == EditMode::Hex
+            && self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT
+            && !self.text.is_empty()
+        {
+            self.sync_bytes_to_piece_table();
         }
     }
 
@@ -226,11 +338,9 @@ impl DocumentBuffer {
             || enc == encoding_rs::UTF_16BE
             || (enc == encoding_rs::UTF_8 && self.encoding == encoding_rs::UTF_8 && self.has_bom);
         self.encoding = enc;
-        self.raw_bytes = Self::encode_str(&self.text, enc, self.has_bom);
-        self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
-        self.line_index = LineIndex::build(&self.piece_table);
         self.has_decode_error = false;
         self.is_modified = true;
+        self.sync_bytes_to_piece_table();
         true
     }
 
@@ -436,13 +546,38 @@ mod tests {
         // 驗證秒級開啟（< 500ms）
         println!("Loaded 100k lines in {:?}", elapsed);
         assert_eq!(doc.line_index.line_count(), line_count + 1);
-        assert_eq!(doc.piece_table.len(), line.len() * line_count);
+        assert_eq!(doc.len(), line.len() * line_count);
 
         // 驗證隨機讀取第 50,000 行
         let fetched = doc.line_index.fetch_lines(&doc.piece_table, encoding_rs::UTF_8, 50_000, 1);
         assert_eq!(fetched, vec!["This is a line of benchmark text for large file engine."]);
 
+        // 驗證可見行按需渲染（第 0 行至第 30 行）
+        let visible = doc.generate_visible_lines(8.5);
+        assert!(!visible.is_empty());
+        assert_eq!(visible[0].line_number, 1);
+        assert_eq!(visible[0].text, "This is a line of benchmark text for large file engine.");
+
+        // 驗證原子存檔在 mmap 模式下運作正常
+        assert!(doc.save_file(None).is_ok());
+        assert_eq!(doc.len(), line.len() * line_count);
+
         let _ = fs::remove_file(&large_path);
+    }
+
+    #[test]
+    fn test_buffer_compatibility_queries() {
+        let mut doc = DocumentBuffer::new();
+        assert!(doc.is_empty());
+        assert_eq!(doc.len(), 0);
+        assert_eq!(doc.raw_bytes(), Vec::<u8>::new());
+        assert_eq!(doc.text(), "");
+
+        doc.update_text("Hello World".to_string());
+        assert!(!doc.is_empty());
+        assert_eq!(doc.len(), 11);
+        assert_eq!(doc.raw_bytes(), b"Hello World");
+        assert_eq!(doc.text(), "Hello World");
     }
 }
 

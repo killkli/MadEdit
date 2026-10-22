@@ -336,18 +336,15 @@ impl EditorState {
             chars[start.col..end.col].iter().collect()
         } else {
             let mut result = String::new();
-            // 第一行後半
             let line0: Vec<char> = self.lines[start.line].chars().collect();
             result.push_str(&line0[start.col..].iter().collect::<String>());
             result.push('\n');
 
-            // 中間整行
             for line_idx in (start.line + 1)..end.line {
                 result.push_str(&self.lines[line_idx]);
                 result.push('\n');
             }
 
-            // 最後一行前半
             let line_end: Vec<char> = self.lines[end.line].chars().collect();
             result.push_str(&line_end[..end.col].iter().collect::<String>());
             result
@@ -447,7 +444,6 @@ impl EditorState {
             let new_pos = TextPosition::new(head.line, head.col - 1);
             self.selection = Selection::caret(new_pos);
         } else if head.line > 0 {
-            // 與上一行合併
             let current_line = self.lines.remove(head.line);
             let prev_line_idx = head.line - 1;
             let prev_len = self.line_char_count(prev_line_idx);
@@ -471,7 +467,6 @@ impl EditorState {
             chars.remove(head.col);
             self.lines[head.line] = chars.into_iter().collect();
         } else if head.line + 1 < self.lines.len() {
-            // 與下一行合併
             let next_line = self.lines.remove(head.line + 1);
             self.lines[head.line].push_str(&next_line);
         }
@@ -529,9 +524,25 @@ impl EditorState {
 
     /// 根據目前可視視窗（Viewport）與字元格網寬度產生可見行繪製資料
     pub fn generate_visible_lines(&self, cell_width: f32) -> Vec<VisibleLineData> {
-        let mut result = Vec::new();
         let start_line = self.viewport.first_visible_line;
         let count = self.viewport.visible_line_count;
+        let end_line = (start_line + count).min(self.lines.len());
+        let slice = if start_line < self.lines.len() {
+            &self.lines[start_line..end_line]
+        } else {
+            &[]
+        };
+        self.generate_visible_lines_with_text(slice, cell_width)
+    }
+
+    /// 根據傳入的可見行文字清單與字元格網寬度產生可見行繪製資料（支援大檔案按需解碼）
+    pub fn generate_visible_lines_with_text(
+        &self,
+        visible_texts: &[String],
+        cell_width: f32,
+    ) -> Vec<VisibleLineData> {
+        let mut result = Vec::new();
+        let start_line = self.viewport.first_visible_line;
         let has_sel = !self.selection.is_empty();
         let (sel_start, sel_end) = if has_sel {
             (self.selection.start(), self.selection.end())
@@ -539,12 +550,8 @@ impl EditorState {
             (TextPosition::default(), TextPosition::default())
         };
 
-        for i in 0..count {
+        for (i, line_text) in visible_texts.iter().enumerate() {
             let line_idx = start_line + i;
-            if line_idx >= self.lines.len() {
-                break;
-            }
-            let line_text = &self.lines[line_idx];
             let line_number = (line_idx + 1) as i32;
 
             // 游標判斷
