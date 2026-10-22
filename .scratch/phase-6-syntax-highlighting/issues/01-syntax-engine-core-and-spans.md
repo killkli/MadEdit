@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 01: 語法突顯引擎核心與分段色彩提取
 
