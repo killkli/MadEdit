@@ -64,7 +64,7 @@ pub fn parse_hex_query(query: &str) -> Result<Vec<u8>, String> {
     if let Some(c) = clean.chars().find(|c| !c.is_ascii_hexdigit()) {
         return Err(format!("無效的十六進位字元: {}", c));
     }
-    if clean.len() % 2 != 0 {
+    if !clean.len().is_multiple_of(2) {
         return Err("十六進位序列長度必須為偶數".to_string());
     }
 

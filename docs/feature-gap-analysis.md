@@ -4,6 +4,10 @@
 > 比對基準：原版 MadEdit-Mod 原始碼 `~/Projects/madedit-mod`（`src/MadEditFrame.cpp` 的 `CommandTable`、`src/MadOptionsDialog.cpp`），
 > 對照本專案 `fix/macos-ime-theme-font` 分支（`src/main.rs` 的 `build_menus` 與 `src/core/`）。
 
+> **2026-10-23 更新**：已依本文建議改寫為 egui 並補齊命令表（165 個命令全部可用），詳見 [ADR 0011](adr/0011-egui-rewrite.md)。
+> 下列第 2 節的狀態欄是 Slint 時期（改寫前）的盤點結果，保留作為紀錄。
+> 改寫後仍未實作：單一執行個體、介面語言切換、檔案關聯、真正的 bidi、語法配色逐項自訂、跨行 Regex、Python 巨集。
+
 ---
 
 ## 1. 結論

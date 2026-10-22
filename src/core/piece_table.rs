@@ -1,8 +1,10 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fs::File;
 use std::io::Write;
 
 /// Piece 片段的資料來源（原始唯讀緩衝區或新增追加緩衝區）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum BufferSource {
     Original,
     Add,
@@ -16,19 +18,78 @@ pub struct Piece {
     pub length: usize,
 }
 
-/// 原始緩衝區容器（支援記憶體位元組或 memmap2 記憶體對映）
-pub enum OriginalBuffer {
-    Bytes(Vec<u8>),
-    Mmap(memmap2::Mmap),
+/// 檔案分頁快取的頁大小與最多保留頁數（共約 4 MB）
+const PAGE_SIZE: usize = 64 * 1024;
+const MAX_CACHED_PAGES: usize = 64;
+
+/// 以檔案為後盾的唯讀原始資料：依需要以定位讀取（pread）取頁，並快取最近使用的頁
+///
+/// 不使用 mmap：在 Unix 上，對映中的檔案若被外部程式截短，存取超出新長度的頁面會收到
+/// SIGBUS 而整個程式崩潰；定位讀取遇到截短只會讀到較短的資料，缺少的部分以 0 補齊。
+pub struct FileSource {
+    file: File,
+    len: usize,
+    cache: RefCell<HashMap<usize, Vec<u8>>>,
 }
 
-impl AsRef<[u8]> for OriginalBuffer {
-    fn as_ref(&self) -> &[u8] {
-        match self {
-            OriginalBuffer::Bytes(b) => b.as_slice(),
-            OriginalBuffer::Mmap(m) => m.as_ref(),
+impl FileSource {
+    fn read_page(&self, page: usize) -> Vec<u8> {
+        let start = page * PAGE_SIZE;
+        let want = PAGE_SIZE.min(self.len.saturating_sub(start));
+        let mut buf = vec![0u8; want];
+        let mut filled = 0;
+        while filled < want {
+            match read_at(&self.file, &mut buf[filled..], (start + filled) as u64) {
+                Ok(0) | Err(_) => break, // 檔案被截短或讀取錯誤：其餘維持 0
+                Ok(n) => filled += n,
+            }
         }
+        buf
     }
+
+    /// 將 [offset, offset + out.len()) 的資料複製到 out
+    fn copy_to(&self, offset: usize, out: &mut Vec<u8>, length: usize) {
+        let mut pos = offset;
+        let end = offset + length;
+        let mut cache = self.cache.borrow_mut();
+        while pos < end {
+            let page = pos / PAGE_SIZE;
+            if !cache.contains_key(&page) {
+                if cache.len() >= MAX_CACHED_PAGES {
+                    // 簡單淘汰：清空後重新累積，避免維護 LRU 順序的額外成本
+                    cache.clear();
+                }
+                let data = self.read_page(page);
+                cache.insert(page, data);
+            }
+            let data = &cache[&page];
+            let in_page = pos - page * PAGE_SIZE;
+            let take = (end - pos).min(data.len().saturating_sub(in_page));
+            if take == 0 {
+                break;
+            }
+            out.extend_from_slice(&data[in_page..in_page + take]);
+            pos += take;
+        }
+        // 頁面不足（檔案被截短）時補 0，維持長度一致
+        out.resize(out.len() + (end - pos), 0);
+    }
+}
+
+#[cfg(unix)]
+fn read_at(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    std::os::unix::fs::FileExt::read_at(file, buf, offset)
+}
+
+#[cfg(windows)]
+fn read_at(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    std::os::windows::fs::FileExt::seek_read(file, buf, offset)
+}
+
+/// 原始緩衝區容器（記憶體位元組或檔案定位讀取）
+pub enum OriginalBuffer {
+    Bytes(Vec<u8>),
+    File(FileSource),
 }
 
 /// 大檔案編輯核心：Piece Table 資料結構
@@ -45,19 +106,12 @@ impl Default for PieceTable {
     }
 }
 
-#[allow(dead_code)]
 impl PieceTable {
     /// 建立空的 PieceTable
     pub fn new() -> Self {
-        Self {
-            original: OriginalBuffer::Bytes(Vec::new()),
-            add_buffer: Vec::new(),
-            pieces: Vec::new(),
-            total_len: 0,
-        }
+        Self::from_bytes(Vec::new())
     }
 
-    /// 內部共用建構函式：綁定 OriginalBuffer 並初始化 Piece 清單
     fn init_with_original(original: OriginalBuffer, len: usize) -> Self {
         let pieces = if len > 0 {
             vec![Piece {
@@ -68,7 +122,6 @@ impl PieceTable {
         } else {
             Vec::new()
         };
-
         Self {
             original,
             add_buffer: Vec::new(),
@@ -83,21 +136,17 @@ impl PieceTable {
         Self::init_with_original(OriginalBuffer::Bytes(bytes), len)
     }
 
-    /// 從 memmap2 記憶體對映建立 PieceTable（零拷貝大檔開啟）
-    pub fn from_mmap(mmap: memmap2::Mmap) -> Self {
-        let len = mmap.len();
-        Self::init_with_original(OriginalBuffer::Mmap(mmap), len)
-    }
-
-    /// 從實體檔案建立 PieceTable（檔案 > 0 時建立唯讀記憶體對映，空檔案則建立空表）
-    pub fn open_file(file: &std::fs::File) -> std::io::Result<Self> {
-        let len = file.metadata()?.len();
-        if len > 0 {
-            let mmap = unsafe { memmap2::Mmap::map(file)? };
-            Ok(Self::from_mmap(mmap))
-        } else {
-            Ok(Self::new())
-        }
+    /// 從實體檔案建立 PieceTable（不載入記憶體，依需要讀取）
+    pub fn open_file(file: File) -> std::io::Result<Self> {
+        let len = file.metadata()?.len() as usize;
+        Ok(Self::init_with_original(
+            OriginalBuffer::File(FileSource {
+                file,
+                len,
+                cache: RefCell::new(HashMap::new()),
+            }),
+            len,
+        ))
     }
 
     /// 目前總位元組長度
@@ -105,49 +154,43 @@ impl PieceTable {
         self.total_len
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.total_len == 0
-    }
-
-    /// 取得底層對應來源的位元組切片
-    fn get_source_slice(&self, source: BufferSource, offset: usize, length: usize) -> &[u8] {
+    /// 將指定來源區段附加到 out
+    fn append_source(&self, source: BufferSource, offset: usize, length: usize, out: &mut Vec<u8>) {
         match source {
-            BufferSource::Original => &self.original.as_ref()[offset..offset + length],
-            BufferSource::Add => &self.add_buffer[offset..offset + length],
+            BufferSource::Add => out.extend_from_slice(&self.add_buffer[offset..offset + length]),
+            BufferSource::Original => match &self.original {
+                OriginalBuffer::Bytes(b) => out.extend_from_slice(&b[offset..offset + length]),
+                OriginalBuffer::File(f) => f.copy_to(offset, out, length),
+            },
         }
     }
 
     /// 隨機讀取指定位移與長度的位元組片段
     pub fn read_slice(&self, offset: usize, length: usize) -> Vec<u8> {
         let actual_len = length.min(self.total_len.saturating_sub(offset));
-        if actual_len == 0 {
-            return Vec::new();
-        }
-
         let mut out = Vec::with_capacity(actual_len);
-        let mut curr_offset = 0;
+        if actual_len == 0 {
+            return out;
+        }
         let end_offset = offset + actual_len;
-
+        let mut curr_offset = 0;
         for piece in &self.pieces {
             let piece_end = curr_offset + piece.length;
             if piece_end > offset && curr_offset < end_offset {
                 let slice_start = offset.saturating_sub(curr_offset);
                 let slice_end = (end_offset - curr_offset).min(piece.length);
-                let slice_len = slice_end.saturating_sub(slice_start);
-
-                let data = self.get_source_slice(
+                self.append_source(
                     piece.source,
                     piece.offset + slice_start,
-                    slice_len,
+                    slice_end - slice_start,
+                    &mut out,
                 );
-                out.extend_from_slice(data);
             }
             curr_offset = piece_end;
             if curr_offset >= end_offset {
                 break;
             }
         }
-
         out
     }
 
@@ -156,60 +199,45 @@ impl PieceTable {
         if data.is_empty() {
             return;
         }
-
-        let add_offset = self.add_buffer.len();
-        self.add_buffer.extend_from_slice(data);
+        let offset = offset.min(self.total_len);
         let new_piece = Piece {
             source: BufferSource::Add,
-            offset: add_offset,
+            offset: self.add_buffer.len(),
             length: data.len(),
         };
-
-        if self.pieces.is_empty() {
-            self.pieces.push(new_piece);
-            self.total_len = data.len();
-            return;
-        }
+        self.add_buffer.extend_from_slice(data);
 
         let mut curr_offset = 0;
         let mut insert_idx = self.pieces.len();
-        let mut split_piece: Option<(Piece, Piece)> = None;
-
+        let mut split: Option<(Piece, Piece)> = None;
         for (i, piece) in self.pieces.iter().enumerate() {
             let piece_end = curr_offset + piece.length;
-
             if offset == curr_offset {
                 insert_idx = i;
                 break;
             } else if offset > curr_offset && offset < piece_end {
                 let left_len = offset - curr_offset;
-                let right_len = piece.length - left_len;
-                let left_piece = Piece {
-                    source: piece.source,
-                    offset: piece.offset,
-                    length: left_len,
-                };
-                let right_piece = Piece {
-                    source: piece.source,
-                    offset: piece.offset + left_len,
-                    length: right_len,
-                };
-                split_piece = Some((left_piece, right_piece));
+                split = Some((
+                    Piece { length: left_len, ..*piece },
+                    Piece {
+                        source: piece.source,
+                        offset: piece.offset + left_len,
+                        length: piece.length - left_len,
+                    },
+                ));
                 insert_idx = i;
                 break;
             }
-
             curr_offset = piece_end;
         }
 
-        if let Some((left, right)) = split_piece {
+        if let Some((left, right)) = split {
             self.pieces[insert_idx] = left;
             self.pieces.insert(insert_idx + 1, new_piece);
             self.pieces.insert(insert_idx + 2, right);
         } else {
             self.pieces.insert(insert_idx, new_piece);
         }
-
         self.total_len += data.len();
     }
 
@@ -219,164 +247,96 @@ impl PieceTable {
         if actual_len == 0 {
             return;
         }
-
         let del_start = offset;
         let del_end = offset + actual_len;
-        let mut new_pieces = Vec::new();
+        let mut new_pieces = Vec::with_capacity(self.pieces.len() + 1);
         let mut curr_offset = 0;
-
         for piece in &self.pieces {
             let piece_start = curr_offset;
             let piece_end = curr_offset + piece.length;
-
             if piece_end <= del_start || piece_start >= del_end {
-                // 完全在刪除區間外，完整保留
                 new_pieces.push(*piece);
             } else {
-                // 與刪除區間重疊
-                // 保留重疊處前半部
                 if piece_start < del_start {
-                    let left_len = del_start - piece_start;
-                    new_pieces.push(Piece {
-                        source: piece.source,
-                        offset: piece.offset,
-                        length: left_len,
-                    });
+                    new_pieces.push(Piece { length: del_start - piece_start, ..*piece });
                 }
-                // 保留重疊處後半部
                 if piece_end > del_end {
-                    let right_len = piece_end - del_end;
-                    let right_src_offset = piece.offset + (del_end - piece_start);
                     new_pieces.push(Piece {
                         source: piece.source,
-                        offset: right_src_offset,
-                        length: right_len,
+                        offset: piece.offset + (del_end - piece_start),
+                        length: piece_end - del_end,
                     });
                 }
             }
-
             curr_offset = piece_end;
         }
-
         self.pieces = new_pieces;
         self.total_len -= actual_len;
     }
 
-    /// 將全部 Piece 循序收集為一個單部位元組向量（僅建議在中小型檔案使用）
+    /// 將全部 Piece 循序收集為一個位元組向量（僅建議在中小型檔案使用）
     pub fn collect_bytes(&self) -> Vec<u8> {
         self.read_slice(0, self.total_len)
     }
 
-    /// 串流寫出所有片段至指定的 Writer（用於大檔案無損高速存檔）
+    /// 串流寫出所有片段至指定的 Writer（大檔分段讀寫，不整份載入記憶體）
     pub fn write_to<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        const CHUNK: usize = 4 * 1024 * 1024;
+        let mut buf = Vec::with_capacity(CHUNK);
         for piece in &self.pieces {
-            let slice = self.get_source_slice(piece.source, piece.offset, piece.length);
-            writer.write_all(slice)?;
+            let mut done = 0;
+            while done < piece.length {
+                let take = CHUNK.min(piece.length - done);
+                buf.clear();
+                self.append_source(piece.source, piece.offset + done, take, &mut buf);
+                writer.write_all(&buf)?;
+                done += take;
+            }
         }
         Ok(())
     }
-}
 
-/// 大檔案行位移索引，支援 O(log N) 行號快速定位與按需解碼
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LineIndex {
-    line_starts: Vec<usize>,
-    total_len: usize,
-}
-
-#[allow(dead_code)]
-impl LineIndex {
-    /// 依據 PieceTable 內容建立行起始索引（支援 CRLF, LF, CR 各式換行符號，零拷貝掃描）
-    pub fn build(pt: &PieceTable) -> Self {
-        let mut line_starts = vec![0];
-        let mut curr_offset = 0;
-        let mut prev_was_cr = false;
-
-        for piece in &pt.pieces {
-            let slice = pt.get_source_slice(piece.source, piece.offset, piece.length);
-            for (i, &b) in slice.iter().enumerate() {
-                let byte_offset = curr_offset + i;
-                if prev_was_cr {
-                    if b == b'\n' {
-                        // CRLF 換行：新行起始於 \n 之後
-                        line_starts.push(byte_offset + 1);
-                        prev_was_cr = false;
-                        continue;
-                    } else {
-                        // 單獨 CR 換行：新行起始於當前字元處
-                        line_starts.push(byte_offset);
-                        prev_was_cr = false;
-                    }
-                }
-
-                if b == b'\r' {
-                    prev_was_cr = true;
-                } else if b == b'\n' {
-                    line_starts.push(byte_offset + 1);
-                }
-            }
-            curr_offset += piece.length;
-        }
-
-        if prev_was_cr {
-            line_starts.push(curr_offset);
-        }
-
-        Self {
-            line_starts,
-            total_len: pt.len(),
-        }
-    }
-
-    /// 總行數
-    pub fn line_count(&self) -> usize {
-        self.line_starts.len()
-    }
-
-    /// 取得指定行號（0-based）在 Piece Table 中的位元組起訖區間 (start_offset, end_offset)
-    pub fn line_byte_range(&self, line_idx: usize) -> Option<(usize, usize)> {
-        if line_idx >= self.line_starts.len() {
+    /// 在 [from, to) 範圍內搜尋位元組樣式，回傳第一個匹配位移（分塊讀取，適用大檔）
+    pub fn find(&self, pattern: &[u8], from: usize, to: usize) -> Option<usize> {
+        if pattern.is_empty() {
             return None;
         }
-        let start = self.line_starts[line_idx];
-        let end = if line_idx + 1 < self.line_starts.len() {
-            self.line_starts[line_idx + 1]
-        } else {
-            self.total_len
-        };
-        Some((start, end))
-    }
-
-    /// 根據位元組位移（offset）透過二分搜尋取得對應行號 (0-based)
-    pub fn line_at_offset(&self, offset: usize) -> usize {
-        match self.line_starts.binary_search(&offset) {
-            Ok(idx) => idx,
-            Err(idx) => idx.saturating_sub(1),
-        }
-    }
-
-    /// 按需擷取指定範圍的行內容並解碼為文字字串清單（去除行尾換行符號）
-    pub fn fetch_lines(
-        &self,
-        pt: &PieceTable,
-        encoding: &'static encoding_rs::Encoding,
-        start_line: usize,
-        count: usize,
-    ) -> Vec<String> {
-        let mut lines = Vec::with_capacity(count);
-        for i in 0..count {
-            let line_idx = start_line + i;
-            let Some((start, end)) = self.line_byte_range(line_idx) else {
-                break;
-            };
-            if end >= start {
-                let bytes = pt.read_slice(start, end - start);
-                let (decoded, _) = encoding.decode_without_bom_handling(&bytes);
-                let line_str = decoded.trim_end_matches(['\r', '\n']).to_string();
-                lines.push(line_str);
+        const CHUNK: usize = 1024 * 1024;
+        let to = to.min(self.total_len);
+        let mut pos = from;
+        while pos + pattern.len() <= to {
+            let len = (CHUNK + pattern.len() - 1).min(to - pos);
+            let data = self.read_slice(pos, len);
+            if let Some(i) = data.windows(pattern.len()).position(|w| w == pattern) {
+                return Some(pos + i);
             }
+            if pos + len >= to {
+                break;
+            }
+            pos += CHUNK;
         }
-        lines
+        None
+    }
+
+    /// 在 [0, before) 範圍內反向搜尋位元組樣式，回傳最後一個匹配位移
+    pub fn rfind(&self, pattern: &[u8], before: usize) -> Option<usize> {
+        if pattern.is_empty() {
+            return None;
+        }
+        const CHUNK: usize = 1024 * 1024;
+        let mut end = before.min(self.total_len);
+        while end >= pattern.len() {
+            let start = end.saturating_sub(CHUNK + pattern.len() - 1);
+            let data = self.read_slice(start, end - start);
+            if let Some(i) = data.windows(pattern.len()).rposition(|w| w == pattern) {
+                return Some(start + i);
+            }
+            if start == 0 {
+                break;
+            }
+            end = start + pattern.len() - 1;
+        }
+        None
     }
 }
 
@@ -390,16 +350,10 @@ mod tests {
         assert_eq!(pt.len(), 11);
         assert_eq!(pt.collect_bytes(), b"Hello World");
 
-        // 中間插入：在 "Hello " 後面插入 "Beautiful " (offset 6)
         pt.insert(6, b"Beautiful ");
-        assert_eq!(pt.len(), 21);
         assert_eq!(pt.collect_bytes(), b"Hello Beautiful World");
-
-        // 開頭插入
         pt.insert(0, b">>> ");
         assert_eq!(pt.collect_bytes(), b">>> Hello Beautiful World");
-
-        // 結尾插入
         let len = pt.len();
         pt.insert(len, b" !!!");
         assert_eq!(pt.collect_bytes(), b">>> Hello Beautiful World !!!");
@@ -408,16 +362,10 @@ mod tests {
     #[test]
     fn test_piece_table_delete() {
         let mut pt = PieceTable::from_bytes(b"0123456789".to_vec());
-
-        // 刪除中間 "345" (offset 3, length 3)
         pt.delete(3, 3);
         assert_eq!(pt.collect_bytes(), b"0126789");
-
-        // 插入 "ABC" 到 offset 3
         pt.insert(3, b"ABC");
         assert_eq!(pt.collect_bytes(), b"012ABC6789");
-
-        // 跨 Piece 刪除：從 "2" 到 "6" (offset 2, length 5: 包含 '2', 'A', 'B', 'C', '6')
         pt.delete(2, 5);
         assert_eq!(pt.collect_bytes(), b"01789");
     }
@@ -426,40 +374,39 @@ mod tests {
     fn test_piece_table_read_slice_and_stream_write() {
         let mut pt = PieceTable::from_bytes(b"Line 1\nLine 2\nLine 3\n".to_vec());
         pt.insert(7, b"Inserted ");
-
-        let slice = pt.read_slice(0, 16);
-        assert_eq!(slice, b"Line 1\nInserted ");
-
+        assert_eq!(pt.read_slice(0, 16), b"Line 1\nInserted ");
         let mut buffer = Vec::new();
         pt.write_to(&mut buffer).unwrap();
         assert_eq!(buffer, pt.collect_bytes());
     }
 
     #[test]
-    fn test_line_index_build_and_fetch_lines() {
-        let content = b"First line\r\nSecond line\nThird line";
-        let pt = PieceTable::from_bytes(content.to_vec());
-        let line_index = LineIndex::build(&pt);
+    fn test_file_backed_source_survives_truncation() {
+        let path = std::env::temp_dir().join(format!("madedit_pt_{}.bin", std::process::id()));
+        let data: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&path, &data).unwrap();
+        let pt = PieceTable::open_file(File::open(&path).unwrap()).unwrap();
+        assert_eq!(pt.len(), data.len());
+        assert_eq!(pt.read_slice(70_000, 10), &data[70_000..70_010]);
+        // 資料以 251 為週期重複，第一個匹配位於 150000 % 251
+        assert_eq!(pt.find(&data[150_000..150_004], 0, pt.len()), Some(150_000 % 251));
 
-        assert_eq!(line_index.line_count(), 3);
-        assert_eq!(line_index.line_at_offset(0), 0);
-        assert_eq!(line_index.line_at_offset(5), 0);
-        assert_eq!(line_index.line_at_offset(12), 1); // "Second line" 開頭
+        // 外部截短檔案後讀取不應崩潰，缺少的資料以 0 補齊
+        std::fs::write(&path, &data[..1000]).unwrap();
+        let tail = pt.read_slice(190_000, 16);
+        assert_eq!(tail.len(), 16);
+        let _ = std::fs::remove_file(&path);
+    }
 
-        // 按需讀取行內容
-        let fetched = line_index.fetch_lines(&pt, encoding_rs::UTF_8, 0, 3);
-        assert_eq!(fetched, vec!["First line", "Second line", "Third line"]);
-
-        // 按需讀取單一行
-        let line2 = line_index.fetch_lines(&pt, encoding_rs::UTF_8, 1, 1);
-        assert_eq!(line2, vec!["Second line"]);
-
-        // 測試 Mac 經典 CR 換行相容性
-        let cr_content = b"CR Line 1\rCR Line 2\rCR Line 3";
-        let pt_cr = PieceTable::from_bytes(cr_content.to_vec());
-        let line_index_cr = LineIndex::build(&pt_cr);
-        assert_eq!(line_index_cr.line_count(), 3);
-        let fetched_cr = line_index_cr.fetch_lines(&pt_cr, encoding_rs::UTF_8, 0, 3);
-        assert_eq!(fetched_cr, vec!["CR Line 1", "CR Line 2", "CR Line 3"]);
+    #[test]
+    fn test_find_and_rfind_across_chunks() {
+        let mut data = vec![0u8; 3 * 1024 * 1024];
+        data[1024 * 1024 - 2..1024 * 1024 + 2].copy_from_slice(b"ABCD");
+        data[2 * 1024 * 1024 + 5..2 * 1024 * 1024 + 9].copy_from_slice(b"ABCD");
+        let pt = PieceTable::from_bytes(data);
+        assert_eq!(pt.find(b"ABCD", 0, pt.len()), Some(1024 * 1024 - 2));
+        assert_eq!(pt.find(b"ABCD", 1024 * 1024, pt.len()), Some(2 * 1024 * 1024 + 5));
+        assert_eq!(pt.rfind(b"ABCD", pt.len()), Some(2 * 1024 * 1024 + 5));
+        assert_eq!(pt.rfind(b"ABCD", 2 * 1024 * 1024), Some(1024 * 1024 - 2));
     }
 }

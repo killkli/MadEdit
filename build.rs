@@ -1,12 +1,8 @@
 use std::path::PathBuf;
 
-/// 建置腳本：
-/// 1. 編譯 Slint 介面描述檔（ui/appwindow.slint）。
-/// 2. 於 Windows 平台將應用程式圖示（assets/madedit-icon.ico）嵌入 .exe 資源，
-///    讓檔案總管與工作列顯示專屬圖示；其他平台為空操作（no-op）。
+/// 建置腳本：於 Windows 平台將應用程式圖示（assets/madedit-icon.ico）嵌入 .exe 資源，
+/// 讓檔案總管與工作列顯示專屬圖示；其他平台為空操作（no-op）。
 fn main() {
-    slint_build::compile("ui/appwindow.slint").unwrap();
-
     embed_windows_icon();
 }
 
