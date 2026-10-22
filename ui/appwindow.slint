@@ -1,4 +1,4 @@
-import { Button, ComboBox, ScrollView, LineEdit, CheckBox } from "std-widgets.slint";
+import { Button, ComboBox, ScrollView, LineEdit, CheckBox, Palette } from "std-widgets.slint";
 
 export struct HighlightSpan {
     text: string,
@@ -15,26 +15,115 @@ export struct VisibleLine {
     has_caret: bool,
     caret_x: length,
     has_bookmark: bool,
+    eol_x: length,
+}
+
+component MenuActionBtn inherits Rectangle {
+    in property <string> label;
+    in property <bool> is-dark: true;
+    callback clicked();
+
+    height: 22px;
+    width: txt.preferred-width + 14px;
+    border-radius: 3px;
+    background: touch.has-hover ? (root.is-dark ? #3e3e42 : #dcdcdc) : transparent;
+
+    txt := Text {
+        text: root.label;
+        font-size: 12px;
+        color: root.is-dark ? #e0e0e0 : #222222;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component ToolBtn inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    in property <bool> is-dark: true;
+    callback clicked();
+
+    height: 26px;
+    width: txt.preferred-width + 16px;
+    border-radius: 3px;
+    border-width: 1px;
+    border-color: root.active ? #0078d4 : (root.is-dark ? #48484d : #c4c4c4);
+    background: root.active ? (root.is-dark ? #094771 : #cce4f7) : (touch.has-hover ? (root.is-dark ? #3a3d41 : #e2e2e2) : (root.is-dark ? #313135 : #f8f8f8));
+
+    txt := Text {
+        text: root.label;
+        font-size: 12px;
+        font-weight: root.active ? 700 : 400;
+        color: root.is-dark ? #f0f0f0 : #1e1e1e;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
 }
 
 export component MainWindow inherits Window {
-    title: "MadEdit-Rust";
-    preferred-width: 960px;
-    preferred-height: 640px;
+    title: "MadEdit-Rust - [" + root.file-path + (root.is-modified ? " *" : "") + "]";
+    preferred-width: 1120px;
+    preferred-height: 720px;
+    background: root.theme-window-bg;
+
+    // 主題與顯示開關（預設跟隨作業系統深淺色設定）
+    in-out property <bool> is-dark-mode: Palette.color-scheme == ColorScheme.dark;
+    in-out property <bool> show-control-chars: true;
+    in-out property <int> editor-font-size: 15;
+    in-out property <[string]> font-size-list: ["12", "14", "15", "16", "18", "20", "22"];
+    in-out property <string> selected-font-size: "15";
+
+    // 主題色票定義（完全自主控制，杜絕系統深淺色吃字問題）
+    property <color> theme-window-bg: root.is-dark-mode ? #252526 : #ececec;
+    property <color> theme-menubar-bg: root.is-dark-mode ? #1f1f22 : #e4e4e4;
+    property <color> theme-toolbar-bg: root.is-dark-mode ? #2d2d30 : #f3f3f3;
+    property <color> theme-tabbar-bg: root.is-dark-mode ? #252526 : #e2e4e7;
+    property <color> theme-editor-bg: root.is-dark-mode ? #1b1c1d : #ffffff;
+    property <color> theme-gutter-bg: root.is-dark-mode ? #2c313a : #f1f3f5;
+    property <color> theme-gutter-fg: root.is-dark-mode ? #9da5b4 : #64748b;
+    property <color> theme-ruler-bg: root.is-dark-mode ? #23272e : #eaedf0;
+    property <color> theme-ruler-fg: root.is-dark-mode ? #abb2bf : #475569;
+    property <color> theme-text-fg: root.is-dark-mode ? #d8dee9 : #1e293b;
+    property <color> theme-muted-fg: root.is-dark-mode ? #9ca3af : #4b5563;
+    property <color> theme-border: root.is-dark-mode ? #3e3e42 : #cbd5e1;
+    property <color> theme-caret-line-bg: root.is-dark-mode ? #25282c : #f8fafc;
+    property <color> theme-caret-line-border: root.is-dark-mode ? #4b5263 : #cbd5e1;
+    property <color> theme-sel-bg: root.is-dark-mode ? #264f78 : #add6ff;
+    property <color> theme-caret-fg: root.is-dark-mode ? #f8fafc : #0f172a;
+    property <color> theme-eol-fg: root.is-dark-mode ? #4ec94e : #16a34a;
+    property <color> theme-status-bg: root.is-dark-mode ? #252526 : #e5e7eb;
+    property <color> theme-status-cell-bg: root.is-dark-mode ? #1e1e1e : #f3f4f6;
+    property <color> theme-status-fg: root.is-dark-mode ? #e2e8f0 : #1e293b;
 
     in-out property <string> file-path: "Untitled";
     in-out property <int> edit-mode: 0; // 0: 文字模式 (Text), 1: 列塊模式 (Column), 2: 十六進位模式 (Hex)
     in-out property <[string]> encoding-list: ["UTF-8"];
     in-out property <string> selected-encoding: "UTF-8";
     in-out property <string> encoding-name: "UTF-8";
-    in-out property <string> newline-format: "CRLF";
+    in-out property <string> newline-format: "CRLF (Windows)";
     in-out property <string> status-info: "Len: 0 bytes";
     in-out property <string> caret-status: "Ln 1, Col 1";
 
+    // 原版 MadEdit 底部 5 格狀態列屬性
+    in-out property <string> status-line-col: "行 : 1 / 1   列 : 1";
+    in-out property <string> status-char-pos: "字元位置 : 0 (0x0) / 0";
+    in-out property <string> status-sel-len: "選取長度 : 0";
+    in-out property <string> status-enc-format: "UTF-8.DOS";
+    in-out property <string> status-insert-mode: "插入";
+
     // 自繪編輯器屬性
     in-out property <[VisibleLine]> visible-lines: [];
+    in-out property <length> cell-width: 8.5px;
     in-out property <length> line-height: 20px;
-    in-out property <length> gutter-width: 52px;
+    in-out property <length> gutter-width: 54px;
     in-out property <bool> caret-visible: true;
 
     // 十六進位檢視區屬性
@@ -76,10 +165,19 @@ export component MainWindow inherits Window {
     callback convert-encoding-clicked(string);
     callback syntax-changed(string);
     callback newline-format-changed(string);
+    callback font-size-changed(string);
     callback goto-confirmed(string);
     callback goto-cancelled();
     callback reload-file();
     callback ignore-external-change();
+    callback toggle-theme();
+    callback toggle-control-chars();
+    callback toggle-overwrite-mode();
+    callback toggle-search-panel();
+    callback toggle-replace-panel();
+    callback toggle-goto-panel();
+    callback toggle-bookmark-clicked();
+    callback next-bookmark-clicked();
 
     // 搜尋與取代回呼
     callback find-next-clicked();
@@ -91,115 +189,238 @@ export component MainWindow inherits Window {
     callback search-query-changed(string);
     callback toggle-replace-clicked();
 
-    // 編輯器互動回呼
+    // 自繪編輯器互動回呼
     callback key-pressed(string, bool, bool, bool) -> bool;
     callback mouse-clicked(length, length, bool);
     callback mouse-dragged(length, length, bool);
     callback scrolled(float);
 
+    // 讓外部強制將鍵盤焦點歸還給編輯區
+    public function focus-editor() {
+        editor-focus.focus();
+    }
+
     VerticalLayout {
-        padding: 4px;
-        spacing: 4px;
+        padding: 0px;
+        spacing: 0px;
 
-        // 頂部工具列：提供檔案讀寫、編輯模式切換與字元編碼操作
-        HorizontalLayout {
-            spacing: 8px;
-            height: 32px;
+        // ============================================================
+        // 1. 頂部主選單列 (Menu Bar - 對齊原版 MadEdit 選單列)
+        // ============================================================
+        Rectangle {
+            height: 26px;
+            background: root.theme-menubar-bg;
+            border-width: 1px;
+            border-color: root.theme-border;
 
-            Button {
-                text: "開啟舊檔";
-                clicked => { root.open-file-clicked(); }
-            }
-            Button {
-                text: "儲存檔案";
-                clicked => { root.save-file-clicked(); }
-            }
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 8px;
+                spacing: 2px;
+                alignment: center;
 
-            Rectangle { width: 12px; }
+                MenuActionBtn {
+                    label: "檔案: 開啟(O)";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.open-file-clicked(); }
+                }
+                MenuActionBtn {
+                    label: "儲存(S)";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.save-file-clicked(); }
+                }
+                MenuActionBtn {
+                    label: "尋找(F)";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.toggle-search-panel(); }
+                }
+                MenuActionBtn {
+                    label: "取代(H)";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.toggle-replace-panel(); }
+                }
+                MenuActionBtn {
+                    label: "跳至行/位移(G)";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.toggle-goto-panel(); }
+                }
+                MenuActionBtn {
+                    label: "切換書籤(F2)";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.toggle-bookmark-clicked(); }
+                }
+                MenuActionBtn {
+                    label: "下一書籤";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.next-bookmark-clicked(); }
+                }
 
-            Button {
-                text: "文字模式";
-                primary: root.edit-mode == 0;
-                clicked => { root.mode-changed(0); }
-            }
-            Button {
-                text: "列塊模式";
-                primary: root.edit-mode == 1;
-                clicked => { root.mode-changed(1); }
-            }
-            Button {
-                text: "十六進位模式";
-                primary: root.edit-mode == 2;
-                clicked => { root.mode-changed(2); }
-            }
+                Rectangle { horizontal-stretch: 1; }
 
-            Rectangle { width: 12px; }
+                ToolBtn {
+                    label: root.show-control-chars ? "¶ 控制字元: 顯示" : "¶ 控制字元: 隱藏";
+                    active: root.show-control-chars;
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.toggle-control-chars(); }
+                }
 
-            ComboBox {
-                width: 130px;
-                model: root.encoding-list;
-                current-value <=> root.selected-encoding;
-            }
-            Button {
-                text: "重新解碼";
-                clicked => { root.reinterpret-encoding-clicked(root.selected-encoding); }
-            }
-            Button {
-                text: "轉換編碼";
-                clicked => { root.convert-encoding-clicked(root.selected-encoding); }
-            }
+                Rectangle { width: 4px; }
 
-            Rectangle { width: 12px; }
-
-            ComboBox {
-                width: 120px;
-                model: root.syntax-list;
-                current-value <=> root.current-syntax;
-                selected(val) => { root.syntax-changed(val); }
-            }
-
-            Rectangle { width: 12px; }
-
-            ComboBox {
-                width: 140px;
-                model: root.newline-list;
-                current-value <=> root.selected-newline;
-                selected(val) => { root.newline-format-changed(val); }
-            }
-
-            Rectangle { horizontal-stretch: 1; }
-
-            Text {
-                vertical-alignment: center;
-                text: "檔案: " + root.file-path;
-                color: #555555;
+                ToolBtn {
+                    label: root.is-dark-mode ? "🌙 深色主題" : "☀️ 淺色主題";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.toggle-theme(); }
+                }
             }
         }
 
-        // 搜尋與取代面板（支援條件展開與收合）
-        if root.show-search-panel : Rectangle {
-            background: #f4f4f4;
+        // ============================================================
+        // 2. 緊湊型專業工具列 (Compact Toolbar)
+        // ============================================================
+        Rectangle {
+            height: 36px;
+            background: root.theme-toolbar-bg;
             border-width: 1px;
-            border-color: #cccccc;
-            border-radius: 4px;
+            border-color: root.theme-border;
+
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 4px;
+                alignment: center;
+
+                ToolBtn {
+                    label: "📂 開啟";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.open-file-clicked(); }
+                }
+                ToolBtn {
+                    label: "💾 儲存";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.save-file-clicked(); }
+                }
+
+                Rectangle { width: 1px; height: 20px; background: root.theme-border; }
+
+                ToolBtn {
+                    label: "Ab 文字";
+                    active: root.edit-mode == 0;
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.mode-changed(0); }
+                }
+                ToolBtn {
+                    label: "▦ 列塊";
+                    active: root.edit-mode == 1;
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.mode-changed(1); }
+                }
+                ToolBtn {
+                    label: "0x 十六進位";
+                    active: root.edit-mode == 2;
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.mode-changed(2); }
+                }
+
+                Rectangle { width: 1px; height: 20px; background: root.theme-border; }
+
+                ComboBox {
+                    width: 112px;
+                    height: 26px;
+                    model: root.encoding-list;
+                    current-value <=> root.selected-encoding;
+                }
+                ToolBtn {
+                    label: "重解碼";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.reinterpret-encoding-clicked(root.selected-encoding); }
+                }
+                ToolBtn {
+                    label: "轉編碼";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.convert-encoding-clicked(root.selected-encoding); }
+                }
+
+                Rectangle { width: 1px; height: 20px; background: root.theme-border; }
+
+                ComboBox {
+                    width: 110px;
+                    height: 26px;
+                    model: root.syntax-list;
+                    current-value <=> root.current-syntax;
+                    selected(val) => { root.syntax-changed(val); }
+                }
+
+                ComboBox {
+                    width: 126px;
+                    height: 26px;
+                    model: root.newline-list;
+                    current-value <=> root.selected-newline;
+                    selected(val) => { root.newline-format-changed(val); }
+                }
+
+                ComboBox {
+                    width: 68px;
+                    height: 26px;
+                    model: root.font-size-list;
+                    current-value <=> root.selected-font-size;
+                    selected(val) => { root.font-size-changed(val); }
+                }
+
+                Rectangle { width: 1px; height: 20px; background: root.theme-border; }
+
+                // 工具列內嵌快速搜尋框（對齊原版 MadEdit 頂部黑色搜尋框）
+                quick-search := LineEdit {
+                    width: 140px;
+                    height: 26px;
+                    placeholder-text: "快速尋找...";
+                    text <=> root.search-query;
+                    edited(t) => { root.search-query-changed(t); }
+                    accepted => {
+                        root.find-next-clicked();
+                        editor-focus.focus();
+                    }
+                }
+                ToolBtn {
+                    label: "◀";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.find-prev-clicked(); }
+                }
+                ToolBtn {
+                    label: "▶";
+                    is-dark: root.is-dark-mode;
+                    clicked => { root.find-next-clicked(); }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        // ============================================================
+        // 3. 搜尋與取代面板 / 跳轉面板 / 外部變更橫幅
+        // ============================================================
+        if root.show-search-panel : Rectangle {
+            background: root.theme-toolbar-bg;
+            border-width: 1px;
+            border-color: root.theme-border;
 
             VerticalLayout {
                 padding: 6px;
                 spacing: 6px;
 
-                // 第一行：搜尋列
                 HorizontalLayout {
                     spacing: 6px;
                     alignment: center;
 
                     Text {
                         text: "尋找:";
+                        color: root.theme-text-fg;
                         vertical-alignment: center;
-                        font-size: 13px;
+                        font-size: 12px;
                     }
 
                     search-input := LineEdit {
                         width: 200px;
+                        height: 26px;
                         placeholder-text: "輸入關鍵字...";
                         text <=> root.search-query;
                         edited(t) => { root.search-query-changed(t); }
@@ -207,14 +428,14 @@ export component MainWindow inherits Window {
                         init => { self.focus(); }
                     }
 
-                    Button {
-                        text: "◀";
-                        width: 32px;
+                    ToolBtn {
+                        label: "◀ 上一個";
+                        is-dark: root.is-dark-mode;
                         clicked => { root.find-prev-clicked(); }
                     }
-                    Button {
-                        text: "▶";
-                        width: 32px;
+                    ToolBtn {
+                        label: "▶ 下一個";
+                        is-dark: root.is-dark-mode;
                         clicked => { root.find-next-clicked(); }
                     }
 
@@ -222,7 +443,7 @@ export component MainWindow inherits Window {
                         vertical-alignment: center;
                         text: root.search-status-text;
                         font-size: 12px;
-                        color: #666666;
+                        color: root.theme-muted-fg;
                         width: 80px;
                     }
 
@@ -242,45 +463,49 @@ export component MainWindow inherits Window {
                         toggled => { root.search-options-changed(); }
                     }
 
-                    Button {
-                        text: root.show-replace ? "隱藏取代" : "展開取代";
+                    ToolBtn {
+                        label: root.show-replace ? "隱藏取代" : "展開取代";
+                        is-dark: root.is-dark-mode;
                         clicked => { root.toggle-replace-clicked(); }
                     }
 
                     Rectangle { horizontal-stretch: 1; }
 
-                    Button {
-                        text: "✕";
-                        width: 28px;
+                    ToolBtn {
+                        label: "✕";
+                        is-dark: root.is-dark-mode;
                         clicked => { root.close-search-panel(); }
                     }
                 }
 
-                // 第二行：取代列（若 show-replace 為 true 時顯示）
                 if root.show-replace : HorizontalLayout {
                     spacing: 6px;
                     alignment: center;
 
                     Text {
                         text: "取代:";
+                        color: root.theme-text-fg;
                         vertical-alignment: center;
-                        font-size: 13px;
+                        font-size: 12px;
                     }
 
                     LineEdit {
                         width: 200px;
+                        height: 26px;
                         placeholder-text: "輸入取代內容...";
                         text <=> root.replace-text;
                         accepted => { root.replace-clicked(); }
                     }
 
-                    Button {
-                        text: "取代";
+                    ToolBtn {
+                        label: "取代";
+                        is-dark: root.is-dark-mode;
                         clicked => { root.replace-clicked(); }
                     }
 
-                    Button {
-                        text: "全部取代";
+                    ToolBtn {
+                        label: "全部取代";
+                        is-dark: root.is-dark-mode;
                         clicked => { root.replace-all-clicked(); }
                     }
 
@@ -289,12 +514,10 @@ export component MainWindow inherits Window {
             }
         }
 
-        // 指定行號跳轉面板（支援條件展開與收合）
         if root.show-goto-panel : Rectangle {
-            background: #f4f4f4;
+            background: root.theme-toolbar-bg;
             border-width: 1px;
-            border-color: #cccccc;
-            border-radius: 4px;
+            border-color: root.theme-border;
 
             HorizontalLayout {
                 padding: 6px;
@@ -303,45 +526,47 @@ export component MainWindow inherits Window {
 
                 Text {
                     text: root.goto-label-text;
+                    color: root.theme-text-fg;
                     vertical-alignment: center;
-                    font-size: 13px;
+                    font-size: 12px;
                 }
 
                 goto-input := LineEdit {
                     width: 160px;
+                    height: 26px;
                     placeholder-text: "例如: 42 或 42:10";
                     text <=> root.goto-input-text;
                     accepted => { root.goto-confirmed(self.text); }
                     init => { self.focus(); }
                 }
 
-                Button {
-                    text: "跳轉";
-                    primary: true;
+                ToolBtn {
+                    label: "跳轉";
+                    active: true;
+                    is-dark: root.is-dark-mode;
                     clicked => { root.goto-confirmed(goto-input.text); }
                 }
 
-                Button {
-                    text: "取消";
+                ToolBtn {
+                    label: "取消";
+                    is-dark: root.is-dark-mode;
                     clicked => { root.goto-cancelled(); }
                 }
 
                 Rectangle { horizontal-stretch: 1; }
 
-                Button {
-                    text: "✕";
-                    width: 28px;
+                ToolBtn {
+                    label: "✕";
+                    is-dark: root.is-dark-mode;
                     clicked => { root.goto-cancelled(); }
                 }
             }
         }
 
-        // 外部檔案變更通知橫幅
         if root.has-external-change : Rectangle {
             background: #fffbeb;
             border-width: 1px;
             border-color: #fde68a;
-            border-radius: 4px;
 
             HorizontalLayout {
                 padding: 6px;
@@ -381,39 +606,162 @@ export component MainWindow inherits Window {
             }
         }
 
-        // 編輯檢視區：自繪編輯器元件（文字與列塊模式）或十六進位三欄檢視器
+        // ============================================================
+        // 4. 檔案分頁標籤列 (Document Tab Bar - 對齊原版 MadEdit 分頁)
+        // ============================================================
         Rectangle {
-            vertical-stretch: 1;
-            background: #ffffff;
+            height: 26px;
+            background: root.theme-tabbar-bg;
             border-width: 1px;
-            border-color: #d0d0d0;
-            clip: true;
+            border-color: root.theme-border;
 
-            if root.edit-mode != 2 : FocusScope {
-                key-pressed(event) => {
-                    if (root.key-pressed(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt)) {
-                        return accept;
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-top: 2px;
+                spacing: 2px;
+                alignment: start;
+
+                // 當前活躍檔案分頁標籤
+                Rectangle {
+                    width: tab-txt.preferred-width + 28px;
+                    height: 24px;
+                    background: root.theme-editor-bg;
+                    border-width: 1px;
+                    border-color: root.theme-border;
+                    border-radius: 2px;
+
+                    // 頂部活躍亮條
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: 2px;
+                        background: #0078d4;
                     }
-                    return reject;
+
+                    tab-txt := Text {
+                        x: 10px;
+                        y: 2px;
+                        text: root.file-path + (root.is-modified ? " *" : "");
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: root.theme-text-fg;
+                        vertical-alignment: center;
+                    }
                 }
 
-                HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        // ============================================================
+        // 5. 水平欄位尺標 (Column Ruler: 0..10..20..30..)
+        // ============================================================
+        if root.edit-mode != 2 : Rectangle {
+            height: 20px;
+            background: root.theme-ruler-bg;
+            border-width: 1px;
+            border-color: root.theme-border;
+            clip: true;
+
+            HorizontalLayout {
+                // 對齊左側行號欄寬度
+                Rectangle {
+                    width: root.gutter-width;
+                    background: root.theme-gutter-bg;
+                    border-width: 1px;
+                    border-color: root.theme-border;
+                }
+
+                // 尺標刻度繪製區（與文字格網 cell-width 嚴格對齊）
+                Rectangle {
+                    horizontal-stretch: 1;
+                    clip: true;
+
+                    for group[g] in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] : Rectangle {
+                        x: g * 10 * root.cell-width;
+                        y: 0;
+                        width: 10 * root.cell-width;
+                        height: 20px;
+
+                        // 每 10 欄主刻度線与數字
+                        Rectangle {
+                            x: 0;
+                            y: 12px;
+                            width: 1px;
+                            height: 8px;
+                            background: root.theme-ruler-fg;
+                        }
+
+                        Text {
+                            x: 2px;
+                            y: 0px;
+                            text: (g * 10) + "";
+                            font-family: "Consolas";
+                            font-size: 10px;
+                            color: root.theme-ruler-fg;
+                        }
+
+                        // 每 5 欄中刻度線
+                        Rectangle {
+                            x: 5 * root.cell-width;
+                            y: 14px;
+                            width: 1px;
+                            height: 6px;
+                            background: root.theme-ruler-fg;
+                        }
+
+                        // 每 1 欄微刻度點
+                        for sub in [1, 2, 3, 4, 6, 7, 8, 9] : Rectangle {
+                            x: sub * root.cell-width;
+                            y: 17px;
+                            width: 1px;
+                            height: 3px;
+                            background: root.theme-muted-fg;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ============================================================
+        // 6. 編輯檢視區（外層常駐 FocusScope，徹底解決焦點遺失無法輸入問題）
+        // ============================================================
+        editor-focus := FocusScope {
+            vertical-stretch: 1;
+            init => { self.focus(); }
+
+            key-pressed(event) => {
+                if (root.key-pressed(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt)) {
+                    return accept;
+                }
+                return reject;
+            }
+
+            Rectangle {
+                width: 100%;
+                height: 100%;
+                background: root.theme-editor-bg;
+                clip: true;
+
+                if root.edit-mode != 2 : HorizontalLayout {
                     // 左側行號欄（Line Number Gutter）
                     Rectangle {
                         width: root.gutter-width;
-                        background: #f7f7f7;
+                        background: root.theme-gutter-bg;
                         border-width: 1px;
-                        border-color: #e5e5e5;
+                        border-color: root.theme-border;
 
                         for line[i] in root.visible-lines : Rectangle {
                             x: 0;
                             y: i * root.line-height;
                             width: root.gutter-width;
                             height: root.line-height;
+                            background: line.has_caret ? (root.is-dark-mode ? #383e4a : #e2e8f0) : transparent;
 
-                            // 書籤標記：藍色小圓點
+                            // 書籤標記：醒目藍色圓點
                             if line.has_bookmark : Rectangle {
-                                x: 6px;
+                                x: 5px;
                                 y: (root.line-height - 8px) / 2;
                                 width: 8px;
                                 height: 8px;
@@ -424,13 +772,13 @@ export component MainWindow inherits Window {
                             Text {
                                 x: 0;
                                 y: 0;
-                                width: root.gutter-width - 8px;
+                                width: root.gutter-width - 6px;
                                 height: root.line-height;
                                 text: line.line_number > 0 ? (line.line_number + "") : "";
-                                color: line.has_bookmark ? #1d4ed8 : #888888;
-                                font-family: "Consolas, Courier New, monospace";
-                                font-size: 13px;
-                                font-weight: line.has_bookmark ? 700 : 400;
+                                color: line.has_bookmark ? #60a5fa : (line.has_caret ? root.theme-text-fg : root.theme-gutter-fg);
+                                font-family: "Consolas";
+                                font-size: (root.editor-font-size - 1) * 1px;
+                                font-weight: (line.has_bookmark || line.has_caret) ? 700 : 400;
                                 horizontal-alignment: right;
                                 vertical-alignment: center;
                             }
@@ -440,7 +788,7 @@ export component MainWindow inherits Window {
                     // 右側文字內容與選取/游標繪製區
                     Rectangle {
                         horizontal-stretch: 1;
-                        background: #ffffff;
+                        background: root.theme-editor-bg;
                         clip: true;
 
                         TouchArea {
@@ -448,6 +796,7 @@ export component MainWindow inherits Window {
                             pointer-event(event) => {
                                 self.is-alt-down = event.modifiers.alt;
                                 if (event.kind == PointerEventKind.down) {
+                                    editor-focus.focus();
                                     root.mouse-clicked(self.mouse-x, self.mouse-y, event.modifiers.alt);
                                 }
                             }
@@ -462,29 +811,31 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // 1. 選取反白層（底層）
+                        // 0. 游標所在行外框與底色高亮層（重現原版 MadEdit 當前行外框）
+                        for line[i] in root.visible-lines : Rectangle {
+                            if line.has_caret : Rectangle {
+                                x: 0;
+                                y: i * root.line-height;
+                                width: 3000px;
+                                height: root.line-height;
+                                background: root.theme-caret-line-bg;
+                                border-width: 1px;
+                                border-color: root.theme-caret-line-border;
+                            }
+                        }
+
+                        // 1. 選取反白層
                         for line[i] in root.visible-lines : Rectangle {
                             if line.has_selection : Rectangle {
                                 x: line.sel_start_x;
                                 y: i * root.line-height;
                                 width: line.sel_width;
                                 height: root.line-height;
-                                background: #a6d2ff;
+                                background: root.theme-sel-bg;
                             }
                         }
 
-                        // 2. 游標層（中層）
-                        for line[i] in root.visible-lines : Rectangle {
-                            if line.has_caret && root.caret-visible : Rectangle {
-                                x: line.caret_x;
-                                y: i * root.line-height;
-                                width: 2px;
-                                height: root.line-height;
-                                background: #000000;
-                            }
-                        }
-
-                        // 3. 文字內容層（頂層：支援語法多色分段渲染與單色回退）
+                        // 2. 文字內容層（支援語法多色分段渲染與單色回退）
                         for line[i] in root.visible-lines : HorizontalLayout {
                             x: 0;
                             y: i * root.line-height;
@@ -496,8 +847,8 @@ export component MainWindow inherits Window {
                                 spacing: 0px;
                                 for span in line.spans : Text {
                                     text: span.text;
-                                    font-family: "Consolas, Courier New, monospace";
-                                    font-size: 14px;
+                                    font-family: "Consolas";
+                                    font-size: root.editor-font-size * 1px;
                                     color: span.color;
                                     vertical-alignment: center;
                                 }
@@ -505,102 +856,184 @@ export component MainWindow inherits Window {
 
                             if line.spans.length == 0 : Text {
                                 text: line.text;
-                                font-family: "Consolas, Courier New, monospace";
-                                font-size: 14px;
-                                color: #222222;
+                                font-family: "Consolas";
+                                font-size: root.editor-font-size * 1px;
+                                color: root.theme-text-fg;
                                 vertical-alignment: center;
+                            }
+                        }
+
+                        // 3. 行尾換行控制符號（綠色 ↵ 標記，重現原版 MadEdit 視覺）
+                        for line[i] in root.visible-lines : Rectangle {
+                            if root.show-control-chars && line.line_number > 0 : Text {
+                                x: line.eol_x;
+                                y: i * root.line-height;
+                                height: root.line-height;
+                                text: "↵";
+                                font-family: "Consolas";
+                                font-size: (root.editor-font-size - 1) * 1px;
+                                color: root.theme-eol-fg;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // 4. 游標層（最頂層確保清晰可見）
+                        for line[i] in root.visible-lines : Rectangle {
+                            if line.has_caret && root.caret-visible : Rectangle {
+                                x: line.caret_x;
+                                y: i * root.line-height;
+                                width: 2px;
+                                height: root.line-height;
+                                background: root.theme-caret-fg;
                             }
                         }
                     }
                 }
-            }
 
-            if root.edit-mode == 2 : ScrollView {
-                width: 100%;
-                height: 100%;
+                if root.edit-mode == 2 : ScrollView {
+                    width: 100%;
+                    height: 100%;
 
-                HorizontalLayout {
-                    spacing: 12px;
-                    padding: 8px;
+                    HorizontalLayout {
+                        spacing: 16px;
+                        padding: 8px;
 
-                    // 位址偏移欄（Offset）
-                    Text {
-                        text: root.hex-offset-text;
-                        font-family: "Consolas, Courier New, monospace";
-                        font-size: 13px;
-                        color: #00008b;
+                        // 位址偏移欄（Offset）
+                        Text {
+                            text: root.hex-offset-text;
+                            font-family: "Consolas";
+                            font-size: root.editor-font-size * 1px;
+                            color: root.is-dark-mode ? #61afef : #00008b;
+                        }
+
+                        // 十六進位位元組欄（Hex Dump）
+                        Text {
+                            text: root.hex-content-text;
+                            font-family: "Consolas";
+                            font-size: root.editor-font-size * 1px;
+                            color: root.theme-text-fg;
+                        }
+
+                        // 可視 ASCII 預覽欄（ASCII Dump）
+                        Text {
+                            text: root.hex-ascii-text;
+                            font-family: "Consolas";
+                            font-size: root.editor-font-size * 1px;
+                            color: root.is-dark-mode ? #98c379 : #006400;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
                     }
-
-                    // 十六進位位元組欄（Hex Dump）
-                    Text {
-                        text: root.hex-content-text;
-                        font-family: "Consolas, Courier New, monospace";
-                        font-size: 13px;
-                        color: #222222;
-                    }
-
-                    // 可視 ASCII 預覽欄（ASCII Dump）
-                    Text {
-                        text: root.hex-ascii-text;
-                        font-family: "Consolas, Courier New, monospace";
-                        font-size: 13px;
-                        color: #006400;
-                    }
-
-                    Rectangle { horizontal-stretch: 1; }
                 }
             }
         }
 
-        // 底部狀態列：顯示游標座標、位元組長度、修改標記、無損解碼警告、模式、換行與編碼
+        // ============================================================
+        // 7. 原版 MadEdit 風格多格底部狀態列 (5-pane Status Bar)
+        // ============================================================
         Rectangle {
             height: 24px;
-            background: #f0f0f0;
+            background: root.theme-status-bg;
             border-width: 1px;
-            border-color: #d8d8d8;
+            border-color: root.theme-border;
 
             HorizontalLayout {
-                padding-left: 8px;
-                padding-right: 8px;
-                spacing: 16px;
+                padding: 2px;
+                spacing: 3px;
 
-                Text {
-                    vertical-alignment: center;
-                    text: root.caret-status;
-                    font-size: 12px;
-                    color: #333333;
+                // 格 1：行 / 總行 與 列
+                Rectangle {
+                    width: 220px;
+                    background: root.theme-status-cell-bg;
+                    border-width: 1px;
+                    border-color: root.theme-border;
+
+                    Text {
+                        x: 6px;
+                        width: parent.width - 12px;
+                        height: parent.height;
+                        text: root.status-line-col;
+                        font-size: 12px;
+                        color: root.theme-status-fg;
+                        vertical-alignment: center;
+                    }
                 }
 
-                Text {
-                    vertical-alignment: center;
-                    text: root.status-info;
-                    font-size: 12px;
+                // 格 2：字元位置與總長（自動延展）
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: root.theme-status-cell-bg;
+                    border-width: 1px;
+                    border-color: root.theme-border;
+
+                    Text {
+                        x: 6px;
+                        width: parent.width - 12px;
+                        height: parent.height;
+                        text: root.status-char-pos;
+                        font-size: 12px;
+                        color: root.theme-status-fg;
+                        vertical-alignment: center;
+                    }
                 }
 
-                Rectangle { horizontal-stretch: 1; }
+                // 格 3：選取長度
+                Rectangle {
+                    width: 180px;
+                    background: root.theme-status-cell-bg;
+                    border-width: 1px;
+                    border-color: root.theme-border;
 
-                Text {
-                    vertical-alignment: center;
-                    text: "模式: " + (root.edit-mode == 0 ? "Text" : (root.edit-mode == 1 ? "Column" : "Hex"));
-                    font-size: 12px;
+                    Text {
+                        x: 6px;
+                        width: parent.width - 12px;
+                        height: parent.height;
+                        text: root.status-sel-len;
+                        font-size: 12px;
+                        color: root.theme-status-fg;
+                        vertical-alignment: center;
+                    }
                 }
 
-                Text {
-                    vertical-alignment: center;
-                    text: "換行: " + root.newline-format;
-                    font-size: 12px;
+                // 格 4：編碼.BOM.換行 與 語法
+                Rectangle {
+                    width: 210px;
+                    background: root.theme-status-cell-bg;
+                    border-width: 1px;
+                    border-color: root.theme-border;
+
+                    Text {
+                        x: 6px;
+                        width: parent.width - 12px;
+                        height: parent.height;
+                        text: root.status-enc-format + "  [" + root.current-syntax + "]";
+                        font-size: 12px;
+                        color: root.theme-status-fg;
+                        vertical-alignment: center;
+                    }
                 }
 
-                Text {
-                    vertical-alignment: center;
-                    text: "編碼: " + root.encoding-name;
-                    font-size: 12px;
-                }
+                // 格 5：插入 / 覆寫模式（可點擊切換）
+                Rectangle {
+                    width: 64px;
+                    background: ins-touch.has-hover ? (root.is-dark-mode ? #3a3d41 : #dcdcdc) : root.theme-status-cell-bg;
+                    border-width: 1px;
+                    border-color: root.theme-border;
 
-                Text {
-                    vertical-alignment: center;
-                    text: "語法: " + root.current-syntax;
-                    font-size: 12px;
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: root.status-insert-mode;
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: root.theme-status-fg;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    ins-touch := TouchArea {
+                        clicked => { root.toggle-overwrite-mode(); }
+                    }
                 }
             }
         }

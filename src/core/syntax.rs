@@ -11,16 +11,21 @@ pub const SUPPORTED_SYNTAXES: &[&str] = &[
     "Rust",
     "C",
     "C++",
+    "C#",
+    "Java",
+    "Go",
     "Python",
     "JavaScript",
     "TypeScript",
     "JSON",
+    "TOML",
     "Markdown",
     "HTML",
     "CSS",
     "XML",
     "YAML",
     "SQL",
+    "Shell",
 ];
 
 /// 單一語法高亮文字區段（包含文字內容與 RGB 色彩數值）
@@ -49,15 +54,25 @@ fn get_theme_set() -> &'static ThemeSet {
     THEME_SET.get_or_init(ThemeSet::load_defaults)
 }
 
-/// 取得預設淺色語法主題（優先使用 InspiredGitHub 或 base16-ocean.light）
-fn get_default_theme() -> &'static Theme {
+/// 依據深淺色模式取得語法主題（深色採用 base16-ocean.dark，淺色採用 InspiredGitHub）
+fn get_theme(is_dark: bool) -> &'static Theme {
     let themes = get_theme_set();
-    themes
-        .themes
-        .get("InspiredGitHub")
-        .or_else(|| themes.themes.get("base16-ocean.light"))
-        .or_else(|| themes.themes.values().next())
-        .expect("主題集中至少應包含一個預設主題")
+    if is_dark {
+        themes
+            .themes
+            .get("base16-ocean.dark")
+            .or_else(|| themes.themes.get("Solarized (dark)"))
+            .or_else(|| themes.themes.get("base16-eighties.dark"))
+            .or_else(|| themes.themes.values().next())
+            .expect("主題集中至少應包含一個預設主題")
+    } else {
+        themes
+            .themes
+            .get("InspiredGitHub")
+            .or_else(|| themes.themes.get("base16-ocean.light"))
+            .or_else(|| themes.themes.values().next())
+            .expect("主題集中至少應包含一個預設主題")
+    }
 }
 
 /// 根據檔案路徑副檔名自動識別對應之語法名稱
@@ -73,44 +88,67 @@ pub fn detect_syntax_from_path<P: AsRef<Path>>(path: P) -> &'static str {
         "rs" => "Rust",
         "c" | "h" => "C",
         "cpp" | "cc" | "cxx" | "hpp" | "hxx" => "C++",
+        "cs" => "C#",
+        "java" => "Java",
+        "go" => "Go",
         "py" | "pyw" => "Python",
         "js" | "mjs" | "cjs" => "JavaScript",
         "ts" | "mts" | "cts" => "TypeScript",
         "json" => "JSON",
+        "toml" => "TOML",
         "md" | "markdown" => "Markdown",
         "html" | "htm" => "HTML",
         "css" => "CSS",
         "xml" => "XML",
         "yaml" | "yml" => "YAML",
         "sql" => "SQL",
+        "sh" | "bash" | "zsh" | "ps1" => "Shell",
         _ => "Plain Text",
     }
 }
 
-/// 批次將多行文字依指定語法進行詞法分析並轉為色彩分段列表（在同一狀態下依序推進，支援多行註解與多行字串）
-pub fn highlight_lines(syntax_name: &str, lines: &[String]) -> Vec<Vec<HighlightSpan>> {
+/// 批次將多行文字依指定語法與深淺色主題進行詞法分析並轉為色彩分段列表
+pub fn highlight_lines_with_theme(
+    syntax_name: &str,
+    lines: &[String],
+    is_dark: bool,
+) -> Vec<Vec<HighlightSpan>> {
     if lines.is_empty() {
         return Vec::new();
     }
 
+    let default_fg = if is_dark { (216, 222, 233) } else { (34, 34, 34) };
+
     if syntax_name == "Plain Text" {
         return lines
             .iter()
-            .map(|l| vec![HighlightSpan::new(l.clone(), (34, 34, 34))])
+            .map(|l| vec![HighlightSpan::new(l.clone(), default_fg)])
             .collect();
     }
 
     let ps = get_syntax_set();
-    let theme = get_default_theme();
+    let theme = get_theme(is_dark);
 
     let syntax = ps
         .find_syntax_by_name(syntax_name)
-        .or_else(|| ps.find_syntax_by_extension(syntax_name.to_lowercase().as_str()));
+        .or_else(|| ps.find_syntax_by_extension(syntax_name.to_lowercase().as_str()))
+        .or_else(|| match syntax_name {
+            "C#" => ps
+                .find_syntax_by_extension("cs")
+                .or_else(|| ps.find_syntax_by_name("Java"))
+                .or_else(|| ps.find_syntax_by_name("C++")),
+            "TypeScript" => ps.find_syntax_by_name("JavaScript"),
+            "TOML" => ps.find_syntax_by_name("YAML"),
+            "Shell" => ps
+                .find_syntax_by_extension("sh")
+                .or_else(|| ps.find_syntax_by_name("Bourne Again Shell (bash)")),
+            _ => None,
+        });
 
     let Some(syntax) = syntax else {
         return lines
             .iter()
-            .map(|l| vec![HighlightSpan::new(l.clone(), (34, 34, 34))])
+            .map(|l| vec![HighlightSpan::new(l.clone(), default_fg)])
             .collect();
     };
 
@@ -119,7 +157,7 @@ pub fn highlight_lines(syntax_name: &str, lines: &[String]) -> Vec<Vec<Highlight
 
     for line in lines {
         if line.is_empty() {
-            result.push(vec![HighlightSpan::new(String::new(), (34, 34, 34))]);
+            result.push(vec![HighlightSpan::new(String::new(), default_fg)]);
             continue;
         }
 
@@ -130,7 +168,7 @@ pub fn highlight_lines(syntax_name: &str, lines: &[String]) -> Vec<Vec<Highlight
         };
 
         let Ok(ranges) = h.highlight_line(&line_with_nl, ps) else {
-            result.push(vec![HighlightSpan::new(line.clone(), (34, 34, 34))]);
+            result.push(vec![HighlightSpan::new(line.clone(), default_fg)]);
             continue;
         };
 
@@ -141,17 +179,25 @@ pub fn highlight_lines(syntax_name: &str, lines: &[String]) -> Vec<Vec<Highlight
                 continue;
             }
             let color = style.foreground;
-            spans.push(HighlightSpan::new(clean_text.to_string(), (color.r, color.g, color.b)));
+            spans.push(HighlightSpan::new(
+                clean_text.to_string(),
+                (color.r, color.g, color.b),
+            ));
         }
 
         if spans.is_empty() {
-            spans.push(HighlightSpan::new(line.clone(), (34, 34, 34)));
+            spans.push(HighlightSpan::new(line.clone(), default_fg));
         }
 
         result.push(spans);
     }
 
     result
+}
+
+/// 批次將多行文字依指定語法進行詞法分析並轉為色彩分段列表（預設淺色主題）
+pub fn highlight_lines(syntax_name: &str, lines: &[String]) -> Vec<Vec<HighlightSpan>> {
+    highlight_lines_with_theme(syntax_name, lines, false)
 }
 
 /// 將單行文字依指定語法進行詞法分析並轉為色彩分段列表
@@ -174,12 +220,32 @@ mod tests {
         assert_eq!(detect_syntax_from_path("hello.c"), "C");
         assert_eq!(detect_syntax_from_path("header.h"), "C");
         assert_eq!(detect_syntax_from_path("native.cpp"), "C++");
+        assert_eq!(detect_syntax_from_path("RequestPasswordExtension.cs"), "C#");
+        assert_eq!(detect_syntax_from_path("Main.java"), "Java");
+        assert_eq!(detect_syntax_from_path("server.go"), "Go");
+        assert_eq!(detect_syntax_from_path("Cargo.toml"), "TOML");
+        assert_eq!(detect_syntax_from_path("deploy.sh"), "Shell");
         assert_eq!(detect_syntax_from_path("app.js"), "JavaScript");
         assert_eq!(detect_syntax_from_path("index.ts"), "TypeScript");
         assert_eq!(detect_syntax_from_path("data.json"), "JSON");
         assert_eq!(detect_syntax_from_path("README.md"), "Markdown");
         assert_eq!(detect_syntax_from_path("unknown.xyz"), "Plain Text");
         assert_eq!(detect_syntax_from_path("no_ext"), "Plain Text");
+    }
+
+    #[test]
+    fn test_csharp_and_dark_theme_highlighting() {
+        let lines = vec![
+            "using Microsoft.AspNetCore.Builder;".to_string(),
+            "public static class RequestPasswordExtension {".to_string(),
+        ];
+        let dark_spans = highlight_lines_with_theme("C#", &lines, true);
+        let light_spans = highlight_lines_with_theme("C#", &lines, false);
+        assert_eq!(dark_spans.len(), 2);
+        assert_eq!(light_spans.len(), 2);
+        assert!(dark_spans[1].len() > 1);
+        // 深淺色主題的關鍵字色彩應有所不同
+        assert_ne!(dark_spans[1][0].color_rgb, light_spans[1][0].color_rgb);
     }
 
     #[test]
