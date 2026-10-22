@@ -109,6 +109,11 @@ D:\Git\MadEdit-Rust\
   - 工具列提供換行格式下拉選單，狀態列即時顯示當前格式名稱。
   - 實作基於 `BTreeSet` 之編輯器行書籤系統，支援切換書籤（`Ctrl+F2`）、跳至下一個書籤（`F2`）、跳至上一個書籤（`Shift+F2`）與清除全部書籤（`Ctrl+Shift+F2`）。
   - 在左側行號欄（Gutter）繪製醒目的藍色小圓點標記，並在行插入、移動、複製與刪除操作中精確維護書籤座標不變量。
+- [x] 外部檔案變更監控與重新載入 (File Watcher & Auto Reload)（Phase 9 完成）：
+  - `DocumentBuffer` 追蹤磁碟時間戳記（`last_modified`），實作零依賴、純標準庫之 `mtime` 比對機制（`check_external_change`、`reload_file`、`ignore_external_change`）。
+  - 修復 Windows 平台小型檔案（<=512KB）因記憶體對映持有控制代碼導致外部寫入衝突（Win32 1224）之問題，小檔案自動轉為記憶體 PieceTable，徹底釋放檔案鎖定。
+  - 於 Slint 主迴圈配置每 1.5 秒之輕量定時檢查，在編輯區頂部顯示醒目非侵入式琥珀黃色通知橫幅（`⚠️ 檔案已被外部程式修改。`），若有未儲存修改則加註深紅警示，支援「重新載入」與「忽略」。
+  - 重新載入時自動保留游標行欄與書籤集合，並執行邊界自動防護。
 - [x] 多編碼支援與自動偵測（Phase 1 完成）：
   - 開檔優先識別 BOM（UTF-8 / UTF-16LE / UTF-16BE），無 BOM 時先驗證嚴格 UTF-8，否則自動 fallback 至 Big5。
   - 工具列提供 10 種常用編碼選單與「重新解碼（Reinterpret）」、「轉換編碼（Convert）」按鈕。
@@ -165,9 +170,8 @@ D:\Git\MadEdit-Rust\
 - 已完成 CRLF、LF、CR 換行格式雙向轉換、工具列選單與存檔同步。
 - 已完成編輯器行書籤（Ctrl+F2 切換、F2 / Shift+F2 環狀導覽、Ctrl+Shift+F2 全清除、Gutter 藍點標記與行編輯座標維護）。
 
-### Phase 9: 外部檔案變更監控 (File Watcher & Auto Reload)
-- 實作背景檔案監控，偵測磁碟上的檔案是否被外部編輯器或程序修改。
-- 彈出重新載入確認對話框，或在無未儲存修改時智慧自動重新載入。
+### Phase 9: 外部檔案變更監控 (File Watcher & Auto Reload) - [已完成]
+- 已完成檔案時間戳記 (`mtime`) 比對、Windows 記憶體對映解鎖、Slint 定時器、頂部內嵌黃色通知橫幅與游標/書籤智慧保留重新載入。
 
 ---
 

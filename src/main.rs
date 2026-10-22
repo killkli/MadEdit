@@ -151,6 +151,7 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
         ui.set_hex_ascii_text(dump.ascii.into());
     }
 
+    ui.set_is_modified(doc.is_modified);
     ui.set_status_info(format_status_info(doc).into());
 }
 
@@ -196,6 +197,27 @@ fn main() -> Result<(), slint::PlatformError> {
         );
     }
 
+    // 外部檔案變更定時檢查計時器（每 1500ms 檢查一次磁碟 mtime）
+    let file_watcher_timer = Timer::default();
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        file_watcher_timer.start(
+            TimerMode::Repeated,
+            std::time::Duration::from_millis(1500),
+            move || {
+                let has_change = doc_clone.borrow().check_external_change();
+                if has_change {
+                    if let Some(ui) = ui_handle.upgrade() {
+                        if !ui.get_has_external_change() {
+                            ui.set_has_external_change(true);
+                        }
+                    }
+                }
+            },
+        );
+    }
+
     // 開啟舊檔事件綁定
     {
         let ui_handle = main_window.as_weak();
@@ -212,6 +234,7 @@ fn main() -> Result<(), slint::PlatformError> {
             }
 
             if let Some(ui) = ui_handle.upgrade() {
+                ui.set_has_external_change(false);
                 sync_ui_from_doc(&ui, &d);
             }
         });
@@ -237,8 +260,39 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 }
                 if let Some(ui) = ui_handle.upgrade() {
+                    ui.set_has_external_change(false);
                     sync_ui_from_doc(&ui, &d);
                 }
+            }
+        });
+    }
+
+    // 重新載入檔案事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_reload_file(move || {
+            let mut d = doc_clone.borrow_mut();
+            if let Err(e) = d.reload_file() {
+                eprintln!("Failed to reload file: {}", e);
+                return;
+            }
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_has_external_change(false);
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 忽略外部檔案變更事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_ignore_external_change(move || {
+            let mut d = doc_clone.borrow_mut();
+            d.ignore_external_change();
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_has_external_change(false);
             }
         });
     }
