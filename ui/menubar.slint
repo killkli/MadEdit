@@ -1,0 +1,186 @@
+// 經典 Windows 風格選單列
+//
+// 原版 MadEdit 使用 wxWidgets 原生選單列（檔案 / 編輯 / 搜尋 / 檢視 / 工具 /
+// 視窗 / 說明）。Slint 內建的 MenuBar 會走 Fluent 樣式，與原版差異很大，
+// 因此本檔自繪選單列：上方為選單標題列，點選後於標題下方彈出清單。
+
+import { Theme } from "theme.slint";
+
+// 選單項目定義
+//   item-type: 0 = 一般項目、1 = 分隔線、2 = 可勾選項目
+export struct MenuItemDef {
+    text: string,
+    shortcut: string,
+    item-type: int,
+    enabled: bool,
+    checked: bool,
+    action: string,
+}
+
+// 頂層選單定義（x-offset 為該標題在選單列中的水平位置，由 Rust 端計算）
+export struct MenuDef {
+    title: string,
+    width: length,
+    x-offset: length,
+    popup-width: length,
+    popup-height: length,
+    items: [MenuItemDef],
+}
+
+// ── 彈出選單內容 ──────────────────────────────────────────────────
+export component ClassicMenuPopup inherits Theme {
+    in property <[MenuItemDef]> items: [];
+    callback item-activated(string);
+    callback dismiss();
+
+    background: root.chrome;
+    border-width: 1px;
+    border-color: #707070;
+
+    VerticalLayout {
+        padding: 2px;
+        spacing: 0px;
+
+        for item in root.items : Rectangle {
+            // 分隔線列較矮，其餘為一般項目列
+            height: item.item-type == 1 ? 8px : 20px;
+            background: item.item-type == 1 ? transparent
+                : (item.enabled && item-touch.has-hover ? root.highlight : transparent);
+
+            // 分隔線：上暗下亮，形成經典浮雕效果
+            if item.item-type == 1 : Rectangle {
+                x: 2px;
+                y: 3px;
+                width: parent.width - 4px;
+                height: 1px;
+                background: #b0b0b0;
+            }
+            if item.item-type == 1 : Rectangle {
+                x: 2px;
+                y: 4px;
+                width: parent.width - 4px;
+                height: 1px;
+                background: #ffffff;
+            }
+
+            // 核取方塊記號
+            if item.item-type == 2 : Text {
+                x: 4px;
+                width: 14px;
+                height: 20px;
+                text: item.checked ? "✓" : "";
+                color: item.enabled ? (item-touch.has-hover ? #ffffff : #000000) : root.text-disabled;
+                font-size: 12px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            // 項目文字
+            if item.item-type != 1 : Text {
+                x: 22px;
+                width: parent.width - 22px - 66px;
+                height: 20px;
+                text: item.text;
+                color: item.enabled ? (item-touch.has-hover ? #ffffff : root.text-color) : root.text-disabled;
+                font-size: 13px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            // 快捷鍵
+            if item.item-type != 1 : Text {
+                x: parent.width - 66px;
+                width: 62px;
+                height: 20px;
+                text: item.shortcut;
+                color: item.enabled ? (item-touch.has-hover ? #d0d8ec : root.text-dim) : root.text-disabled;
+                font-size: 12px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+
+            item-touch := TouchArea {
+                enabled: item.enabled && item.item-type != 1;
+                clicked => {
+                    root.item-activated(item.action);
+                    root.dismiss();
+                }
+            }
+        }
+    }
+}
+
+// ── 選單列 ────────────────────────────────────────────────────────
+export component ClassicMenuBar inherits Theme {
+    in property <[MenuDef]> menus: [];
+    callback menu-action(string);
+
+    height: 26px;
+    background: root.chrome;
+
+    // 選單列底線，讓選單列與工具列有明確分界
+    Rectangle { x: 0; y: root.height - 1px; width: root.width; height: 1px; background: #b0b0b0; }
+
+    // open-index 需由元件內部更新，故使用 in-out
+    in-out property <int> open-index: -1;
+    out property <int> safe-index: max(0, root.open-index);
+    out property <MenuDef> open-menu: root.menus.length > 0 ? root.menus[root.safe-index] : {
+        title: "", width: 0px, x-offset: 0px, popup-width: 0px, popup-height: 0px, items: []
+    };
+
+    HorizontalLayout {
+        padding-left: 2px;
+        spacing: 0px;
+
+        for menu[i] in root.menus : Rectangle {
+            width: menu.width;
+            height: 26px;
+            background: (root.open-index == i && popup.is-open) ? root.highlight
+                : (touch.has-hover ? #e6e6e6 : transparent);
+
+            Text {
+                x: 0;
+                width: parent.width;
+                height: parent.height;
+                text: menu.title;
+                color: (root.open-index == i && popup.is-open) ? #ffffff : root.text-color;
+                font-size: 13px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.open-index = i;
+                    popup.show();
+                }
+                // 選單展開時，滑鼠移入其他標題即切換選單（經典 Windows 行為）
+                changed has-hover => {
+                    if (self.has-hover && popup.is-open && root.open-index != i) {
+                        root.open-index = i;
+                    }
+                }
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: root.open-menu.x-offset;
+        y: 26px;
+        width: root.open-menu.popup-width;
+        height: root.open-menu.popup-height;
+        close-policy: close-on-click-outside;
+
+        ClassicMenuPopup {
+            items: root.open-menu.items;
+            item-activated(action) => {
+                root.menu-action(action);
+            }
+            dismiss => {
+                root.open-index = -1;
+                popup.close();
+            }
+        }
+    }
+}

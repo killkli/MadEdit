@@ -356,6 +356,41 @@ impl EditorState {
         self.lines.get(line_idx).map_or(0, |l| l.chars().count())
     }
 
+    /// 游標位置自文件開頭起算的字元索引（每行結尾計入一個換行字元）
+    ///
+    /// 對應原版 MadEdit 狀態列的「CharPos」欄位。
+    pub fn char_pos(&self, pos: TextPosition) -> usize {
+        // 行號超出範圍時夾限至最後一行
+        let end_line = pos.line.min(self.lines.len().saturating_sub(1));
+        let mut count = 0usize;
+        for line in self.lines.iter().take(end_line) {
+            // 每個非最後一行結尾都有一個換行字元
+            count += line.chars().count() + 1;
+        }
+        count + self.line_char_count(end_line).min(pos.col)
+    }
+
+    /// 目前選取範圍的字元數（不含換行字元）
+    ///
+    /// 對應原版 MadEdit 狀態列的「SelSize」欄位。
+    pub fn selection_char_count(&self) -> usize {
+        let (start, end) = (self.selection.start(), self.selection.end());
+        if start == end {
+            return 0;
+        }
+        let last_line = end.line.min(self.lines.len().saturating_sub(1));
+        let mut count = 0usize;
+        for idx in start.line..=last_line {
+            let len = self.line_char_count(idx);
+            let from = if idx == start.line { start.col.min(len) } else { 0 };
+            let to = if idx == end.line { end.col.min(len) } else { len };
+            if to > from {
+                count += to - from;
+            }
+        }
+        count
+    }
+
     /// 確保游標與選取錨點在有效範圍內
     fn clamp_pos(&self, pos: TextPosition) -> TextPosition {
         if self.lines.is_empty() {
@@ -1214,6 +1249,46 @@ mod tests {
         assert_eq!(char_visual_columns('，'), 2);
         assert_eq!(char_visual_columns('あ'), 2);
         assert_eq!(char_visual_columns('한'), 2);
+    }
+
+    #[test]
+    fn test_char_pos_counts_newlines() {
+        // 三行內容："abc" / "de" / "f"
+        let mut editor = EditorState::from_text("abc\nde\nf");
+
+        // 第一行開頭
+        assert_eq!(editor.char_pos(TextPosition::new(0, 0)), 0);
+        // 第一行第 3 個字元之後
+        assert_eq!(editor.char_pos(TextPosition::new(0, 3)), 3);
+        // 第二行開頭（第一行 3 字元 + 1 個換行）
+        assert_eq!(editor.char_pos(TextPosition::new(1, 0)), 4);
+        // 第三行結尾（3 + 1 + 2 + 1 + 最後一行 1 個字元 = 8）
+        assert_eq!(editor.char_pos(TextPosition::new(2, 1)), 8);
+
+        // 行號超出範圍時應夾限於文件長度
+        assert_eq!(editor.char_pos(TextPosition::new(99, 0)), 7);
+    }
+
+    #[test]
+    fn test_selection_char_count() {
+        let mut editor = EditorState::from_text("abc\nde\nf");
+
+        // 無選取時為 0
+        assert_eq!(editor.selection_char_count(), 0);
+
+        // 單行選取："bc"
+        editor.selection = Selection::new(
+            TextPosition::new(0, 1),
+            TextPosition::new(0, 3),
+        );
+        assert_eq!(editor.selection_char_count(), 2);
+
+        // 跨行選取："bc\nde"（不含換行字元，共 4 個字元）
+        editor.selection = Selection::new(
+            TextPosition::new(0, 1),
+            TextPosition::new(1, 2),
+        );
+        assert_eq!(editor.selection_char_count(), 4);
     }
 
     #[test]
