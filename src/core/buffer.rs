@@ -395,8 +395,11 @@ impl DocumentBuffer {
         }
         self.newline_format = new_format;
         self.is_modified = true;
-        self.text = self.editor.to_text(new_format.newline_str());
-        self.sync_bytes_to_piece_table();
+        // 大檔未快取時防護不覆寫
+        if self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT || !self.text.is_empty() {
+            self.text = self.editor.to_text(new_format.newline_str());
+            self.sync_bytes_to_piece_table();
+        }
         true
     }
 
@@ -1237,6 +1240,13 @@ mod tests {
         assert_eq!(doc.newline_format, NewLineFormat::Mac);
         assert_eq!(doc.text, "A\rB\rC");
         assert_eq!(doc.piece_table.collect_bytes(), b"A\rB\rC");
+
+        // 驗證存檔至實體磁碟檔案的二進位位元組是否確實為目標換行符
+        let tmp_file = std::env::temp_dir().join(format!("test_nl_{}.txt", std::process::id()));
+        doc.save_file(Some(tmp_file.clone())).unwrap();
+        let saved_bytes = std::fs::read(&tmp_file).unwrap();
+        assert_eq!(saved_bytes, b"A\rB\rC");
+        let _ = std::fs::remove_file(&tmp_file);
     }
 }
 

@@ -539,6 +539,39 @@ impl EditorState {
         true
     }
 
+    /// 當自指定行開始刪除了 count 行時，同步校正書籤集合
+    fn adjust_bookmarks_after_removal(&mut self, start_line: usize, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let end_line = start_line + count - 1;
+        let mut new_bookmarks = BTreeSet::new();
+        for &bm in &self.bookmarks {
+            if bm < start_line {
+                new_bookmarks.insert(bm);
+            } else if bm > end_line {
+                new_bookmarks.insert(bm - count);
+            }
+        }
+        self.bookmarks = new_bookmarks;
+    }
+
+    /// 當自指定行後插入了 count 行時，同步校正書籤集合
+    fn adjust_bookmarks_after_insertion(&mut self, after_line: usize, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let mut new_bookmarks = BTreeSet::new();
+        for &bm in &self.bookmarks {
+            if bm > after_line {
+                new_bookmarks.insert(bm + count);
+            } else {
+                new_bookmarks.insert(bm);
+            }
+        }
+        self.bookmarks = new_bookmarks;
+    }
+
     /// 複製當前行或選取區涵蓋的所有行至下方
     pub fn duplicate_lines(&mut self) {
         if self.lines.is_empty() {
@@ -555,15 +588,7 @@ impl EditorState {
         }
 
         // 書籤同步位移
-        let mut new_bookmarks = BTreeSet::new();
-        for &bm in &self.bookmarks {
-            if bm <= max_line {
-                new_bookmarks.insert(bm);
-            } else {
-                new_bookmarks.insert(bm + delta);
-            }
-        }
-        self.bookmarks = new_bookmarks;
+        self.adjust_bookmarks_after_insertion(max_line, delta);
 
         // 游標與選區移動至新複製出的區塊
         self.selection.anchor.line += delta;
@@ -590,15 +615,7 @@ impl EditorState {
 
         // 書籤同步移除與前移
         let count = max_line - min_line + 1;
-        let mut new_bookmarks = BTreeSet::new();
-        for &bm in &self.bookmarks {
-            if bm < min_line {
-                new_bookmarks.insert(bm);
-            } else if bm > max_line {
-                new_bookmarks.insert(bm - count);
-            }
-        }
-        self.bookmarks = new_bookmarks;
+        self.adjust_bookmarks_after_removal(min_line, count);
 
         let new_line = min_line.min(self.lines.len() - 1);
         let col = self.selection.head.col.min(self.line_char_count(new_line));
@@ -788,6 +805,7 @@ impl EditorState {
 
             self.lines[start.line] = merged;
             self.lines.drain((start.line + 1)..=end.line);
+            self.adjust_bookmarks_after_removal(start.line + 1, end.line - start.line);
         }
 
         self.selection = Selection::caret(start);
@@ -871,16 +889,7 @@ impl EditorState {
         self.lines.insert(head.line + 1, right);
 
         // 書籤同步後移
-        let head_line = head.line;
-        let mut new_bookmarks = BTreeSet::new();
-        for &bm in &self.bookmarks {
-            if bm > head_line {
-                new_bookmarks.insert(bm + 1);
-            } else {
-                new_bookmarks.insert(bm);
-            }
-        }
-        self.bookmarks = new_bookmarks;
+        self.adjust_bookmarks_after_insertion(head.line, 1);
 
         let new_pos = TextPosition::new(head.line + 1, 0);
         self.selection = Selection::caret(new_pos);
@@ -902,6 +911,7 @@ impl EditorState {
             self.selection = Selection::caret(new_pos);
         } else if head.line > 0 {
             let current_line = self.lines.remove(head.line);
+            self.adjust_bookmarks_after_removal(head.line, 1);
             let prev_line_idx = head.line - 1;
             let prev_len = self.line_char_count(prev_line_idx);
 
@@ -925,6 +935,7 @@ impl EditorState {
             self.lines[head.line] = chars.into_iter().collect();
         } else if head.line + 1 < self.lines.len() {
             let next_line = self.lines.remove(head.line + 1);
+            self.adjust_bookmarks_after_removal(head.line + 1, 1);
             self.lines[head.line].push_str(&next_line);
         }
         self.scroll_caret_into_view();
@@ -1543,5 +1554,25 @@ mod tests {
         assert!(!editor.bookmarks.contains(&1));
         assert!(editor.bookmarks.contains(&2));
         assert_eq!(editor.bookmarks.len(), 1);
+
+        // 4. 測試行首按 Backspace 合併行
+        let mut ed2 = EditorState::from_text("First\nSecond\nThird");
+        ed2.set_caret(2, 0); // 在 Third 加上書籤
+        ed2.toggle_bookmark();
+        assert!(ed2.bookmarks.contains(&2));
+
+        ed2.set_caret(1, 0); // 游標在 Second 行首按 Backspace 合併到 First
+        ed2.delete_backspace();
+        assert_eq!(ed2.lines, vec!["FirstSecond", "Third"]);
+        // 原本在 line 2 的 Third 書籤應前移至 line 1
+        assert!(ed2.bookmarks.contains(&1));
+        assert_eq!(ed2.bookmarks.len(), 1);
+
+        // 5. 測試行尾按 Delete 合併行
+        ed2.set_caret(0, ed2.line_char_count(0)); // 在 FirstSecond 行尾按 Delete 合併 Third
+        ed2.delete_forward();
+        assert_eq!(ed2.lines, vec!["FirstSecondThird"]);
+        // 合併後 Third 行被刪除，書籤自動清理
+        assert!(ed2.bookmarks.is_empty());
     }
 }
