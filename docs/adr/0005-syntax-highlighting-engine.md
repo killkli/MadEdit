@@ -1,6 +1,6 @@
 # 0005: 語法突顯引擎與多色文字段渲染架構
 
-為了使 MadEdit-Rust 在編輯各類程式語言原始碼與標記語言時具備現代化語法突顯（Syntax Highlighting）體驗，我們決定引入 `syntect` 語法引擎，並在 Slint 自繪編輯器中實現文字分段著色（Highlighted Spans）架構。
+為了使 MadEdit 在編輯各類程式語言原始碼與標記語言時具備現代化語法突顯（Syntax Highlighting）體驗，我們決定引入 `syntect` 語法引擎，並在 Slint 自繪編輯器中實現文字分段著色（Highlighted Spans）架構。
 
 ## Context
 

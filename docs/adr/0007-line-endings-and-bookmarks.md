@@ -1,6 +1,6 @@
 # 0007: 換行格式轉換與編輯器行書籤架構
 
-為了使 MadEdit-Rust 在跨平台協同開發與長代碼檢視中具備完整的行尾格式控制能力與快速標記導覽體驗，我們決定實作「換行格式切換與轉換（Line Endings Conversion）」與「編輯器行書籤系統（Editor Bookmarks）」。
+為了使 MadEdit 在跨平台協同開發與長代碼檢視中具備完整的行尾格式控制能力與快速標記導覽體驗，我們決定實作「換行格式切換與轉換（Line Endings Conversion）」與「編輯器行書籤系統（Editor Bookmarks）」。
 
 ## Context
 

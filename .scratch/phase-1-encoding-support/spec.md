@@ -4,7 +4,7 @@ Status: ready-for-agent
 
 ## Problem Statement
 
-根據新版 `AGENTS.md` 第 5 節與第 6 節 Phase 1 規範，目前 MadEdit-Rust 存在兩個會造成資料毀損的已知問題與功能缺口：
+根據新版 `AGENTS.md` 第 5 節與第 6 節 Phase 1 規範，目前 MadEdit 存在兩個會造成資料毀損的已知問題與功能缺口：
 1. **非 UTF-8 檔案存檔即損毀**：Big5 / GBK 等檔案若以錯誤編碼解碼產生替代字元（U+FFFD），存檔後原始內容無法復原。
 2. **UTF-16 存檔會變成 UTF-8 且遺失 BOM**：`encoding_rs` 的 `Encoding::encode()` 對 UTF-16LE/BE 的輸出編碼為 UTF-8，且不會寫回 BOM，必須自行實作 UTF-16 編碼並保留 BOM。
 3. **缺乏編碼選單與「重新解碼 / 轉換編碼」介面**：使用者無法在工具列選擇編碼以「以指定編碼重新讀取（Reinterpret Encoding）」或「轉換為指定編碼儲存（Convert Encoding）」。

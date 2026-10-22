@@ -4,7 +4,7 @@ Status: closed
 
 ## Problem Statement
 
-當前 MadEdit-Rust 已具備自繪編輯器元件、大檔案 Piece Table 引擎、列塊模式、搜尋取代以及語法突顯功能。
+當前 MadEdit 已具備自繪編輯器元件、大檔案 Piece Table 引擎、列塊模式、搜尋取代以及語法突顯功能。
 然而在日常程式碼開發與長篇文字檢視時，尚缺乏以下現代編輯器的核心功能：
 1. **無法精確快速跳轉到指定行號或欄位**：閱讀編譯錯誤或日誌時，需手動捲動或點擊尋找，效率較低。
 2. **缺乏常用行編輯操作**：缺少整行上下移動（Move Line Up/Down）、整行複製（Duplicate Line）、整行刪除（Delete Line）與智慧行首（Smart Home），必須透過反白、剪下、換行貼上等多步驟完成，編輯流暢度受限。
