@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 01: 擴充 SelectionKind 與視覺欄位矩形選取領域模型
 

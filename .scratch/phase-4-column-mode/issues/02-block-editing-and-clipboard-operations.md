@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 02: 列塊剪貼簿與多行同步輸入/刪除操作
 

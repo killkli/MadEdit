@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 03: Slint UI 整合、Alt 鍵拖曳支援與狀態列
 
