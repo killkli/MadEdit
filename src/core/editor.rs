@@ -139,6 +139,8 @@ impl Selection {
 pub struct Viewport {
     pub first_visible_line: usize,
     pub visible_line_count: usize,
+    pub first_visible_col: usize,
+    pub visible_col_count: usize,
 }
 
 impl Default for Viewport {
@@ -146,6 +148,8 @@ impl Default for Viewport {
         Self {
             first_visible_line: 0,
             visible_line_count: 30,
+            first_visible_col: 0,
+            visible_col_count: 110,
         }
     }
 }
@@ -1107,14 +1111,30 @@ impl EditorState {
         self.insert_text(&text);
     }
 
-    /// 確保游標在當前視窗範圍內（自動捲動）
+    /// 確保游標在當前視窗範圍內（自動垂直與水平捲動）
     pub fn scroll_caret_into_view(&mut self) {
         let head = self.selection.head;
         let line = head.line;
         if line < self.viewport.first_visible_line {
             self.viewport.first_visible_line = line;
         } else if line >= self.viewport.first_visible_line + self.viewport.visible_line_count {
-            self.viewport.first_visible_line = line.saturating_sub(self.viewport.visible_line_count - 1);
+            self.viewport.first_visible_line =
+                line.saturating_sub(self.viewport.visible_line_count - 1);
+        }
+
+        let line_text = self.lines.get(line).map(|s| s.as_str()).unwrap_or("");
+        let caret_vcol = if self.selection.is_block() {
+            self.selection
+                .head_vcol
+                .unwrap_or_else(|| char_col_to_visual_col(line_text, head.col))
+        } else {
+            char_col_to_visual_col(line_text, head.col)
+        };
+        let vis_cols = self.viewport.visible_col_count.max(10);
+        if caret_vcol < self.viewport.first_visible_col {
+            self.viewport.first_visible_col = caret_vcol;
+        } else if caret_vcol >= self.viewport.first_visible_col + vis_cols.saturating_sub(2) {
+            self.viewport.first_visible_col = caret_vcol.saturating_sub(vis_cols.saturating_sub(4));
         }
     }
 
@@ -1128,6 +1148,42 @@ impl EditorState {
             self.viewport.first_visible_line =
                 (self.viewport.first_visible_line + lines as usize).min(max_first);
         }
+    }
+
+    /// 直接將垂直捲軸定位至指定起始行索引
+    pub fn scroll_to_line(&mut self, first_line: usize) {
+        let max_first = self.lines.len().saturating_sub(1);
+        self.viewport.first_visible_line = first_line.min(max_first);
+    }
+
+    /// 依欄位數進行畫面水平捲動
+    pub fn scroll_horizontal_by(&mut self, cols: i32) {
+        let max_first = self.max_visual_columns().saturating_sub(10);
+        if cols < 0 {
+            self.viewport.first_visible_col =
+                self.viewport.first_visible_col.saturating_sub((-cols) as usize);
+        } else if cols > 0 {
+            self.viewport.first_visible_col =
+                (self.viewport.first_visible_col + cols as usize).min(max_first);
+        }
+    }
+
+    /// 直接將水平捲軸定位至指定起始視覺欄位
+    pub fn scroll_to_col(&mut self, first_col: usize) {
+        let max_first = self.max_visual_columns().saturating_sub(10);
+        self.viewport.first_visible_col = first_col.min(max_first);
+    }
+
+    /// 計算目前編輯器內容的最大視覺欄寬（至少保留 140 欄供水平捲軸與列塊模式操作）
+    pub fn max_visual_columns(&self) -> usize {
+        let content_max = self
+            .lines
+            .iter()
+            .take(2000)
+            .map(|l| char_col_to_visual_col(l, l.chars().count()))
+            .max()
+            .unwrap_or(0);
+        (content_max + 20).max(140)
     }
 
     /// 根據目前可視視窗（Viewport）與字元格網寬度產生可見行繪製資料
@@ -1702,5 +1758,29 @@ mod tests {
         let ws_spans = apply_visible_whitespace(raw, base_spans, true);
         let joined: String = ws_spans.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(joined, "»   a·b");
+    }
+
+    #[test]
+    fn test_vertical_and_horizontal_scrolling() {
+        let mut editor = EditorState::from_text(&"0123456789".repeat(20));
+        editor.viewport.visible_col_count = 50;
+        assert!(editor.max_visual_columns() >= 200);
+
+        // 水平自動捲動：游標移至第 120 欄時，first_visible_col 應自動跟進
+        editor.set_caret(0, 120);
+        assert!(editor.viewport.first_visible_col > 0);
+        assert!(editor.viewport.first_visible_col <= 120);
+
+        // 水平與垂直捲軸手動定位測試
+        editor.scroll_to_col(30);
+        assert_eq!(editor.viewport.first_visible_col, 30);
+        editor.scroll_horizontal_by(-10);
+        assert_eq!(editor.viewport.first_visible_col, 20);
+
+        let mut ed_lines = EditorState::from_text("L1\nL2\nL3\nL4\nL5");
+        ed_lines.scroll_to_line(3);
+        assert_eq!(ed_lines.viewport.first_visible_line, 3);
+        ed_lines.scroll_to_line(999);
+        assert_eq!(ed_lines.viewport.first_visible_line, 4);
     }
 }

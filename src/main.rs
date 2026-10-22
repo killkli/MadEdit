@@ -150,7 +150,7 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
         .collect();
     ui.set_visible_lines(ModelRc::new(VecModel::from(slint_lines)));
 
-    // 同步原版 MadEdit 5 格狀態列資訊
+    // 同步原版 MadEdit 5 格狀態列資訊與捲軸 (Scrollbar) 狀態
     let head = doc.editor.selection.head;
     let total_lines = doc
         .line_index
@@ -159,6 +159,18 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
         .max(1);
     let cur_line = head.line + 1;
     let cur_col = head.col + 1;
+
+    ui.set_vscroll_first_line(doc.editor.viewport.first_visible_line as i32);
+    ui.set_vscroll_total_lines(total_lines as i32);
+    ui.set_vscroll_visible_lines(doc.editor.viewport.visible_line_count as i32);
+
+    let max_cols = doc
+        .editor
+        .max_visual_columns()
+        .max(doc.editor.viewport.first_visible_col + doc.editor.viewport.visible_col_count);
+    ui.set_hscroll_first_col(doc.editor.viewport.first_visible_col as i32);
+    ui.set_hscroll_total_cols(max_cols as i32);
+    ui.set_hscroll_visible_cols(doc.editor.viewport.visible_col_count as i32);
 
     if doc.editor.selection.is_block() && !doc.editor.selection.is_empty() {
         let bounds = doc.editor.selection.visual_bounds(&doc.editor);
@@ -1004,6 +1016,58 @@ fn main() -> Result<(), slint::PlatformError> {
             } else if delta_y < 0.0 {
                 d.editor.scroll_by(3);
             }
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 垂直捲軸滑塊跳轉與拖曳
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_vscroll_to(move |target_line| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_to_line(target_line.max(0) as usize);
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 垂直捲軸上下按鈕微調
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_vscroll_by(move |delta_lines| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_by(delta_lines);
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 水平捲軸滑塊跳轉與拖曳
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_hscroll_to(move |target_col| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_to_col(target_col.max(0) as usize);
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 水平捲軸左右按鈕與橫向滾輪微調
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_hscroll_by(move |delta_cols| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_horizontal_by(delta_cols);
             if let Some(ui) = ui_handle.upgrade() {
                 sync_ui_from_doc(&ui, &d);
             }
