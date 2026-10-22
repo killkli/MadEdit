@@ -2,7 +2,7 @@ mod core;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use core::{DocumentBuffer, EditMode, SUPPORTED_ENCODINGS};
+use core::{char_col_to_visual_col, DocumentBuffer, EditMode, Selection, SUPPORTED_ENCODINGS};
 use slint::platform::Key;
 use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
 
@@ -52,9 +52,18 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
         .collect();
     ui.set_visible_lines(ModelRc::new(VecModel::from(slint_lines)));
 
-    // 同步游標位置座標資訊
+    // 同步游標位置座標資訊（列塊模式下顯示選取幾行幾欄）
     let head = doc.editor.selection.head;
-    ui.set_caret_status(format!("Ln {}, Col {}", head.line + 1, head.col + 1).into());
+    if doc.editor.selection.is_block() && !doc.editor.selection.is_empty() {
+        let (min_l, max_l, min_v, max_v) = doc.editor.selection.visual_bounds(&doc.editor);
+        let lines = max_l - min_l + 1;
+        let cols = max_v.saturating_sub(min_v);
+        ui.set_caret_status(
+            format!("Block: {}x{} (Ln {}, Col {})", lines, cols, head.line + 1, head.col + 1).into(),
+        );
+    } else {
+        ui.set_caret_status(format!("Ln {}, Col {}", head.line + 1, head.col + 1).into());
+    }
 
     if doc.edit_mode == EditMode::Hex {
         let dump = doc.get_hex_dump();
@@ -188,7 +197,7 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
-        main_window.on_key_pressed(move |key_text, ctrl, shift| {
+        main_window.on_key_pressed(move |key_text, ctrl, shift, alt| {
             let mut d = doc_clone.borrow_mut();
             let key_str = key_text.as_str();
 
@@ -266,6 +275,16 @@ fn main() -> Result<(), slint::PlatformError> {
                 false
             };
 
+            if handled && shift && (alt || d.edit_mode == EditMode::Column) {
+                let anchor = d.editor.selection.anchor;
+                let head = d.editor.selection.head;
+                let anchor_line_text = d.editor.lines.get(anchor.line).map(|s| s.as_str()).unwrap_or("");
+                let head_line_text = d.editor.lines.get(head.line).map(|s| s.as_str()).unwrap_or("");
+                let a_vcol = char_col_to_visual_col(anchor_line_text, anchor.col);
+                let h_vcol = char_col_to_visual_col(head_line_text, head.col);
+                d.editor.selection = Selection::block(anchor, head, a_vcol, h_vcol);
+            }
+
             if handled {
                 if let Some(ui) = ui_handle.upgrade() {
                     ui.set_caret_visible(true); // 按鍵時立即顯示游標
@@ -276,14 +295,20 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 自繪編輯器滑鼠點擊定位
+    // 自繪編輯器滑鼠點擊定位（支援列塊模式與 Alt 鍵矩形定位）
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
-        main_window.on_mouse_clicked(move |x, y, _is_drag| {
+        main_window.on_mouse_clicked(move |x, y, alt| {
             let mut d = doc_clone.borrow_mut();
+            let is_block_mode = d.edit_mode == EditMode::Column || alt;
+            let target_vcol = (x / CELL_WIDTH).max(0.0).round() as usize;
             let pos = d.editor.pos_from_pixel(x, y, CELL_WIDTH, LINE_HEIGHT);
-            d.editor.set_caret(pos.line, pos.col);
+            if is_block_mode {
+                d.editor.selection = Selection::block(pos, pos, target_vcol, target_vcol);
+            } else {
+                d.editor.set_caret(pos.line, pos.col);
+            }
             if let Some(ui) = ui_handle.upgrade() {
                 ui.set_caret_visible(true);
                 sync_ui_from_doc(&ui, &d);
@@ -291,14 +316,25 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 自繪編輯器滑鼠拖曳選取
+    // 自繪編輯器滑鼠拖曳選取（支援列塊模式與 Alt 鍵矩形選取）
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
-        main_window.on_mouse_dragged(move |x, y| {
+        main_window.on_mouse_dragged(move |x, y, alt| {
             let mut d = doc_clone.borrow_mut();
+            let is_block_mode = d.edit_mode == EditMode::Column || alt || d.editor.selection.is_block();
+            let target_vcol = (x / CELL_WIDTH).max(0.0).round() as usize;
             let pos = d.editor.pos_from_pixel(x, y, CELL_WIDTH, LINE_HEIGHT);
-            d.editor.selection.head = pos;
+            if is_block_mode {
+                let anchor = d.editor.selection.anchor;
+                let anchor_vcol = d.editor.selection.anchor_vcol.unwrap_or_else(|| {
+                    let line_text = d.editor.lines.get(anchor.line).map(|s| s.as_str()).unwrap_or("");
+                    char_col_to_visual_col(line_text, anchor.col)
+                });
+                d.editor.selection = Selection::block(anchor, pos, anchor_vcol, target_vcol);
+            } else {
+                d.editor.selection.head = pos;
+            }
             if let Some(ui) = ui_handle.upgrade() {
                 sync_ui_from_doc(&ui, &d);
             }

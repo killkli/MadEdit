@@ -82,7 +82,11 @@ D:\Git\MadEdit-Rust\
 - [x] Slint UI 整合（視窗、工具列按鈕、文字編輯區、狀態列）。
 - [x] 原生跨平台「開啟舊檔」與「儲存檔案」對話框。
 - [x] 模式切換 UI（文字 / 列塊 / 十六進位按鈕與狀態）。
-- [ ] 列塊模式行為：**尚未實作**。目前 `edit-mode == 1` 與文字模式共用同一個文字檢視，僅狀態列顯示不同（預計於 Phase 4 實作）。
+- [x] 列塊模式 (Column/Block Mode) 與矩形選取（Phase 4 完成）：
+  - 引入 `SelectionKind`（Stream 與 Block）與二維視覺矩形模型，基於固定字元格網以 Visual Column（全形 2 欄、Tab 對齊 4 欄）進行幾何矩形切割與高亮。
+  - 支援工具列「列塊模式」切換與文字模式下 Alt+滑鼠拖曳 / Alt+Shift+方向鍵 觸發矩形選取。
+  - 支援矩形選取複製（Ctrl+C）、剪下（Ctrl+X）、列塊對齊貼上（Ctrl+V）、多行同步打字與 Backspace/Delete 區塊切除，短行自動補齊與防越界安全防護。
+  - 狀態列即時顯示矩形維度（如 `Block: 3x4`）。
 - [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
   - 已優化：直接自 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體拷貝。
 - [x] 換行格式自動偵測（CRLF / LF / CR），目前僅顯示，不支援轉換。
@@ -100,7 +104,7 @@ D:\Git\MadEdit-Rust\
   - 實作 Piece Table（Original Buffer + Add Buffer + Piece 列表）與輕量 `LineIndex`（換行位移二分搜尋索引）。
   - 存檔直接透過 Piece 清單串流寫出，徹底消除全檔記憶體佔用與按鍵重複全篇編碼之負擔。
 - [x] 狀態列即時顯示（長度、修改狀態標記、解碼警告、模式、換行與編碼）。
-- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯、Piece Table 編輯/刪除、LineIndex 按需讀取與 CR/LF/CRLF 支援、大檔 mmap 秒開、大檔編輯與原子存檔測試、相容性查詢介面）。
+- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯、Piece Table 編輯/刪除、LineIndex 按需讀取與 CR/LF/CRLF 支援、大檔 mmap 秒開、大檔編輯與原子存檔測試、相容性查詢介面、字元格網視覺切片提取、矩形選取高亮渲染、列塊複製/剪下/貼上/多行同步打字、Buffer 列塊模式渲染測試）。
 
 ### 已知問題（優先處理）
 
@@ -123,9 +127,8 @@ D:\Git\MadEdit-Rust\
 ### Phase 3: 大檔案與核心緩衝區最佳化 (Large File Engine) - [已完成]
 - 已完成 Piece Table 資料結構、`memmap2` 大檔零拷貝開啟、`LineIndex` 行索引與串流存檔。
 
-### Phase 4: 列塊模式 (Column/Block Mode) 與游標系統
-- 實作矩形區域選取（支援 Alt+滑鼠拖曳或鍵盤選取）。
-- 多行游標或區塊插入/刪除。
+### Phase 4: 列塊模式 (Column/Block Mode) 與游標系統 - [已完成]
+- 已完成二維視覺矩形選取模型、字元格網視覺切片、列塊剪貼簿（複製/剪下/貼上）、多行同步輸入與刪除、以及 Slint UI Alt 鍵拖曳整合。
 
 ### Phase 5: 搜尋與取代 (Find & Replace)
 - 彈出式搜尋與取代面板。

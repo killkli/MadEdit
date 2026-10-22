@@ -11,24 +11,83 @@ impl TextPosition {
     }
 }
 
-/// 文件中的文字選取範圍（由錨點 anchor 與游標頭部 head 組成）
+/// 選取範圍種類（連續串流選取或二維矩形列塊選取）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionKind {
+    #[default]
+    Stream,
+    Block,
+}
+
+/// 文件中的文字選取範圍（由錨點 anchor、游標頭部 head 與選取種類組成）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Selection {
     pub anchor: TextPosition,
     pub head: TextPosition,
+    pub kind: SelectionKind,
+    pub anchor_vcol: Option<usize>,
+    pub head_vcol: Option<usize>,
 }
 
 impl Selection {
+    pub fn is_block(&self) -> bool {
+        self.kind == SelectionKind::Block
+    }
+
+    #[allow(dead_code)]
+    pub fn block(
+        anchor: TextPosition,
+        head: TextPosition,
+        anchor_vcol: usize,
+        head_vcol: usize,
+    ) -> Self {
+        Self {
+            anchor,
+            head,
+            kind: SelectionKind::Block,
+            anchor_vcol: Some(anchor_vcol),
+            head_vcol: Some(head_vcol),
+        }
+    }
+
+    pub fn visual_bounds(&self, editor: &EditorState) -> (usize, usize, usize, usize) {
+        let min_line = self.anchor.line.min(self.head.line);
+        let max_line = self.anchor.line.max(self.head.line);
+
+        let v1 = self.anchor_vcol.unwrap_or_else(|| {
+            let line_text = editor.lines.get(self.anchor.line).map(|s| s.as_str()).unwrap_or("");
+            char_col_to_visual_col(line_text, self.anchor.col)
+        });
+        let v2 = self.head_vcol.unwrap_or_else(|| {
+            let line_text = editor.lines.get(self.head.line).map(|s| s.as_str()).unwrap_or("");
+            char_col_to_visual_col(line_text, self.head.col)
+        });
+
+        let min_vcol = v1.min(v2);
+        let max_vcol = v1.max(v2);
+        (min_line, max_line, min_vcol, max_vcol)
+    }
     pub fn new(anchor: TextPosition, head: TextPosition) -> Self {
-        Self { anchor, head }
+        Self {
+            anchor,
+            head,
+            kind: SelectionKind::Stream,
+            anchor_vcol: None,
+            head_vcol: None,
+        }
     }
 
     pub fn caret(pos: TextPosition) -> Self {
         Self {
             anchor: pos,
             head: pos,
+            kind: SelectionKind::Stream,
+            anchor_vcol: None,
+            head_vcol: None,
         }
     }
+
+
 
     pub fn is_empty(&self) -> bool {
         self.anchor == self.head
@@ -117,6 +176,58 @@ pub fn visual_col_to_char_col(line: &str, target_visual_col: usize) -> usize {
         current_visual_col += cols;
     }
     line.chars().count()
+}
+
+/// 從單行文字中，根據視覺欄位區間 [min_vcol, max_vcol] 擷取子字串與對應字元起訖索引 (start_char, end_char)
+/// 若行末短於 max_vcol 且 pad_spaces 為 true，則會補齊空白字元以維持矩形形狀
+pub fn extract_visual_slice(
+    line: &str,
+    min_vcol: usize,
+    max_vcol: usize,
+    pad_spaces: bool,
+) -> (String, usize, usize) {
+    let mut current_vcol = 0;
+    let mut start_char = None;
+    let mut end_char = None;
+    let mut result = String::new();
+
+    for (i, c) in line.chars().enumerate() {
+        let char_cols = if c == '\t' {
+            let next_tab = ((current_vcol / 4) + 1) * 4;
+            next_tab - current_vcol
+        } else {
+            char_visual_columns(c)
+        };
+
+        let next_vcol = current_vcol + char_cols;
+
+        // 判斷該字元是否與 [min_vcol, max_vcol) 重疊
+        if next_vcol > min_vcol && current_vcol < max_vcol {
+            if start_char.is_none() {
+                start_char = Some(i);
+            }
+            end_char = Some(i + 1);
+            result.push(c);
+        }
+
+        current_vcol = next_vcol;
+    }
+
+    let char_count = line.chars().count();
+    let s_char = start_char.unwrap_or(char_count);
+    let e_char = end_char.unwrap_or(s_char);
+
+    if pad_spaces && max_vcol > min_vcol {
+        let actual_end_vcol = current_vcol.max(min_vcol);
+        if actual_end_vcol < max_vcol {
+            let pad_count = max_vcol - actual_end_vcol;
+            for _ in 0..pad_count {
+                result.push(' ');
+            }
+        }
+    }
+
+    (result, s_char, e_char)
 }
 
 /// 將字串中的 Tab 字元依格網展開為相應數量的空白字元，確保畫面字元寬度與游標格網嚴格對齊
@@ -327,6 +438,17 @@ impl EditorState {
         if self.selection.is_empty() {
             return String::new();
         }
+        if self.selection.is_block() {
+            let (min_line, max_line, min_vcol, max_vcol) = self.selection.visual_bounds(self);
+            let mut result = Vec::new();
+            for line_idx in min_line..=max_line {
+                if let Some(line) = self.lines.get(line_idx) {
+                    let (slice, _, _) = extract_visual_slice(line, min_vcol, max_vcol, false);
+                    result.push(slice);
+                }
+            }
+            return result.join("\n");
+        }
         let start = self.selection.start();
         let end = self.selection.end();
 
@@ -355,6 +477,30 @@ impl EditorState {
     pub fn delete_selection(&mut self) -> bool {
         if self.selection.is_empty() {
             return false;
+        }
+        if self.selection.is_block() {
+            let (min_line, max_line, min_vcol, max_vcol) = self.selection.visual_bounds(self);
+            for line_idx in min_line..=max_line {
+                if line_idx < self.lines.len() {
+                    let (_, start_c, end_c) = extract_visual_slice(&self.lines[line_idx], min_vcol, max_vcol, false);
+                    if end_c > start_c {
+                        let mut chars: Vec<char> = self.lines[line_idx].chars().collect();
+                        let end_bound = end_c.min(chars.len());
+                        let start_bound = start_c.min(end_bound);
+                        chars.drain(start_bound..end_bound);
+                        self.lines[line_idx] = chars.into_iter().collect();
+                    }
+                }
+            }
+            let head_line = self.selection.head.line.min(self.lines.len().saturating_sub(1));
+            let head_char = visual_col_to_char_col(
+                self.lines.get(head_line).map(|s| s.as_str()).unwrap_or(""),
+                min_vcol,
+            );
+            self.selection = Selection::caret(TextPosition::new(head_line, head_char));
+            self.clamp_caret();
+            self.scroll_caret_into_view();
+            return true;
         }
         let start = self.selection.start();
         let end = self.selection.end();
@@ -385,6 +531,29 @@ impl EditorState {
     pub fn insert_char(&mut self, c: char) {
         if c == '\n' {
             self.insert_newline();
+            return;
+        }
+        if self.selection.is_block() && !self.selection.is_empty() {
+            let (min_line, max_line, min_vcol, _) = self.selection.visual_bounds(self);
+            self.delete_selection();
+            for line_idx in min_line..=max_line {
+                if line_idx < self.lines.len() {
+                    let line_text = &self.lines[line_idx];
+                    let char_col = visual_col_to_char_col(line_text, min_vcol);
+                    let mut chars: Vec<char> = line_text.chars().collect();
+                    let insert_pos = char_col.min(chars.len());
+                    chars.insert(insert_pos, c);
+                    self.lines[line_idx] = chars.into_iter().collect();
+                }
+            }
+            let next_vcol = min_vcol + char_visual_columns(c);
+            let head_line = self.selection.head.line.min(self.lines.len().saturating_sub(1));
+            let head_char = visual_col_to_char_col(
+                self.lines.get(head_line).map(|s| s.as_str()).unwrap_or(""),
+                next_vcol,
+            );
+            self.selection = Selection::caret(TextPosition::new(head_line, head_char));
+            self.scroll_caret_into_view();
             return;
         }
         self.delete_selection();
@@ -493,10 +662,46 @@ impl EditorState {
 
     /// 從內部剪貼簿貼上文字至游標處
     pub fn paste_from_clipboard(&mut self) {
-        if !self.clipboard.is_empty() {
-            let text = self.clipboard.clone();
-            self.insert_text(&text);
+        if self.clipboard.is_empty() {
+            return;
         }
+        if self.selection.is_block() {
+            let (min_line, max_line, min_vcol, _) = self.selection.visual_bounds(self);
+            self.delete_selection();
+            let clip_lines: Vec<&str> = self.clipboard.split('\n').map(|s| s.trim_end_matches('\r')).collect();
+
+            for (idx, line_idx) in (min_line..=max_line).enumerate() {
+                if line_idx < self.lines.len() {
+                    let text_to_insert = if clip_lines.len() == 1 {
+                        clip_lines[0]
+                    } else if idx < clip_lines.len() {
+                        clip_lines[idx]
+                    } else {
+                        ""
+                    };
+                    if !text_to_insert.is_empty() {
+                        let line_text = &self.lines[line_idx];
+                        let char_col = visual_col_to_char_col(line_text, min_vcol);
+                        let mut chars: Vec<char> = line_text.chars().collect();
+                        let insert_pos = char_col.min(chars.len());
+                        for (ci, ch) in text_to_insert.chars().enumerate() {
+                            chars.insert(insert_pos + ci, ch);
+                        }
+                        self.lines[line_idx] = chars.into_iter().collect();
+                    }
+                }
+            }
+            let head_line = self.selection.head.line.min(self.lines.len().saturating_sub(1));
+            let head_char = visual_col_to_char_col(
+                self.lines.get(head_line).map(|s| s.as_str()).unwrap_or(""),
+                min_vcol,
+            );
+            self.selection = Selection::caret(TextPosition::new(head_line, head_char));
+            self.scroll_caret_into_view();
+            return;
+        }
+        let text = self.clipboard.clone();
+        self.insert_text(&text);
     }
 
     /// 確保游標在當前視窗範圍內（自動捲動）
@@ -544,10 +749,17 @@ impl EditorState {
         let mut result = Vec::new();
         let start_line = self.viewport.first_visible_line;
         let has_sel = !self.selection.is_empty();
-        let (sel_start, sel_end) = if has_sel {
+        let is_block = self.selection.is_block();
+        let (sel_start, sel_end) = if has_sel && !is_block {
             (self.selection.start(), self.selection.end())
         } else {
             (TextPosition::default(), TextPosition::default())
+        };
+
+        let (min_b_line, max_b_line, min_b_vcol, max_b_vcol) = if has_sel && is_block {
+            self.selection.visual_bounds(self)
+        } else {
+            (0, 0, 0, 0)
         };
 
         for (i, line_text) in visible_texts.iter().enumerate() {
@@ -557,7 +769,9 @@ impl EditorState {
             // 游標判斷
             let has_caret = self.selection.head.line == line_idx;
             let caret_x = if has_caret {
-                let vcol = char_col_to_visual_col(line_text, self.selection.head.col);
+                let vcol = self.selection.head_vcol.unwrap_or_else(|| {
+                    char_col_to_visual_col(line_text, self.selection.head.col)
+                });
                 vcol as f32 * cell_width
             } else {
                 0.0
@@ -568,7 +782,13 @@ impl EditorState {
             let mut sel_start_x = 0.0;
             let mut sel_width = 0.0;
 
-            if has_sel && line_idx >= sel_start.line && line_idx <= sel_end.line {
+            if has_sel && is_block {
+                if line_idx >= min_b_line && line_idx <= max_b_line && max_b_vcol > min_b_vcol {
+                    line_has_sel = true;
+                    sel_start_x = min_b_vcol as f32 * cell_width;
+                    sel_width = (max_b_vcol - min_b_vcol) as f32 * cell_width;
+                }
+            } else if has_sel && line_idx >= sel_start.line && line_idx <= sel_end.line {
                 line_has_sel = true;
                 let start_char_col = if line_idx == sel_start.line {
                     sel_start.col
@@ -751,5 +971,97 @@ mod tests {
         editor.set_caret(0, 4); // "Copy" 後面
         editor.paste_from_clipboard();
         assert_eq!(editor.lines[0], "CopyCopy this text this text");
+    }
+
+    #[test]
+    fn test_extract_visual_slice() {
+        let line = "Hello 世界\tEnd";
+        // "Hello " (0..6), "世界" (6..10, 2 cols each), "\t" (10..12 to reach col 12), "End" (12..15)
+
+        // 擷取 "Hello" (0..5)
+        let (s1, start1, end1) = extract_visual_slice(line, 0, 5, false);
+        assert_eq!(s1, "Hello");
+        assert_eq!(start1, 0);
+        assert_eq!(end1, 5);
+
+        // 擷取 "世界" (6..10)
+        let (s2, start2, end2) = extract_visual_slice(line, 6, 10, false);
+        assert_eq!(s2, "世界");
+        assert_eq!(start2, 6);
+        assert_eq!(end2, 8);
+
+        // 擷取短行並要求補空白
+        let short_line = "ABC"; // vcol 0..3
+        let (s3, start3, end3) = extract_visual_slice(short_line, 2, 6, true);
+        assert_eq!(s3, "C   ");
+        assert_eq!(start3, 2);
+        assert_eq!(end3, 3);
+    }
+
+    #[test]
+    fn test_block_selection_and_rendering() {
+        let mut editor = EditorState::from_text("123456789\n123456789\n123456789");
+        // 建立矩形選取：行 0 到 行 2，視覺欄位 2 到 6
+        editor.selection = Selection::block(
+            TextPosition::new(0, 2),
+            TextPosition::new(2, 6),
+            2,
+            6,
+        );
+        assert!(editor.selection.is_block());
+        let (min_l, max_l, min_v, max_v) = editor.selection.visual_bounds(&editor);
+        assert_eq!(min_l, 0);
+        assert_eq!(max_l, 2);
+        assert_eq!(min_v, 2);
+        assert_eq!(max_v, 6);
+
+        // 驗證矩形可見行渲染
+        let visible = editor.generate_visible_lines(10.0);
+        assert_eq!(visible.len(), 3);
+        for line in &visible {
+            assert!(line.has_selection);
+            assert_eq!(line.sel_start_x, 20.0); // 2 * 10.0
+            assert_eq!(line.sel_width, 40.0);   // (6 - 2) * 10.0
+        }
+    }
+
+    #[test]
+    fn test_block_editing_operations() {
+        let mut editor = EditorState::from_text("ABCDEF\nGHIJKL\nMNOPQR");
+        // 選取各行的中間欄位 [2, 4) -> "CD", "IJ", "OP"
+        editor.selection = Selection::block(
+            TextPosition::new(0, 2),
+            TextPosition::new(2, 4),
+            2,
+            4,
+        );
+
+        // 1. 驗證矩形複製
+        let copied = editor.copy_to_clipboard();
+        assert_eq!(copied, "CD\nIJ\nOP");
+
+        // 2. 驗證矩形刪除
+        editor.delete_selection();
+        assert_eq!(editor.lines, vec!["ABEF", "GHKL", "MNQR"]);
+
+        // 3. 驗證多行矩形同步打字：在各行位置插入 'X'
+        editor.selection = Selection::block(
+            TextPosition::new(0, 2),
+            TextPosition::new(2, 2),
+            2,
+            2,
+        );
+        editor.insert_char('X');
+        assert_eq!(editor.lines, vec!["ABXEF", "GHXKL", "MNXQR"]);
+
+        // 4. 驗證列塊貼上：將剛才複製的 "CD\nIJ\nOP" 貼入第 1 欄
+        editor.selection = Selection::block(
+            TextPosition::new(0, 1),
+            TextPosition::new(2, 1),
+            1,
+            1,
+        );
+        editor.paste_from_clipboard();
+        assert_eq!(editor.lines, vec!["ACDBXEF", "GIJHXKL", "MOPNXQR"]);
     }
 }

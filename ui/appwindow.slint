@@ -42,9 +42,9 @@ export component MainWindow inherits Window {
     callback convert-encoding-clicked(string);
 
     // 編輯器互動回呼
-    callback key-pressed(string, bool, bool) -> bool;
+    callback key-pressed(string, bool, bool, bool) -> bool;
     callback mouse-clicked(length, length, bool);
-    callback mouse-dragged(length, length);
+    callback mouse-dragged(length, length, bool);
     callback scrolled(float);
 
     VerticalLayout {
@@ -118,7 +118,7 @@ export component MainWindow inherits Window {
 
             if root.edit-mode != 2 : FocusScope {
                 key-pressed(event) => {
-                    if (root.key-pressed(event.text, event.modifiers.control, event.modifiers.shift)) {
+                    if (root.key-pressed(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt)) {
                         return accept;
                     }
                     return reject;
@@ -153,14 +153,16 @@ export component MainWindow inherits Window {
                         clip: true;
 
                         TouchArea {
+                            property <bool> is-alt-down: false;
                             pointer-event(event) => {
+                                self.is-alt-down = event.modifiers.alt;
                                 if (event.kind == PointerEventKind.down) {
-                                    root.mouse-clicked(self.mouse-x, self.mouse-y, false);
+                                    root.mouse-clicked(self.mouse-x, self.mouse-y, event.modifiers.alt);
                                 }
                             }
                             moved => {
                                 if (self.pressed) {
-                                    root.mouse-dragged(self.mouse-x, self.mouse-y);
+                                    root.mouse-dragged(self.mouse-x, self.mouse-y, self.is-alt-down);
                                 }
                             }
                             scroll-event(event) => {

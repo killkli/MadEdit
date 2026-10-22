@@ -120,7 +120,7 @@ impl DocumentBuffer {
             self.raw_bytes.clear();
             let count = self.line_index.line_count().max(1);
             self.editor.lines = vec![String::new(); count];
-            self.editor.selection = super::editor::Selection::caret(super::editor::TextPosition::new(0, 0));
+            self.editor.selection = super::editor::Selection::caret(crate::core::TextPosition::new(0, 0));
             self.editor.clamp_caret();
         }
 
@@ -619,7 +619,33 @@ mod tests {
         assert_eq!(doc.raw_bytes(), b"Hello World");
         assert_eq!(doc.text(), "Hello World");
     }
+    #[test]
+    fn test_buffer_column_mode_rendering() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("AAAAAA\nBBBBBB\nCCCCCC\nDDDDDD".to_string());
+        doc.set_edit_mode(EditMode::Column);
+
+        // 建立列塊矩形選取：行 1 到 行 2，欄位 2 到 4
+        doc.editor.selection = crate::core::Selection::block(
+            crate::core::TextPosition::new(1, 2),
+            crate::core::TextPosition::new(2, 4),
+            2,
+            4,
+        );
+
+        let visible = doc.generate_visible_lines(10.0);
+        assert_eq!(visible.len(), 4);
+        assert!(!visible[0].has_selection);
+        assert!(visible[1].has_selection);
+        assert_eq!(visible[1].sel_start_x, 20.0);
+        assert_eq!(visible[1].sel_width, 20.0);
+        assert!(visible[2].has_selection);
+        assert_eq!(visible[2].sel_start_x, 20.0);
+        assert_eq!(visible[2].sel_width, 20.0);
+        assert!(!visible[3].has_selection);
+    }
 }
+
 
 #[cfg(test)]
 impl DocumentBuffer {
