@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use encoding_rs::Encoding;
 
 use super::editor::{EditorState, Selection};
-use super::hex::{generate_hex_dump, HexDump};
+use super::hex::HexDump;
 use super::model::{EditMode, NewLineFormat};
 use super::piece_table::{LineIndex, PieceTable};
 use super::search::{
@@ -44,6 +44,7 @@ pub struct DocumentBuffer {
     pub is_modified: bool,
     pub current_syntax: String,
     pub editor: EditorState,
+    pub hex_start_offset: usize,
 }
 
 impl Default for DocumentBuffer {
@@ -64,6 +65,7 @@ impl Default for DocumentBuffer {
             is_modified: false,
             current_syntax: "Plain Text".to_string(),
             editor: EditorState::default(),
+            hex_start_offset: 0,
         }
     }
 }
@@ -133,6 +135,7 @@ impl DocumentBuffer {
         }
 
         self.is_modified = false;
+        self.hex_start_offset = 0;
 
         Ok(())
     }
@@ -309,6 +312,7 @@ impl DocumentBuffer {
         self.line_index = LineIndex::build(&self.piece_table);
         self.file_path = Some(p);
         self.is_modified = false;
+        self.hex_start_offset = 0;
 
         Ok(())
     }
@@ -407,11 +411,20 @@ impl DocumentBuffer {
         out
     }
 
-    /// 產生十六進位檢視區內容（直接從 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體浪費）
+    /// 產生十六進位檢視區內容（自 hex_start_offset 起隨機讀取前 1MB 預覽，無全檔記憶體浪費）
     pub fn get_hex_dump(&self) -> HexDump {
-        let preview_len = (self.piece_table.len()).min(1024 * 1024);
-        let preview_bytes = self.piece_table.read_slice(0, preview_len);
-        generate_hex_dump(&preview_bytes, 1024 * 1024)
+        let total_len = self.piece_table.len();
+        let start = self.hex_start_offset.min(total_len);
+        let preview_len = (total_len - start).min(1024 * 1024);
+        let preview_bytes = self.piece_table.read_slice(start, preview_len);
+        super::hex::generate_hex_dump_with_offset(&preview_bytes, start, 1024 * 1024)
+    }
+
+    /// 跳轉至指定位元組位移（Offset），自動 clamp 並對齊至 16 的倍數，更新十六進位檢視預覽起點
+    pub fn goto_offset(&mut self, offset: usize) {
+        let max_len = self.piece_table.len();
+        let clamped = offset.min(max_len);
+        self.hex_start_offset = (clamped / 16) * 16;
     }
 
     /// 取得目前開啟檔案的檔名；若尚未指定路徑則傳回 "Untitled"
@@ -422,6 +435,48 @@ impl DocumentBuffer {
             .and_then(|n| n.to_str())
             .unwrap_or("Untitled")
             .to_string()
+    }
+
+    /// 跳轉至指定的行號與欄位（1-based 參數），內部自動轉換為 0-based 並進行邊界防護與視窗滾動
+    pub fn goto_line_col(&mut self, line_1based: usize, col_1based: usize) {
+        let line_0based = line_1based.saturating_sub(1);
+        let col_0based = col_1based.saturating_sub(1);
+        self.editor.goto_line_col(line_0based, col_0based);
+    }
+
+    /// 將當前行或選取行整塊往上移動一行，並自動同步至底層緩衝區
+    pub fn move_lines_up(&mut self) -> bool {
+        let moved = self.editor.move_lines_up();
+        if moved {
+            self.sync_from_editor();
+        }
+        moved
+    }
+
+    /// 將當前行或選取行整塊往下移動一行，並自動同步至底層緩衝區
+    pub fn move_lines_down(&mut self) -> bool {
+        let moved = self.editor.move_lines_down();
+        if moved {
+            self.sync_from_editor();
+        }
+        moved
+    }
+
+    /// 複製當前行或選取區涵蓋的所有行至下方，並自動同步至底層緩衝區
+    pub fn duplicate_lines(&mut self) {
+        self.editor.duplicate_lines();
+        self.sync_from_editor();
+    }
+
+    /// 刪除當前行或選取區涵蓋的所有行，並自動同步至底層緩衝區
+    pub fn delete_lines(&mut self) {
+        self.editor.delete_lines();
+        self.sync_from_editor();
+    }
+
+    /// 智慧行首（首次按下 Home 移動至縮排後第一個非空白字元，再次按下時移動至欄位 0）
+    pub fn move_home_smart(&mut self, expand_selection: bool) {
+        self.editor.move_home_smart(expand_selection);
     }
 
     /// 取得目前文字在搜尋條件下的所有匹配項目列表
@@ -624,6 +679,43 @@ impl DocumentBuffer {
             self.piece_table.collect_bytes()
         };
         Ok(find_hex_matches(&bytes, &pattern))
+    }
+}
+
+/// 解析跳轉行號與欄位字串（支援 "42", "42:15", "42, 15"）
+pub fn parse_goto_line_col(input: &str) -> Option<(usize, usize)> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = trimmed
+        .split(|c| c == ':' || c == ',')
+        .map(|s| s.trim())
+        .collect();
+
+    let line = parts.first()?.parse::<usize>().ok()?;
+    let col = if parts.len() > 1 {
+        parts[1].parse::<usize>().unwrap_or(1)
+    } else {
+        1
+    };
+    Some((line, col))
+}
+
+/// 解析 Hex 模式位移字串（支援 "0x1A0", "1A0", "10" 等十六進位位移，以及十進位相容）
+pub fn parse_goto_offset(input: &str) -> Option<usize> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let s = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    if let Ok(val) = usize::from_str_radix(s, 16) {
+        Some(val)
+    } else {
+        trimmed.parse::<usize>().ok()
     }
 }
 
@@ -1018,6 +1110,76 @@ mod tests {
         assert!(visible_block[0].has_selection);
         assert_eq!(visible_block[0].sel_start_x, 30.0);
         assert!(visible_block[0].spans.len() > 1);
+    }
+
+    #[test]
+    fn test_buffer_goto_line_col_and_line_editing() {
+        let mut doc = DocumentBuffer::new();
+        doc.newline_format = NewLineFormat::Unix;
+        doc.load_file_from_memory("Row 1\nRow 2\nRow 3\nRow 4".to_string());
+
+        // 測試 1-based 跳轉
+        doc.goto_line_col(3, 2);
+        assert_eq!(doc.editor.selection.head, TextPosition::new(2, 1));
+
+        // 測試跳轉超限 clamp
+        doc.goto_line_col(10, 50);
+        assert_eq!(doc.editor.selection.head, TextPosition::new(3, 5));
+
+        // 測試行移動與 sync_from_editor
+        doc.goto_line_col(2, 1);
+        assert!(doc.move_lines_up());
+        assert_eq!(doc.text, "Row 2\nRow 1\nRow 3\nRow 4");
+        assert_eq!(doc.editor.lines, vec!["Row 2", "Row 1", "Row 3", "Row 4"]);
+
+        // 測試行複製
+        doc.duplicate_lines();
+        assert_eq!(doc.text, "Row 2\nRow 2\nRow 1\nRow 3\nRow 4");
+
+        // 測試行刪除
+        doc.delete_lines();
+        assert_eq!(doc.text, "Row 2\nRow 1\nRow 3\nRow 4");
+    }
+
+    #[test]
+    fn test_buffer_goto_offset() {
+        let mut doc = DocumentBuffer::new();
+        // 載入 100 個 bytes
+        let bytes = vec![0x41u8; 100];
+        doc.piece_table = PieceTable::from_bytes(bytes);
+        doc.hex_start_offset = 0;
+
+        // 跳轉到 offset 35，應對齊到 32 (0x20)
+        doc.goto_offset(35);
+        assert_eq!(doc.hex_start_offset, 32);
+
+        let dump = doc.get_hex_dump();
+        assert!(dump.offsets.starts_with("00000020"));
+
+        // 跳轉超出長度，應 clamp 到 100，對齊到 96 (0x60)
+        doc.goto_offset(9999);
+        assert_eq!(doc.hex_start_offset, 96);
+    }
+
+    #[test]
+    fn test_parse_goto_line_col() {
+        assert_eq!(parse_goto_line_col("42"), Some((42, 1)));
+        assert_eq!(parse_goto_line_col("  42  "), Some((42, 1)));
+        assert_eq!(parse_goto_line_col("42:15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col("42, 15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col("42: 15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col(""), None);
+        assert_eq!(parse_goto_line_col("abc"), None);
+    }
+
+    #[test]
+    fn test_parse_goto_offset() {
+        assert_eq!(parse_goto_offset("0x1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("0X1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("10"), Some(0x10));
+        assert_eq!(parse_goto_offset(""), None);
+        assert_eq!(parse_goto_offset("xyz"), None);
     }
 }
 
