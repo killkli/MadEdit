@@ -33,3 +33,13 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native("MadEdit", options, Box::new(|cc| Ok(Box::new(app::App::new(cc, files, screenshot)))))
 }
+
+#[cfg(test)]
+mod tests {
+    /// 內嵌的視窗圖示（原版調色盤格式 PNG）必須能被 eframe 解碼
+    #[test]
+    fn test_window_icon_decodes() {
+        let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/madedit-icon.png")).unwrap();
+        assert_eq!((icon.width, icon.height), (48, 48));
+    }
+}

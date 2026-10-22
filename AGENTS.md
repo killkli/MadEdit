@@ -42,11 +42,9 @@ D:\Git\MadEdit\
 ├── build.rs                # Windows 圖示資源嵌入
 ├── .gitignore
 ├── assets\                 # 圖示資產與桌面整合檔
-│   ├── madedit-icon.svg    # 應用程式圖示來源真檔（唯一真實來源，人工編輯此檔）
-│   ├── madedit-icon.png    # 視窗圖示（include_bytes 內嵌）
-│   ├── madedit-icon.ico    # Windows 執行檔圖示資源
+│   ├── madedit-icon.png    # 視窗與 macOS 圖示（沿用原版 madedit-mod.png，include_bytes 內嵌）
+│   ├── madedit-icon.ico    # Windows 執行檔圖示資源（沿用原版 images/Mad2.ico）
 │   ├── madedit.desktop     # Linux 桌面整合項目
-│   ├── make_icons.py       # 由 SVG 重新產生 PNG / ICO 的腳本
 │   ├── icons-src\          # 原版 MadEdit 工具列圖示來源（XPM，勿手動修改）
 │   │   └── README.md       # 圖示來源與 GNU GPL 授權說明
 │   ├── icons\              # 由 icons-src 轉換而來的 PNG（勿手動修改）
@@ -116,10 +114,6 @@ D:\Git\MadEdit\
   ```powershell
   cargo run
   ```
-- **重新產生應用程式圖示**（修改 `assets/madedit-icon.svg` 後執行）：
-  ```bash
-  python3 assets/make_icons.py
-  ```
 - **重新產生工具列圖示**（修改 `assets/icons-src/*.xpm` 後執行）：
   ```bash
   python3 assets/make_toolbar_icons.py
@@ -152,7 +146,7 @@ D:\Git\MadEdit\
   - Slint 主視窗標題同步改為 `MadEdit`；專案目錄更名為 `MadEdit`。
   - 全面同步 `AGENTS.md`、`GLOSSARY.md`、ADR 與 `.scratch/` specs 中的專案名稱。
 - [x] 應用程式圖示與工作列整合：
-  - `assets/madedit-icon.svg` 為圖示唯一真實來源，`assets/make_icons.py` 產生 `madedit-icon.png`（Slint 視窗圖示）與多尺寸 `madedit-icon.ico`（Windows 執行檔圖示）。
+  - 圖示沿用原版 MadEdit（madedit-mod）：`madedit-icon.png` 取自 `madedit-mod.png`（視窗圖示與 macOS icns 來源），`madedit-icon.ico` 取自 `images/Mad2.ico`（Windows 執行檔圖示）。
   - Slint `Window` 設定 `icon` 屬性，工作列 / 標題列顯示專屬圖示。
   - `build.rs` 於 Windows 目標平台透過 `embed-resource` 將 `.ico` 嵌入 `.exe` 資源（缺少 RC.EXE / windres 時僅發警告、不中斷建置）；其他平台空操作。
   - 提供 `assets/madedit.desktop` 供 Linux 桌面環境（啟動器 / 工作列）整合。
