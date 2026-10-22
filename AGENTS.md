@@ -100,7 +100,7 @@ D:\Git\MadEdit-Rust\
   - 實作 Piece Table（Original Buffer + Add Buffer + Piece 列表）與輕量 `LineIndex`（換行位移二分搜尋索引）。
   - 存檔直接透過 Piece 清單串流寫出，徹底消除全檔記憶體佔用與按鍵重複全篇編碼之負擔。
 - [x] 狀態列即時顯示（長度、修改狀態標記、解碼警告、模式、換行與編碼）。
-- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯、Piece Table 編輯/刪除、LineIndex 按需讀取、大檔 mmap 秒開測試）。
+- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯、Piece Table 編輯/刪除、LineIndex 按需讀取與 CR/LF/CRLF 支援、大檔 mmap 秒開、大檔編輯與原子存檔測試、相容性查詢介面）。
 
 ### 已知問題（優先處理）
 
