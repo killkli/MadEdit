@@ -23,16 +23,39 @@ pub const SUPPORTED_SYNTAXES: &[&str] = &[
     "SQL",
 ];
 
-/// 單一語法高亮文字區段（包含文字內容與顏色十六進位碼）
+/// 單一語法高亮文字區段（包含文字內容與 RGB / 十六進位顏色）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HighlightSpan {
     pub text: String,
+    pub color_rgb: (u8, u8, u8),
     pub color_hex: String,
 }
 
 impl HighlightSpan {
-    pub fn new(text: String, color_hex: String) -> Self {
-        Self { text, color_hex }
+    pub fn new(text: String, color_rgb: (u8, u8, u8)) -> Self {
+        let color_hex = format!("#{:02X}{:02X}{:02X}", color_rgb.0, color_rgb.1, color_rgb.2);
+        Self {
+            text,
+            color_rgb,
+            color_hex,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn from_hex(text: String, color_hex: String) -> Self {
+        let rgb = if color_hex.starts_with('#') && color_hex.len() == 7 {
+            let r = u8::from_str_radix(&color_hex[1..3], 16).unwrap_or(34);
+            let g = u8::from_str_radix(&color_hex[3..5], 16).unwrap_or(34);
+            let b = u8::from_str_radix(&color_hex[5..7], 16).unwrap_or(34);
+            (r, g, b)
+        } else {
+            (34, 34, 34)
+        };
+        Self {
+            text,
+            color_rgb: rgb,
+            color_hex,
+        }
     }
 }
 
@@ -90,7 +113,7 @@ pub fn detect_syntax_from_path<P: AsRef<Path>>(path: P) -> &'static str {
 /// 將單行文字依指定語法進行詞法分析並轉為色彩分段列表
 pub fn highlight_line(syntax_name: &str, line: &str) -> Vec<HighlightSpan> {
     if syntax_name == "Plain Text" || line.is_empty() {
-        return vec![HighlightSpan::new(line.to_string(), "#222222".to_string())];
+        return vec![HighlightSpan::new(line.to_string(), (34, 34, 34))];
     }
 
     let ps = get_syntax_set();
@@ -101,7 +124,7 @@ pub fn highlight_line(syntax_name: &str, line: &str) -> Vec<HighlightSpan> {
         .or_else(|| ps.find_syntax_by_extension(syntax_name.to_lowercase().as_str()));
 
     let Some(syntax) = syntax else {
-        return vec![HighlightSpan::new(line.to_string(), "#222222".to_string())];
+        return vec![HighlightSpan::new(line.to_string(), (34, 34, 34))];
     };
 
     let mut h = HighlightLines::new(syntax, theme);
@@ -112,7 +135,7 @@ pub fn highlight_line(syntax_name: &str, line: &str) -> Vec<HighlightSpan> {
     };
 
     let Ok(ranges) = h.highlight_line(&line_with_nl, ps) else {
-        return vec![HighlightSpan::new(line.to_string(), "#222222".to_string())];
+        return vec![HighlightSpan::new(line.to_string(), (34, 34, 34))];
     };
 
     let mut spans = Vec::new();
@@ -122,12 +145,11 @@ pub fn highlight_line(syntax_name: &str, line: &str) -> Vec<HighlightSpan> {
             continue;
         }
         let color = style.foreground;
-        let hex = format!("#{:02X}{:02X}{:02X}", color.r, color.g, color.b);
-        spans.push(HighlightSpan::new(clean_text.to_string(), hex));
+        spans.push(HighlightSpan::new(clean_text.to_string(), (color.r, color.g, color.b)));
     }
 
     if spans.is_empty() && !line.is_empty() {
-        spans.push(HighlightSpan::new(line.to_string(), "#222222".to_string()));
+        spans.push(HighlightSpan::new(line.to_string(), (34, 34, 34)));
     }
 
     spans

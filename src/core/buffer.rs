@@ -252,7 +252,7 @@ impl DocumentBuffer {
             }
         } else {
             for line_data in &mut lines {
-                line_data.spans = vec![HighlightSpan::new(line_data.text.clone(), "#222222".to_string())];
+                line_data.spans = vec![HighlightSpan::new(line_data.text.clone(), (34, 34, 34))];
             }
         }
 

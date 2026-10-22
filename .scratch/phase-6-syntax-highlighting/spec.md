@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Phase 6: 語法突顯 (Syntax Highlighting)
 

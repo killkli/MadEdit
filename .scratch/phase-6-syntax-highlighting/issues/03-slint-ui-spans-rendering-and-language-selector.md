@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 03: Slint UI 多色分段渲染與工具列語言選單
 
