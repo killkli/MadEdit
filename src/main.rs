@@ -4,7 +4,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use core::{
     char_col_to_visual_col, parse_goto_line_col, parse_goto_offset, DocumentBuffer, EditMode,
-    SearchOptions, Selection, SUPPORTED_ENCODINGS, SUPPORTED_SYNTAXES,
+    NewLineFormat, SearchOptions, Selection, SUPPORTED_ENCODINGS, SUPPORTED_NEWLINES,
+    SUPPORTED_SYNTAXES,
 };
 use slint::platform::Key;
 use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
@@ -100,9 +101,10 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_encoding_name(doc.encoding.name().into());
     ui.set_selected_encoding(doc.encoding.name().into());
     ui.set_newline_format(doc.newline_format.as_str().into());
+    ui.set_selected_newline(doc.newline_format.as_str().into());
     ui.set_current_syntax(doc.current_syntax.as_str().into());
 
-    // 同步可見行自繪資料（包含多色語法分段 spans）
+    // 同步可見行自繪資料（包含多色語法分段 spans 與書籤標記）
     let visible_lines_data = doc.generate_visible_lines(CELL_WIDTH);
     let slint_lines: Vec<VisibleLine> = visible_lines_data
         .into_iter()
@@ -125,6 +127,7 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
                 sel_width: l.sel_width,
                 has_caret: l.has_caret,
                 caret_x: l.caret_x,
+                has_bookmark: l.has_bookmark,
             }
         })
         .collect();
@@ -168,6 +171,13 @@ fn main() -> Result<(), slint::PlatformError> {
         .map(|&s| SharedString::from(s))
         .collect();
     main_window.set_syntax_list(ModelRc::new(VecModel::from(syntax_items)));
+
+    // 初始化支援換行格式清單
+    let newline_items: Vec<SharedString> = SUPPORTED_NEWLINES
+        .iter()
+        .map(|&s| SharedString::from(s))
+        .collect();
+    main_window.set_newline_list(ModelRc::new(VecModel::from(newline_items)));
     sync_ui_from_doc(&main_window, &doc.borrow());
 
     // 游標閃爍計時器（每 500ms 切換閃爍狀態）
@@ -285,6 +295,22 @@ fn main() -> Result<(), slint::PlatformError> {
             d.set_syntax(syn_name.as_str());
             if let Some(ui) = ui_handle.upgrade() {
                 sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 換行格式切換（Newline Format Changed）事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_newline_format_changed(move |nl_label| {
+            if let Some(fmt) = NewLineFormat::from_label(nl_label.as_str()) {
+                let mut d = doc_clone.borrow_mut();
+                if d.convert_newline_format(fmt) {
+                    if let Some(ui) = ui_handle.upgrade() {
+                        sync_ui_from_doc(&ui, &d);
+                    }
+                }
             }
         });
     }
@@ -433,6 +459,23 @@ fn main() -> Result<(), slint::PlatformError> {
         main_window.on_key_pressed(move |key_text, ctrl, shift, alt| {
             let mut d = doc_clone.borrow_mut();
             let key_str = key_text.as_str();
+
+            // 書籤快捷鍵處理 (Ctrl+Shift+F2, Ctrl+F2, Shift+F2, F2)
+            if key_str.starts_with(char::from(Key::F2)) {
+                if ctrl && shift {
+                    d.clear_all_bookmarks();
+                } else if ctrl {
+                    d.toggle_bookmark();
+                } else if shift {
+                    d.prev_bookmark();
+                } else {
+                    d.next_bookmark();
+                }
+                if let Some(ui) = ui_handle.upgrade() {
+                    sync_ui_from_doc(&ui, &d);
+                }
+                return true;
+            }
 
             // 快捷鍵處理
             if ctrl {

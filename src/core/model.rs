@@ -16,6 +16,13 @@ impl From<i32> for EditMode {
     }
 }
 
+/// 文件支援的換行格式選單名稱清單
+pub const SUPPORTED_NEWLINES: [&str; 3] = [
+    "CRLF (Windows)",
+    "LF (Unix/macOS)",
+    "CR (Classic Mac)",
+];
+
 /// 文件行尾換行字元格式（CRLF / LF / CR）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewLineFormat {
@@ -38,6 +45,19 @@ impl NewLineFormat {
             NewLineFormat::Dos => "\r\n",
             NewLineFormat::Unix => "\n",
             NewLineFormat::Mac => "\r",
+        }
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        let trimmed = label.trim();
+        if trimmed.starts_with("CRLF") || trimmed == "Dos" {
+            Some(NewLineFormat::Dos)
+        } else if trimmed.starts_with("LF") || trimmed == "Unix" {
+            Some(NewLineFormat::Unix)
+        } else if trimmed.starts_with("CR") || trimmed == "Mac" {
+            Some(NewLineFormat::Mac)
+        } else {
+            None
         }
     }
 
@@ -65,5 +85,16 @@ mod tests {
         assert_eq!(NewLineFormat::detect(b"line1\r\nline2"), NewLineFormat::Dos);
         assert_eq!(NewLineFormat::detect(b"line1\nline2"), NewLineFormat::Unix);
         assert_eq!(NewLineFormat::detect(b"line1\rline2"), NewLineFormat::Mac);
+    }
+
+    #[test]
+    fn test_newline_from_label() {
+        assert_eq!(NewLineFormat::from_label("CRLF (Windows)"), Some(NewLineFormat::Dos));
+        assert_eq!(NewLineFormat::from_label("CRLF"), Some(NewLineFormat::Dos));
+        assert_eq!(NewLineFormat::from_label("LF (Unix/macOS)"), Some(NewLineFormat::Unix));
+        assert_eq!(NewLineFormat::from_label("LF"), Some(NewLineFormat::Unix));
+        assert_eq!(NewLineFormat::from_label("CR (Classic Mac)"), Some(NewLineFormat::Mac));
+        assert_eq!(NewLineFormat::from_label("CR"), Some(NewLineFormat::Mac));
+        assert_eq!(NewLineFormat::from_label("Unknown"), None);
     }
 }

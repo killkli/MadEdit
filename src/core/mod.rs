@@ -13,7 +13,7 @@ pub use editor::{
     Selection, SelectionKind, TextPosition, Viewport, VisualBounds, VisibleLineData,
 };
 #[allow(unused_imports)]
-pub use model::{EditMode, NewLineFormat};
+pub use model::{EditMode, NewLineFormat, SUPPORTED_NEWLINES};
 #[allow(unused_imports)]
 pub use piece_table::{BufferSource, LineIndex, OriginalBuffer, Piece, PieceTable};
 #[allow(unused_imports)]

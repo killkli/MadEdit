@@ -104,7 +104,11 @@ D:\Git\MadEdit-Rust\
   - `DocumentBuffer` 統一封裝行編輯與跳轉操作，自動同步底層緩衝區與 UI 渲染。
 - [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
   - 已優化：直接自 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體拷貝。
-- [x] 換行格式自動偵測（CRLF / LF / CR），目前僅顯示，不支援轉換。
+- [x] 換行格式轉換與書籤功能 (Line Endings Conversion & Bookmarks)（Phase 8 完成）：
+  - 支援 CRLF (Windows)、LF (Unix/macOS)、CR (Classic Mac) 換行格式切換、雙向轉換與原子存檔。
+  - 工具列提供換行格式下拉選單，狀態列即時顯示當前格式名稱。
+  - 實作基於 `BTreeSet` 之編輯器行書籤系統，支援切換書籤（`Ctrl+F2`）、跳至下一個書籤（`F2`）、跳至上一個書籤（`Shift+F2`）與清除全部書籤（`Ctrl+Shift+F2`）。
+  - 在左側行號欄（Gutter）繪製醒目的藍色小圓點標記，並在行插入、移動、複製與刪除操作中精確維護書籤座標不變量。
 - [x] 多編碼支援與自動偵測（Phase 1 完成）：
   - 開檔優先識別 BOM（UTF-8 / UTF-16LE / UTF-16BE），無 BOM 時先驗證嚴格 UTF-8，否則自動 fallback 至 Big5。
   - 工具列提供 10 種常用編碼選單與「重新解碼（Reinterpret）」、「轉換編碼（Convert）」按鈕。
@@ -157,9 +161,13 @@ D:\Git\MadEdit-Rust\
 - 已完成指定行號/欄位跳轉內嵌面板與 Hex Offset 隨機跳轉支援（Ctrl+G）。
 - 已完成常用程式碼行編輯操作（Alt+Up/Down 整行上下移動、Ctrl+Shift+D 複製行、Ctrl+Shift+K 刪除整行、Home 智慧行首）。
 
-### Phase 8: 換行格式轉換與書籤功能 (Line Endings Conversion & Bookmarks)
-- 支援 CRLF、LF、CR 換行格式雙向轉換與存檔。
-- 支援編輯器行書籤（Toggle Bookmark、Next/Prev Bookmark 導覽與高亮標記）。
+### Phase 8: 換行格式轉換與書籤功能 (Line Endings Conversion & Bookmarks) - [已完成]
+- 已完成 CRLF、LF、CR 換行格式雙向轉換、工具列選單與存檔同步。
+- 已完成編輯器行書籤（Ctrl+F2 切換、F2 / Shift+F2 環狀導覽、Ctrl+Shift+F2 全清除、Gutter 藍點標記與行編輯座標維護）。
+
+### Phase 9: 外部檔案變更監控 (File Watcher & Auto Reload)
+- 實作背景檔案監控，偵測磁碟上的檔案是否被外部編輯器或程序修改。
+- 彈出重新載入確認對話框，或在無未儲存修改時智慧自動重新載入。
 
 ---
 
