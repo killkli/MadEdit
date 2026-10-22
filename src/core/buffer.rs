@@ -10,6 +10,7 @@ use super::search::{
     build_regex, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
     parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
 };
+use super::syntax::{detect_syntax_from_path, highlight_line, HighlightSpan};
 
 /// 編輯器支援的 10 種常用字元編碼標準名稱清單（依 UI 選單順序排列）
 pub const SUPPORTED_ENCODINGS: &[&str] = &[
@@ -41,6 +42,7 @@ pub struct DocumentBuffer {
     pub newline_format: NewLineFormat,
     pub edit_mode: EditMode,
     pub is_modified: bool,
+    pub current_syntax: String,
     pub editor: EditorState,
 }
 
@@ -60,6 +62,7 @@ impl Default for DocumentBuffer {
             newline_format: NewLineFormat::Dos,
             edit_mode: EditMode::Text,
             is_modified: false,
+            current_syntax: "Plain Text".to_string(),
             editor: EditorState::default(),
         }
     }
@@ -76,8 +79,9 @@ impl DocumentBuffer {
         let file = fs::File::open(&p)?;
         let pt = PieceTable::open_file(&file)?;
 
-        self.file_path = Some(p);
+        self.file_path = Some(p.clone());
         self.piece_table = pt;
+        self.current_syntax = detect_syntax_from_path(&p).to_string();
 
         // 讀取前 64KB 樣本進行換行與編碼自動偵測
         let sample_len = (self.piece_table.len()).min(64 * 1024);
@@ -225,7 +229,7 @@ impl DocumentBuffer {
             && self.editor.lines.len() == self.line_index.line_count()
             && self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT;
 
-        if has_cached_lines {
+        let mut lines = if has_cached_lines {
             let end_line = (start_line + count).min(self.editor.lines.len());
             let slice = if start_line < self.editor.lines.len() {
                 &self.editor.lines[start_line..end_line]
@@ -239,7 +243,25 @@ impl DocumentBuffer {
                 .line_index
                 .fetch_lines(&self.piece_table, self.encoding, start_line, count);
             self.editor.generate_visible_lines_with_text(&visible_texts, cell_width)
+        };
+
+        // 依據當前設定之語法為可視行產生多色分段（Viewport 按需高亮）
+        if self.current_syntax != "Plain Text" {
+            for line_data in &mut lines {
+                line_data.spans = highlight_line(&self.current_syntax, &line_data.text);
+            }
+        } else {
+            for line_data in &mut lines {
+                line_data.spans = vec![HighlightSpan::new(line_data.text.clone(), "#222222".to_string())];
+            }
         }
+
+        lines
+    }
+
+    /// 手動設定編輯器語法突顯語言（如 "Rust", "Python", "Plain Text"）
+    pub fn set_syntax(&mut self, syntax_name: &str) {
+        self.current_syntax = syntax_name.to_string();
     }
 
     /// 儲存檔案至指定路徑或原路徑；採用原子寫入機制（先寫暫存檔再替換），並在存在無損解碼錯誤時拒絕存檔防毀損
@@ -965,6 +987,41 @@ mod tests {
         assert_eq!(doc.count_matches("41 42", &opts), 2);
         assert_eq!(doc.find_next("41 42", &opts), Some((1, 2)));
         assert_eq!(doc.find_prev("41 42", &opts), Some((2, 2)));
+    }
+
+    #[test]
+    fn test_buffer_syntax_highlighting_visible_lines() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("fn main() {\n    let answer = 42;\n}".to_string());
+
+        // 預設為 Plain Text
+        assert_eq!(doc.current_syntax, "Plain Text");
+        let visible_plain = doc.generate_visible_lines(10.0);
+        assert_eq!(visible_plain.len(), 3);
+        assert_eq!(visible_plain[0].spans.len(), 1);
+        assert_eq!(visible_plain[0].spans[0].color_hex, "#222222");
+
+        // 切換至 Rust 語法
+        doc.set_syntax("Rust");
+        assert_eq!(doc.current_syntax, "Rust");
+        let visible_rust = doc.generate_visible_lines(10.0);
+        assert_eq!(visible_rust.len(), 3);
+        // 第一行 "fn main() {" 應被拆成多個語法 spans
+        assert!(visible_rust[0].spans.len() > 1);
+        let joined_line0: String = visible_rust[0].spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(joined_line0, "fn main() {");
+
+        // 測試列塊選取幾何與語法 spans 並存
+        doc.editor.selection = Selection::block(
+            TextPosition::new(0, 3),
+            TextPosition::new(1, 7),
+            3,
+            7,
+        );
+        let visible_block = doc.generate_visible_lines(10.0);
+        assert!(visible_block[0].has_selection);
+        assert_eq!(visible_block[0].sel_start_x, 30.0);
+        assert!(visible_block[0].spans.len() > 1);
     }
 }
 

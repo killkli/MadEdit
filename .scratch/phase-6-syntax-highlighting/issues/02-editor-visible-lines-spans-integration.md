@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: closed
 
 # Issue 02: 編輯器可見行分段色彩結構整合
 
