@@ -57,9 +57,8 @@ impl PieceTable {
         }
     }
 
-    /// 從記憶體位元組序列建立 PieceTable
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        let len = bytes.len();
+    /// 內部共用建構函式：綁定 OriginalBuffer 並初始化 Piece 清單
+    fn init_with_original(original: OriginalBuffer, len: usize) -> Self {
         let pieces = if len > 0 {
             vec![Piece {
                 source: BufferSource::Original,
@@ -71,31 +70,33 @@ impl PieceTable {
         };
 
         Self {
-            original: OriginalBuffer::Bytes(bytes),
+            original,
             add_buffer: Vec::new(),
             pieces,
             total_len: len,
         }
     }
 
+    /// 從記憶體位元組序列建立 PieceTable
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        let len = bytes.len();
+        Self::init_with_original(OriginalBuffer::Bytes(bytes), len)
+    }
+
     /// 從 memmap2 記憶體對映建立 PieceTable（零拷貝大檔開啟）
     pub fn from_mmap(mmap: memmap2::Mmap) -> Self {
         let len = mmap.len();
-        let pieces = if len > 0 {
-            vec![Piece {
-                source: BufferSource::Original,
-                offset: 0,
-                length: len,
-            }]
-        } else {
-            Vec::new()
-        };
+        Self::init_with_original(OriginalBuffer::Mmap(mmap), len)
+    }
 
-        Self {
-            original: OriginalBuffer::Mmap(mmap),
-            add_buffer: Vec::new(),
-            pieces,
-            total_len: len,
+    /// 從實體檔案建立 PieceTable（檔案 > 0 時建立唯讀記憶體對映，空檔案則建立空表）
+    pub fn open_file(file: &std::fs::File) -> std::io::Result<Self> {
+        let len = file.metadata()?.len();
+        if len > 0 {
+            let mmap = unsafe { memmap2::Mmap::map(file)? };
+            Ok(Self::from_mmap(mmap))
+        } else {
+            Ok(Self::new())
         }
     }
 
@@ -285,19 +286,40 @@ pub struct LineIndex {
 
 #[allow(dead_code)]
 impl LineIndex {
-    /// 掃描 PieceTable 中的換行符號建立行索引
+    /// 依據 PieceTable 內容建立行起始索引（支援 CRLF, LF, CR 各式換行符號，零拷貝掃描）
     pub fn build(pt: &PieceTable) -> Self {
         let mut line_starts = vec![0];
         let mut curr_offset = 0;
+        let mut prev_was_cr = false;
 
         for piece in &pt.pieces {
             let slice = pt.get_source_slice(piece.source, piece.offset, piece.length);
             for (i, &b) in slice.iter().enumerate() {
-                if b == b'\n' {
-                    line_starts.push(curr_offset + i + 1);
+                let byte_offset = curr_offset + i;
+                if prev_was_cr {
+                    if b == b'\n' {
+                        // CRLF 換行：新行起始於 \n 之後
+                        line_starts.push(byte_offset + 1);
+                        prev_was_cr = false;
+                        continue;
+                    } else {
+                        // 單獨 CR 換行：新行起始於當前字元處
+                        line_starts.push(byte_offset);
+                        prev_was_cr = false;
+                    }
+                }
+
+                if b == b'\r' {
+                    prev_was_cr = true;
+                } else if b == b'\n' {
+                    line_starts.push(byte_offset + 1);
                 }
             }
             curr_offset += piece.length;
+        }
+
+        if prev_was_cr {
+            line_starts.push(curr_offset);
         }
 
         Self {
@@ -431,5 +453,13 @@ mod tests {
         // 按需讀取單一行
         let line2 = line_index.fetch_lines(&pt, encoding_rs::UTF_8, 1, 1);
         assert_eq!(line2, vec!["Second line"]);
+
+        // 測試 Mac 經典 CR 換行相容性
+        let cr_content = b"CR Line 1\rCR Line 2\rCR Line 3";
+        let pt_cr = PieceTable::from_bytes(cr_content.to_vec());
+        let line_index_cr = LineIndex::build(&pt_cr);
+        assert_eq!(line_index_cr.line_count(), 3);
+        let fetched_cr = line_index_cr.fetch_lines(&pt_cr, encoding_rs::UTF_8, 0, 3);
+        assert_eq!(fetched_cr, vec!["CR Line 1", "CR Line 2", "CR Line 3"]);
     }
 }

@@ -70,15 +70,7 @@ impl DocumentBuffer {
     pub fn load_file<P: AsRef<Path>>(&mut self, path: P) -> std::io::Result<()> {
         let p = path.as_ref().to_path_buf();
         let file = fs::File::open(&p)?;
-        let file_len = file.metadata()?.len();
-
-        let pt = if file_len > 0 {
-            // 安全建立唯讀記憶體對映（檔案由作業系統按需分頁讀取）
-            let mmap = unsafe { memmap2::Mmap::map(&file)? };
-            PieceTable::from_mmap(mmap)
-        } else {
-            PieceTable::new()
-        };
+        let pt = PieceTable::open_file(&file)?;
 
         self.file_path = Some(p);
         self.piece_table = pt;
@@ -88,12 +80,10 @@ impl DocumentBuffer {
         let sample = self.piece_table.read_slice(0, sample_len);
         self.newline_format = NewLineFormat::detect(&sample);
 
-        let mut bom_len = 0;
-        if let Some((bom_enc, len)) = Encoding::for_bom(&sample) {
+        if let Some((bom_enc, _)) = Encoding::for_bom(&sample) {
             self.encoding = bom_enc;
             self.has_bom = true;
             self.has_decode_error = false;
-            bom_len = len;
         } else if encoding_rs::UTF_8
             .decode_without_bom_handling_and_without_replacement(&sample)
             .is_some()
@@ -114,11 +104,7 @@ impl DocumentBuffer {
         if file_size <= SMALL_FILE_CACHE_LIMIT {
             // 小型檔案：快取整份文字與位元組供編輯器與快速存取
             let full_bytes = self.piece_table.collect_bytes();
-            let decode_slice = if self.has_bom && full_bytes.len() >= bom_len {
-                &full_bytes[bom_len..]
-            } else {
-                &full_bytes[..]
-            };
+            let decode_slice = Self::strip_bom_slice(&full_bytes, self.encoding, self.has_bom);
 
             let (decoded, had_errors) = self.encoding.decode_without_bom_handling(decode_slice);
             if had_errors {
@@ -173,6 +159,18 @@ impl DocumentBuffer {
         }
     }
 
+    /// 判定並切除開頭 BOM 位元組切片（DRY 萃取共用邏輯）
+    fn strip_bom_slice<'a>(bytes: &'a [u8], enc: &'static Encoding, has_bom: bool) -> &'a [u8] {
+        if has_bom {
+            if let Some((bom_enc, len)) = Encoding::for_bom(bytes) {
+                if bom_enc == enc {
+                    return &bytes[len..];
+                }
+            }
+        }
+        bytes
+    }
+
     /// 取得目前文字內容（相容性查詢介面：若未快取則自 Piece Table 解碼）
     #[allow(dead_code)]
     pub fn text(&self) -> String {
@@ -180,18 +178,38 @@ impl DocumentBuffer {
             self.text.clone()
         } else {
             let bytes = self.piece_table.collect_bytes();
-            let decode_slice = if self.has_bom {
-                if let Some((_, len)) = Encoding::for_bom(&bytes) {
-                    &bytes[len..]
-                } else {
-                    &bytes[..]
-                }
-            } else {
-                &bytes[..]
-            };
+            let decode_slice = Self::strip_bom_slice(&bytes, self.encoding, self.has_bom);
             let (decoded, _) = self.encoding.decode_without_bom_handling(decode_slice);
             decoded.into_owned()
         }
+    }
+
+    /// 在指定位元組位移插入位元組序列，並同步更新 LineIndex 與修改狀態（大檔直接編輯）
+    #[allow(dead_code)]
+    pub fn insert_bytes(&mut self, offset: usize, bytes: &[u8]) {
+        self.piece_table.insert(offset, bytes);
+        self.line_index = LineIndex::build(&self.piece_table);
+        self.is_modified = true;
+    }
+
+    /// 在指定位元組位移刪除指定長度位元組，並同步更新 LineIndex 與修改狀態（大檔直接編輯）
+    #[allow(dead_code)]
+    pub fn delete_bytes(&mut self, offset: usize, length: usize) {
+        self.piece_table.delete(offset, length);
+        self.line_index = LineIndex::build(&self.piece_table);
+        self.is_modified = true;
+    }
+
+    /// 在指定行（0-based）起始位置插入文字（依當前編碼轉換），支援大檔案直接編輯
+    #[allow(dead_code)]
+    pub fn insert_text_at_line(&mut self, line_idx: usize, text: &str) {
+        let offset = self
+            .line_index
+            .line_byte_range(line_idx)
+            .map(|(s, _)| s)
+            .unwrap_or(self.piece_table.len());
+        let encoded = Self::encode_str(text, self.encoding, false);
+        self.insert_bytes(offset, &encoded);
     }
 
     /// 根據可視視窗（Viewport）與字元格網寬度產生可見行繪製資料（支援大檔案按需解碼）
@@ -233,7 +251,7 @@ impl DocumentBuffer {
         let Some(p) = target_path else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                "No target file path specified",
+                "尚未指定目標檔案儲存路徑",
             ));
         };
 
@@ -265,13 +283,7 @@ impl DocumentBuffer {
 
         // 重新為目標檔案建立 Piece Table 與 LineIndex
         let file = fs::File::open(&p)?;
-        let file_len = file.metadata()?.len();
-        self.piece_table = if file_len > 0 {
-            let mmap = unsafe { memmap2::Mmap::map(&file)? };
-            PieceTable::from_mmap(mmap)
-        } else {
-            PieceTable::new()
-        };
+        self.piece_table = PieceTable::open_file(&file)?;
         self.line_index = LineIndex::build(&self.piece_table);
         self.file_path = Some(p);
         self.is_modified = false;
@@ -279,8 +291,13 @@ impl DocumentBuffer {
         Ok(())
     }
 
-    /// 將 editor 中的最新行內容同步至 text 與 Piece Table
+    /// 將 editor 中的最新行內容同步至 text 與 Piece Table（大檔未快取時防護不覆寫）
     pub fn sync_from_editor(&mut self) {
+        if self.editor.lines.is_empty()
+            || (self.piece_table.len() > SMALL_FILE_CACHE_LIMIT && self.text.is_empty())
+        {
+            return;
+        }
         let new_text = self.editor.to_text(self.newline_format.newline_str());
         self.text = new_text;
         self.is_modified = true;
@@ -315,10 +332,11 @@ impl DocumentBuffer {
             return false;
         };
         let bytes = self.piece_table.collect_bytes();
-        let (slice, has_bom) = match Encoding::for_bom(&bytes) {
-            Some((bom_enc, bom_len)) if bom_enc == enc => (&bytes[bom_len..], true),
-            _ => (&bytes[..], false),
+        let has_bom = match Encoding::for_bom(&bytes) {
+            Some((bom_enc, _)) => bom_enc == enc,
+            None => false,
         };
+        let slice = Self::strip_bom_slice(&bytes, enc, has_bom);
         let (decoded, had_errors) = enc.decode_without_bom_handling(slice);
         self.text = decoded.into_owned();
         self.encoding = enc;
@@ -558,9 +576,31 @@ mod tests {
         assert_eq!(visible[0].line_number, 1);
         assert_eq!(visible[0].text, "This is a line of benchmark text for large file engine.");
 
-        // 驗證原子存檔在 mmap 模式下運作正常
+        // 驗證大檔案編輯：在第 50,000 行插入標記文字
+        let insert_prefix = "[MODIFIED] ";
+        doc.insert_text_at_line(50_000, insert_prefix);
+        assert!(doc.is_modified);
+        assert_eq!(doc.len(), line.len() * line_count + insert_prefix.len());
+
+        let modified_line = doc.line_index.fetch_lines(&doc.piece_table, encoding_rs::UTF_8, 50_000, 1);
+        assert_eq!(
+            modified_line,
+            vec!["[MODIFIED] This is a line of benchmark text for large file engine."]
+        );
+
+        // 驗證原子存檔在 mmap 模式下運作正常並保留修改內容
         assert!(doc.save_file(None).is_ok());
-        assert_eq!(doc.len(), line.len() * line_count);
+        assert!(!doc.is_modified);
+        assert_eq!(doc.len(), line.len() * line_count + insert_prefix.len());
+
+        // 重新讀取驗證磁碟存檔內容正確性
+        let mut verify_doc = DocumentBuffer::new();
+        verify_doc.load_file(&large_path).unwrap();
+        let reloaded_line = verify_doc.line_index.fetch_lines(&verify_doc.piece_table, encoding_rs::UTF_8, 50_000, 1);
+        assert_eq!(
+            reloaded_line,
+            vec!["[MODIFIED] This is a line of benchmark text for large file engine."]
+        );
 
         let _ = fs::remove_file(&large_path);
     }
