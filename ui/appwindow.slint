@@ -66,7 +66,6 @@ export component MainWindow inherits Window {
     callback reinterpret-encoding-clicked(string);
     callback convert-encoding-clicked(string);
     callback syntax-changed(string);
-    callback open-goto-panel-clicked();
     callback goto-confirmed(string);
     callback goto-cancelled();
 
@@ -120,10 +119,6 @@ export component MainWindow inherits Window {
                 text: "十六進位模式";
                 primary: root.edit-mode == 2;
                 clicked => { root.mode-changed(2); }
-            }
-            Button {
-                text: "跳轉";
-                clicked => { root.open-goto-panel-clicked(); }
             }
 
             Rectangle { width: 12px; }

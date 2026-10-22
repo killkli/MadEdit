@@ -97,6 +97,11 @@ D:\Git\MadEdit-Rust\
   - 實作副檔名語言自動識別與「純文字 (Plain Text)」回退模式。
   - 可見行資料結構引入 `HighlightSpan`（`text` 與 `color`），在 Slint 自繪編輯器頂層實現文字分段多色著色渲染，幾何選取圖層與色彩層徹底解耦。
   - 工具列提供語言切換下拉選單，狀態列即時顯示當前語法名稱。
+- [x] 列號跳轉與編輯增強 (Go to Line & Editing Enhancements)（Phase 7 完成）：
+  - 實作頂部內嵌可收合指定行號與欄位跳轉面板（支援 `Ctrl+G` 開啟、`Enter` 跳轉、`Esc` 取消收合）。
+  - 支援 `line` 與 `line:col` 語法，超出範圍自動 Clamp 邊界防護；在十六進位模式下自動切換為 Offset 跳轉（支援 `0x` 與十六進位位移解析，超大檔案零拷貝隨機分頁跳轉）。
+  - 實作常用行級編輯操作（`Alt+Up` / `Alt+Down` 整行上下移動、`Ctrl+Shift+D` 複製行、`Ctrl+Shift+K` 刪除整行、`Home` 智慧縮排首字元與行首切換）。
+  - `DocumentBuffer` 統一封裝行編輯與跳轉操作，自動同步底層緩衝區與 UI 渲染。
 - [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
   - 已優化：直接自 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體拷貝。
 - [x] 換行格式自動偵測（CRLF / LF / CR），目前僅顯示，不支援轉換。
@@ -148,9 +153,13 @@ D:\Git\MadEdit-Rust\
 - 已整合 `syntect` 語法引擎（30+ 種主流語言與 InspiredGitHub 主題）。
 - 已完成開檔自動識別、工具列語言切換選單、可見行多色文字分段渲染與狀態列顯示。
 
-### Phase 7: 列號跳轉與編輯增強 (Go to Line & Editing Enhancements)
-- 提供快捷鍵（Ctrl+G）指定行號與欄位快速跳轉對話框。
-- 支援常用程式碼編輯操作（行上下移動、複製行、刪除整行）。
+### Phase 7: 列號跳轉與編輯增強 (Go to Line & Editing Enhancements) - [已完成]
+- 已完成指定行號/欄位跳轉內嵌面板與 Hex Offset 隨機跳轉支援（Ctrl+G）。
+- 已完成常用程式碼行編輯操作（Alt+Up/Down 整行上下移動、Ctrl+Shift+D 複製行、Ctrl+Shift+K 刪除整行、Home 智慧行首）。
+
+### Phase 8: 換行格式轉換與書籤功能 (Line Endings Conversion & Bookmarks)
+- 支援 CRLF、LF、CR 換行格式雙向轉換與存檔。
+- 支援編輯器行書籤（Toggle Bookmark、Next/Prev Bookmark 導覽與高亮標記）。
 
 ---
 

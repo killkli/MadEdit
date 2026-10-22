@@ -6,7 +6,7 @@ pub mod piece_table;
 pub mod search;
 pub mod syntax;
 
-pub use buffer::{DocumentBuffer, SUPPORTED_ENCODINGS};
+pub use buffer::{parse_goto_line_col, parse_goto_offset, DocumentBuffer, SUPPORTED_ENCODINGS};
 #[allow(unused_imports)]
 pub use editor::{
     char_col_to_visual_col, char_visual_columns, expand_tabs, visual_col_to_char_col, EditorState,

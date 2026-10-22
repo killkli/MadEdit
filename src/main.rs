@@ -3,8 +3,8 @@ mod core;
 use std::cell::RefCell;
 use std::rc::Rc;
 use core::{
-    char_col_to_visual_col, DocumentBuffer, EditMode, SearchOptions, Selection, SUPPORTED_ENCODINGS,
-    SUPPORTED_SYNTAXES,
+    char_col_to_visual_col, parse_goto_line_col, parse_goto_offset, DocumentBuffer, EditMode,
+    SearchOptions, Selection, SUPPORTED_ENCODINGS, SUPPORTED_SYNTAXES,
 };
 use slint::platform::Key;
 use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
@@ -59,42 +59,6 @@ fn populate_search_query_from_selection(ui: &MainWindow, doc: &DocumentBuffer) {
     }
 }
 
-/// 解析跳轉行號與欄位字串（支援 "42", "42:15", "42, 15"）
-fn parse_goto_line_col(input: &str) -> Option<(usize, usize)> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let parts: Vec<&str> = trimmed
-        .split(|c| c == ':' || c == ',')
-        .map(|s| s.trim())
-        .collect();
-
-    let line = parts.first()?.parse::<usize>().ok()?;
-    let col = if parts.len() > 1 {
-        parts[1].parse::<usize>().unwrap_or(1)
-    } else {
-        1
-    };
-    Some((line, col))
-}
-
-/// 解析 Hex 模式位移字串（支援 "0x1A0", "1A0", "256"）
-fn parse_goto_offset(input: &str) -> Option<usize> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
-        let hex_str = &trimmed[2..];
-        usize::from_str_radix(hex_str, 16).ok()
-    } else if trimmed.chars().any(|c| ('a'..='f').contains(&c) || ('A'..='F').contains(&c)) {
-        usize::from_str_radix(trimmed, 16).ok()
-    } else {
-        trimmed.parse::<usize>().ok()
-    }
-}
-
 /// 開啟並設定跳轉面板預設內容
 fn open_goto_panel(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_show_search_panel(false);
@@ -107,9 +71,8 @@ fn open_goto_panel(ui: &MainWindow, doc: &DocumentBuffer) {
     } else {
         let total_lines = doc.editor.line_count().max(1);
         let cur_line = doc.editor.selection.head.line + 1;
-        let cur_col = doc.editor.selection.head.col + 1;
         ui.set_goto_label_text(format!("移至行 (1 - {}):", total_lines).into());
-        ui.set_goto_input_text(format!("{}:{}", cur_line, cur_col).into());
+        ui.set_goto_input_text(format!("{}", cur_line).into());
     }
 }
 
@@ -433,17 +396,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 工具列開啟跳轉面板事件綁定
-    {
-        let ui_handle = main_window.as_weak();
-        let doc_clone = Rc::clone(&doc);
-        main_window.on_open_goto_panel_clicked(move || {
-            let Some(ui) = ui_handle.upgrade() else { return; };
-            let d = doc_clone.borrow();
-            open_goto_panel(&ui, &d);
-        });
-    }
-
     // 跳轉確認事件綁定
     {
         let ui_handle = main_window.as_weak();
@@ -487,12 +439,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 if shift {
                     match key_str {
                         "d" | "D" => {
-                            d.editor.duplicate_lines();
-                            d.sync_from_editor();
+                            d.duplicate_lines();
                         }
                         "k" | "K" => {
-                            d.editor.delete_lines();
-                            d.sync_from_editor();
+                            d.delete_lines();
                         }
                         _ => return false,
                     }
@@ -545,16 +495,14 @@ fn main() -> Result<(), slint::PlatformError> {
 
             // Alt+方向鍵 行上下移動
             if alt && !ctrl && !shift {
-                if key_str.starts_with(char::from(Key::UpArrow)) {
-                    d.editor.move_lines_up();
-                    d.sync_from_editor();
-                    if let Some(ui) = ui_handle.upgrade() {
-                        sync_ui_from_doc(&ui, &d);
-                    }
-                    return true;
+                let moved = if key_str.starts_with(char::from(Key::UpArrow)) {
+                    d.move_lines_up()
                 } else if key_str.starts_with(char::from(Key::DownArrow)) {
-                    d.editor.move_lines_down();
-                    d.sync_from_editor();
+                    d.move_lines_down()
+                } else {
+                    false
+                };
+                if moved {
                     if let Some(ui) = ui_handle.upgrade() {
                         sync_ui_from_doc(&ui, &d);
                     }
@@ -576,7 +524,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 d.editor.move_down(shift);
                 true
             } else if key_str.starts_with(char::from(Key::Home)) {
-                d.editor.move_home_smart(shift);
+                d.move_home_smart(shift);
                 true
             } else if key_str.starts_with(char::from(Key::End)) {
                 d.editor.move_end(shift);
@@ -716,30 +664,4 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     main_window.run()
-}
-
-#[cfg(test)]
-mod main_tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_goto_line_col() {
-        assert_eq!(parse_goto_line_col("42"), Some((42, 1)));
-        assert_eq!(parse_goto_line_col("  42  "), Some((42, 1)));
-        assert_eq!(parse_goto_line_col("42:15"), Some((42, 15)));
-        assert_eq!(parse_goto_line_col("42, 15"), Some((42, 15)));
-        assert_eq!(parse_goto_line_col("42: 15"), Some((42, 15)));
-        assert_eq!(parse_goto_line_col(""), None);
-        assert_eq!(parse_goto_line_col("abc"), None);
-    }
-
-    #[test]
-    fn test_parse_goto_offset() {
-        assert_eq!(parse_goto_offset("0x1A0"), Some(0x1A0));
-        assert_eq!(parse_goto_offset("0X1A0"), Some(0x1A0));
-        assert_eq!(parse_goto_offset("1A0"), Some(0x1A0));
-        assert_eq!(parse_goto_offset("256"), Some(256));
-        assert_eq!(parse_goto_offset(""), None);
-        assert_eq!(parse_goto_offset("xyz"), None);
-    }
 }

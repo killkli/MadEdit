@@ -444,6 +444,41 @@ impl DocumentBuffer {
         self.editor.goto_line_col(line_0based, col_0based);
     }
 
+    /// 將當前行或選取行整塊往上移動一行，並自動同步至底層緩衝區
+    pub fn move_lines_up(&mut self) -> bool {
+        let moved = self.editor.move_lines_up();
+        if moved {
+            self.sync_from_editor();
+        }
+        moved
+    }
+
+    /// 將當前行或選取行整塊往下移動一行，並自動同步至底層緩衝區
+    pub fn move_lines_down(&mut self) -> bool {
+        let moved = self.editor.move_lines_down();
+        if moved {
+            self.sync_from_editor();
+        }
+        moved
+    }
+
+    /// 複製當前行或選取區涵蓋的所有行至下方，並自動同步至底層緩衝區
+    pub fn duplicate_lines(&mut self) {
+        self.editor.duplicate_lines();
+        self.sync_from_editor();
+    }
+
+    /// 刪除當前行或選取區涵蓋的所有行，並自動同步至底層緩衝區
+    pub fn delete_lines(&mut self) {
+        self.editor.delete_lines();
+        self.sync_from_editor();
+    }
+
+    /// 智慧行首（首次按下 Home 移動至縮排後第一個非空白字元，再次按下時移動至欄位 0）
+    pub fn move_home_smart(&mut self, expand_selection: bool) {
+        self.editor.move_home_smart(expand_selection);
+    }
+
     /// 取得目前文字在搜尋條件下的所有匹配項目列表
     pub fn find_all(&self, query: &str, options: &SearchOptions) -> Result<Vec<SearchMatch>, String> {
         find_all_matches(&self.editor.lines, query, options)
@@ -644,6 +679,43 @@ impl DocumentBuffer {
             self.piece_table.collect_bytes()
         };
         Ok(find_hex_matches(&bytes, &pattern))
+    }
+}
+
+/// 解析跳轉行號與欄位字串（支援 "42", "42:15", "42, 15"）
+pub fn parse_goto_line_col(input: &str) -> Option<(usize, usize)> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = trimmed
+        .split(|c| c == ':' || c == ',')
+        .map(|s| s.trim())
+        .collect();
+
+    let line = parts.first()?.parse::<usize>().ok()?;
+    let col = if parts.len() > 1 {
+        parts[1].parse::<usize>().unwrap_or(1)
+    } else {
+        1
+    };
+    Some((line, col))
+}
+
+/// 解析 Hex 模式位移字串（支援 "0x1A0", "1A0", "10" 等十六進位位移，以及十進位相容）
+pub fn parse_goto_offset(input: &str) -> Option<usize> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let s = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    if let Ok(val) = usize::from_str_radix(s, 16) {
+        Some(val)
+    } else {
+        trimmed.parse::<usize>().ok()
     }
 }
 
@@ -1056,19 +1128,16 @@ mod tests {
 
         // 測試行移動與 sync_from_editor
         doc.goto_line_col(2, 1);
-        doc.editor.move_lines_up();
-        doc.sync_from_editor();
+        assert!(doc.move_lines_up());
         assert_eq!(doc.text, "Row 2\nRow 1\nRow 3\nRow 4");
         assert_eq!(doc.editor.lines, vec!["Row 2", "Row 1", "Row 3", "Row 4"]);
 
         // 測試行複製
-        doc.editor.duplicate_lines();
-        doc.sync_from_editor();
+        doc.duplicate_lines();
         assert_eq!(doc.text, "Row 2\nRow 2\nRow 1\nRow 3\nRow 4");
 
         // 測試行刪除
-        doc.editor.delete_lines();
-        doc.sync_from_editor();
+        doc.delete_lines();
         assert_eq!(doc.text, "Row 2\nRow 1\nRow 3\nRow 4");
     }
 
@@ -1090,6 +1159,27 @@ mod tests {
         // 跳轉超出長度，應 clamp 到 100，對齊到 96 (0x60)
         doc.goto_offset(9999);
         assert_eq!(doc.hex_start_offset, 96);
+    }
+
+    #[test]
+    fn test_parse_goto_line_col() {
+        assert_eq!(parse_goto_line_col("42"), Some((42, 1)));
+        assert_eq!(parse_goto_line_col("  42  "), Some((42, 1)));
+        assert_eq!(parse_goto_line_col("42:15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col("42, 15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col("42: 15"), Some((42, 15)));
+        assert_eq!(parse_goto_line_col(""), None);
+        assert_eq!(parse_goto_line_col("abc"), None);
+    }
+
+    #[test]
+    fn test_parse_goto_offset() {
+        assert_eq!(parse_goto_offset("0x1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("0X1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("1A0"), Some(0x1A0));
+        assert_eq!(parse_goto_offset("10"), Some(0x10));
+        assert_eq!(parse_goto_offset(""), None);
+        assert_eq!(parse_goto_offset("xyz"), None);
     }
 }
 
