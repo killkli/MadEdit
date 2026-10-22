@@ -104,18 +104,23 @@ impl FontManager {
             self.editor_family = wanted;
         }
 
-        if let Some(cjk) = self.cjk_family.clone()
-            && Some(&cjk) != Some(&self.editor_family)
-            && let Some(data) = self.load_family(&cjk)
-        {
-            defs.font_data.insert("cjk".into(), Arc::new(data));
+        // 編輯區字型與 CJK 後備字型相同時直接共用已載入的資料，介面仍須補上 CJK
+        let cjk_key = match self.cjk_family.clone() {
+            Some(cjk) if cjk == self.editor_family => Some("editor-main"),
+            Some(cjk) => self.load_family(&cjk).map(|data| {
+                defs.font_data.insert("cjk".into(), Arc::new(data));
+                editor_chain.push("cjk".into());
+                "cjk"
+            }),
+            None => None,
+        };
+        if let Some(key) = cjk_key {
             // 介面字型：預設字型之後立即以 CJK 補字（emoji 仍排在最後）
             for fam in [FontFamily::Proportional, FontFamily::Monospace] {
                 if let Some(list) = defs.families.get_mut(&fam) {
-                    list.insert(1.min(list.len()), "cjk".into());
+                    list.insert(1.min(list.len()), key.into());
                 }
             }
-            editor_chain.push("cjk".into());
         }
 
         // 編輯區字型鏈：使用者字型 → CJK → egui 內建等寬字型與 emoji
@@ -128,5 +133,22 @@ impl FontManager {
         }
         defs.families.insert(FontFamily::Name(EDITOR_FAMILY.into()), editor_chain);
         ctx.set_fonts(defs);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 編輯區選用 CJK 後備字型本身（如 PingFang TC）時，介面字型仍須含 CJK 補字
+    #[test]
+    fn test_ui_keeps_cjk_when_editor_font_is_cjk_fallback() {
+        let mut fm = FontManager::new();
+        let Some(cjk) = fm.cjk_family.clone() else { return };
+        let ctx = egui::Context::default();
+        fm.apply(&ctx, &cjk);
+        let _ = ctx.run_ui(Default::default(), |_| {});
+        let ok = ctx.fonts(|f| f.definitions().families[&FontFamily::Proportional].contains(&"editor-main".to_string()));
+        assert!(ok, "介面字型鏈缺少 CJK 字型");
     }
 }
