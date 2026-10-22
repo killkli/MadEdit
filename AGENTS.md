@@ -144,6 +144,10 @@ D:\Git\MadEdit\
   - 修復 Windows 平台小型檔案（<=512KB）因記憶體對映持有控制代碼導致外部寫入衝突（Win32 1224）之問題，小檔案自動轉為記憶體 PieceTable，徹底釋放檔案鎖定。
   - 於 Slint 主迴圈配置每 1.5 秒之輕量定時檢查，在編輯區頂部顯示醒目非侵入式琥珀黃色通知橫幅（`⚠️ 檔案已被外部程式修改。`），若有未儲存修改則加註深紅警示，支援「重新載入」與「忽略」。
   - 重新載入時自動保留游標行欄與書籤集合，並執行邊界自動防護。
+- [x] 編輯器焦點輸入修復與原版 MadEdit 經典專業 UI（Phase 10 完成）：
+  - 將 `editor-focus := FocusScope` 提升至外層常駐並配置 `focus-editor()`，徹底修復點擊工具列或編輯區後無法打字輸入的焦點遺失問題。
+  - 實作深淺色雙主題系統（預設跟隨作業系統 `Palette.color-scheme`，支援一鍵切換），`syntect` 語法引擎同步切換深色（`base16-ocean.dark`）與淺色（`InspiredGitHub`）主題，並擴充 C# (`.cs`)、Java、Go、TOML、Shell 語法識別。
+  - 實作原版 MadEdit 四大經典介面元素：頂部主選單列 + 緊湊型工具列（含字級縮放與內嵌快速搜尋框）、檔案分頁標籤列 + 水平欄位尺標（Column Ruler `0..10..20..`）、游標所在行外框高亮 + 可視控制字元（空白 `·`、Tab `»`、行尾綠色 `↵`）、以及底部 5 格專業狀態列（含 `Insert` / `Overwrite` 插入覆寫模式切換）。
 - [x] 多編碼支援與自動偵測（Phase 1 完成）：
   - 開檔優先識別 BOM（UTF-8 / UTF-16LE / UTF-16BE），無 BOM 時先驗證嚴格 UTF-8，否則自動 fallback 至 Big5。
   - 工具列提供 10 種常用編碼選單與「重新解碼（Reinterpret）」、「轉換編碼（Convert）」按鈕。
@@ -166,6 +170,13 @@ D:\Git\MadEdit\
   - `src/main.rs` 依原版 `CommandTable` 建構 7 個頂層選單（檔案／編輯／搜尋／檢視／工具／視窗／說明），以 Rust 端計算選單寬度、x-offset 與彈出選單尺寸，並以 `menu-action(string)` 回呼統一派送動作。
   - 語法突顯／字元編碼／換行格式／重新解碼／轉換編碼改置於選單，點選後開啟通用可捲動選擇面板。
   - 新增 `assets/icons-src/`（38 個原版 XPM 來源 + GPL 授權說明）與 `assets/make_toolbar_icons.py`（純標準函式庫 XPM→PNG 轉換器）。
+  - 併入另一條並行 Phase 10 路線的完整功能（見 [ADR 0010](docs/adr/0010-classic-ui-consolidation.md)）：
+    - 深色／淺色主題（`Theme.is-dark` 統一管理色票，預設跟隨系統配色，工具列可切換）。
+    - 水平欄位尺標（與水平捲軸同步位移）、右側垂直捲軸與底部水平捲軸（滑塊拖曳 + 按鈕微調）。
+    - 控制字元顯示（空白 `·`、Tab `»`、行尾 `↵`）與游標所在行外框高亮。
+    - 插入／覆寫模式（`EditorState::overwrite_mode`，`Insert` 鍵切換，狀態列顯示 `INS`／`OVR`）。
+    - 常駐 `FocusScope` 承接鍵盤事件並於開檔、存檔、切換模式後自動回復焦點（焦點修復）。
+    - 新增 C#、Java、Go、Shell、TOML 語法辨識；`MadEdit <檔案>` 命令列開檔。
 
 ### 已知問題（優先處理）
 
@@ -214,6 +225,8 @@ D:\Git\MadEdit\
 - 已完成經典 Windows 風格選單列、彈出選單、原版圖示工具列、分頁列與六欄位狀態列。
 - 已完成選單模型與核心狀態雙向同步（編輯模式核取記號、停用／啟用狀態、寬度與位置計算）。
 - 已完成原版 MadEdit XPM 圖示沿用與標準函式庫 PNG 轉換工具鏈。
+- 已完成與另一條並行 Phase 10 路線的整合：深淺色主題、欄位尺標、垂直／水平捲軸、控制字元、
+  插入／覆寫模式、焦點修復與多語法支援（詳見 [ADR 0010](docs/adr/0010-classic-ui-consolidation.md)）。
 
 ---
 

@@ -1,5 +1,10 @@
 # Spec: Phase 10 經典 MadEdit 風格介面重塑
 
+> **整合說明**：本階段另有並行實作 `.scratch/phase-10-madedit-classic-ui-and-input-fix/spec.md`
+> （焦點修復、深淺色主題、尺標、捲軸、控制字元、插入／覆寫模式、多語法）。
+> 最終成果為兩者聯集：介面骨架採本規格的經典自繪路線，功能採另一份規格的完整實作。
+> 決策理由詳見 [ADR 0010](../../docs/adr/0010-classic-ui-consolidation.md)。
+
 ## 1. 目標
 
 將 MadEdit Rust 重製版的操作介面重塑為**貼近原版 MadEdit（C++ / wxWidgets）的經典 Windows 風格**，
@@ -16,6 +21,20 @@
 | MadEdit-Mod 原始碼 | `../madedit-mod/src/MadEditFrame.cpp` | `CommandTable[]` 選單／工具列／快捷鍵定義（2221 行起） |
 | MadEdit-Mod 圖示 | `../madedit-mod/images/*.xpm` | 38 個 16×16 工具列圖示來源 |
 | 上游 MadEdit | `/tmp/madref/madedit-master/` | 上游原始碼與圖示比對 |
+
+### 1.2 併入的進階功能（來自另一份 Phase 10 規格）
+
+| 功能 | 實作位置 | 說明 |
+| --- | --- | --- |
+| 深色／淺色主題 | `ui/theme.slint`（`Theme.is-dark`）、`ui/appwindow.slint` | 預設跟隨系統配色，工具列可手動切換 |
+| 水平欄位尺標 | `ui/appwindow.slint` | 與水平捲軸同步位移，顯示 0、10、20… 刻度 |
+| 垂直／水平捲軸 | `ui/appwindow.slint` | 滑塊拖曳、方向按鈕微調、滾輪支援 |
+| 控制字元顯示 | `src/core/editor.rs`（`apply_visible_whitespace`） | 空白顯示 `·`、Tab 顯示 `»`、行尾 `↵` |
+| 插入／覆寫模式 | `src/core/editor.rs`（`overwrite_mode`） | `Insert` 鍵或工具列切換，狀態列顯示 `INS`／`OVR` |
+| 焦點修復 | `ui/appwindow.slint`（`editor-focus` FocusScope） | 常駐 FocusScope 承接鍵盤事件，操作後自動回復焦點 |
+| 多語法支援 | `src/core/syntax.rs` | 新增 C#、Java、Go、Shell、TOML |
+| 命令列開檔 | `src/main.rs` | `MadEdit <檔案>` 於啟動時直接載入 |
+
 
 ## 2. 規格細節
 
@@ -79,9 +98,13 @@
 ## 3. 驗收條件
 
 - [x] `cargo check --offline` 零警告通過。
-- [x] `cargo test --offline` 55 項全數通過（新增 2 項狀態列計算測試）。
+- [x] `cargo test --offline` 59 項全數通過（含狀態列計算與深色主題語法測試）。
 - [x] 選單列可開啟、懸停切換、點擊外部收起，且選單項目停用／核取狀態正確反映核心狀態。
 - [x] 工具列 21 個圖示正確顯示，復原／重做為停用樣式。
 - [x] 搜尋取代面板、指定行號面板、外部變更橫幅在重寫後運作正常。
-- [x] 十六進位模式三欄（Offset / Hex / ASCII）配色正確。
-- [x] 六欄位狀態列顯示正確：`Ln`、`CharPos`、`SelSize`、編碼、唯讀、INS。
+- [x] 十六進位模式三欄（Offset / Hex / ASCII）配色正確，且與文字區互斥顯示。
+- [x] 六欄位狀態列顯示正確：`Ln`、`CharPos`（含位元組位置）、`SelSize`（含位元組數）、編碼、唯讀、`INS`／`OVR`。
+- [x] 深色與淺色主題皆可正常顯示（選單列、工具列、狀態列、編輯區、捲軸無撞色）。
+- [x] 水平欄位尺標與水平捲軸位移同步；右側垂直捲軸與底部水平捲軸可拖曳與按鈕微調。
+- [x] 控制字元顯示（空白 `·`、Tab `»`、行尾 `↵`）與深色主題語法配色正確。
+- [x] 鍵盤輸入正常（FocusScope 承接 `key-pressed`），開檔後焦點自動回到編輯區。

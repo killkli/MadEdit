@@ -139,6 +139,8 @@ impl Selection {
 pub struct Viewport {
     pub first_visible_line: usize,
     pub visible_line_count: usize,
+    pub first_visible_col: usize,
+    pub visible_col_count: usize,
 }
 
 impl Default for Viewport {
@@ -146,6 +148,8 @@ impl Default for Viewport {
         Self {
             first_visible_line: 0,
             visible_line_count: 30,
+            first_visible_col: 0,
+            visible_col_count: 110,
         }
     }
 }
@@ -270,6 +274,67 @@ pub fn expand_tabs(line: &str, tab_size: usize) -> String {
     out
 }
 
+/// 將語法突顯後的分段套用可視控制字元標記（半形空白轉為 '·'、Tab 展開處轉為 '»' 與空白，並套用獨立柔和青綠色）
+pub fn apply_visible_whitespace(
+    raw_line: &str,
+    spans: Vec<HighlightSpan>,
+    is_dark: bool,
+) -> Vec<HighlightSpan> {
+    if raw_line.is_empty() || spans.is_empty() {
+        return spans;
+    }
+
+    let ws_color = if is_dark {
+        (82, 165, 130)
+    } else {
+        (120, 165, 140)
+    };
+
+    // 建立與 expand_tabs(raw_line, 4) 字元一對一對齊的控制字元遮罩
+    let mut mask: Vec<Option<char>> = Vec::new();
+    let mut visual_col = 0;
+    for c in raw_line.chars() {
+        if c == '\t' {
+            let next_tab = ((visual_col / 4) + 1) * 4;
+            let spaces = next_tab - visual_col;
+            mask.push(Some('»'));
+            for _ in 1..spaces {
+                mask.push(Some(' '));
+            }
+            visual_col = next_tab;
+        } else if c == ' ' {
+            mask.push(Some('·'));
+            visual_col += 1;
+        } else {
+            mask.push(None);
+            visual_col += char_visual_columns(c);
+        }
+    }
+
+    let mut out_spans: Vec<HighlightSpan> = Vec::new();
+    let mut char_idx = 0;
+
+    for span in spans {
+        for ch in span.text.chars() {
+            let (out_ch, out_color) = match mask.get(char_idx).copied().flatten() {
+                Some(ctrl_ch) => (ctrl_ch, ws_color),
+                None => (ch, span.color_rgb),
+            };
+            char_idx += 1;
+
+            if let Some(last) = out_spans.last_mut() {
+                if last.color_rgb == out_color {
+                    last.text.push(out_ch);
+                    continue;
+                }
+            }
+            out_spans.push(HighlightSpan::new(out_ch.to_string(), out_color));
+        }
+    }
+
+    out_spans
+}
+
 /// 核心編輯狀態：管理行清單快取、選取狀態、游標導覽、書籤與基礎編輯邏輯
 #[derive(Debug, Clone)]
 pub struct EditorState {
@@ -278,6 +343,7 @@ pub struct EditorState {
     pub viewport: Viewport,
     pub clipboard: String,
     pub bookmarks: BTreeSet<usize>,
+    pub overwrite_mode: bool,
 }
 
 impl Default for EditorState {
@@ -288,6 +354,7 @@ impl Default for EditorState {
             viewport: Viewport::default(),
             clipboard: String::new(),
             bookmarks: BTreeSet::new(),
+            overwrite_mode: false,
         }
     }
 }
@@ -304,6 +371,7 @@ pub struct VisibleLineData {
     pub has_caret: bool,
     pub caret_x: f32,
     pub has_bookmark: bool,
+    pub eol_x: f32,
 }
 
 #[allow(dead_code)]
@@ -917,15 +985,25 @@ impl EditorState {
             self.scroll_caret_into_view();
             return;
         }
-        self.delete_selection();
+        let had_sel = self.delete_selection();
         let head = self.selection.head;
         let mut chars: Vec<char> = self.lines[head.line].chars().collect();
-        chars.insert(head.col, c);
+        if self.overwrite_mode && !had_sel && c != '\t' && head.col < chars.len() {
+            chars[head.col] = c;
+        } else {
+            chars.insert(head.col, c);
+        }
         self.lines[head.line] = chars.into_iter().collect();
 
         let new_pos = TextPosition::new(head.line, head.col + 1);
         self.selection = Selection::caret(new_pos);
         self.scroll_caret_into_view();
+    }
+
+    /// 切換插入 (Insert) 與覆寫 (Overwrite) 模式，回傳切換後是否為覆寫模式
+    pub fn toggle_overwrite_mode(&mut self) -> bool {
+        self.overwrite_mode = !self.overwrite_mode;
+        self.overwrite_mode
     }
 
     /// 在游標位置插入字串
@@ -1068,14 +1146,30 @@ impl EditorState {
         self.insert_text(&text);
     }
 
-    /// 確保游標在當前視窗範圍內（自動捲動）
+    /// 確保游標在當前視窗範圍內（自動垂直與水平捲動）
     pub fn scroll_caret_into_view(&mut self) {
         let head = self.selection.head;
         let line = head.line;
         if line < self.viewport.first_visible_line {
             self.viewport.first_visible_line = line;
         } else if line >= self.viewport.first_visible_line + self.viewport.visible_line_count {
-            self.viewport.first_visible_line = line.saturating_sub(self.viewport.visible_line_count - 1);
+            self.viewport.first_visible_line =
+                line.saturating_sub(self.viewport.visible_line_count - 1);
+        }
+
+        let line_text = self.lines.get(line).map(|s| s.as_str()).unwrap_or("");
+        let caret_vcol = if self.selection.is_block() {
+            self.selection
+                .head_vcol
+                .unwrap_or_else(|| char_col_to_visual_col(line_text, head.col))
+        } else {
+            char_col_to_visual_col(line_text, head.col)
+        };
+        let vis_cols = self.viewport.visible_col_count.max(10);
+        if caret_vcol < self.viewport.first_visible_col {
+            self.viewport.first_visible_col = caret_vcol;
+        } else if caret_vcol >= self.viewport.first_visible_col + vis_cols.saturating_sub(2) {
+            self.viewport.first_visible_col = caret_vcol.saturating_sub(vis_cols.saturating_sub(4));
         }
     }
 
@@ -1089,6 +1183,42 @@ impl EditorState {
             self.viewport.first_visible_line =
                 (self.viewport.first_visible_line + lines as usize).min(max_first);
         }
+    }
+
+    /// 直接將垂直捲軸定位至指定起始行索引
+    pub fn scroll_to_line(&mut self, first_line: usize) {
+        let max_first = self.lines.len().saturating_sub(1);
+        self.viewport.first_visible_line = first_line.min(max_first);
+    }
+
+    /// 依欄位數進行畫面水平捲動
+    pub fn scroll_horizontal_by(&mut self, cols: i32) {
+        let max_first = self.max_visual_columns().saturating_sub(10);
+        if cols < 0 {
+            self.viewport.first_visible_col =
+                self.viewport.first_visible_col.saturating_sub((-cols) as usize);
+        } else if cols > 0 {
+            self.viewport.first_visible_col =
+                (self.viewport.first_visible_col + cols as usize).min(max_first);
+        }
+    }
+
+    /// 直接將水平捲軸定位至指定起始視覺欄位
+    pub fn scroll_to_col(&mut self, first_col: usize) {
+        let max_first = self.max_visual_columns().saturating_sub(10);
+        self.viewport.first_visible_col = first_col.min(max_first);
+    }
+
+    /// 計算目前編輯器內容的最大視覺欄寬（至少保留 140 欄供水平捲軸與列塊模式操作）
+    pub fn max_visual_columns(&self) -> usize {
+        let content_max = self
+            .lines
+            .iter()
+            .take(2000)
+            .map(|l| char_col_to_visual_col(l, l.chars().count()))
+            .max()
+            .unwrap_or(0);
+        (content_max + 20).max(140)
     }
 
     /// 根據目前可視視窗（Viewport）與字元格網寬度產生可見行繪製資料
@@ -1188,6 +1318,9 @@ impl EditorState {
                 sel_width = width_cols as f32 * cell_width;
             }
 
+            let line_end_vcol = char_col_to_visual_col(line_text, line_text.chars().count());
+            let eol_x = line_end_vcol as f32 * cell_width;
+
             result.push(VisibleLineData {
                 line_number,
                 text: expand_tabs(line_text, 4),
@@ -1198,6 +1331,7 @@ impl EditorState {
                 has_caret,
                 caret_x,
                 has_bookmark: self.bookmarks.contains(&line_idx),
+                eol_x,
             });
         }
         result
@@ -1676,5 +1810,52 @@ mod tests {
         assert_eq!(ed2.lines, vec!["FirstSecondThird"]);
         // 合併後 Third 行被刪除，書籤自動清理
         assert!(ed2.bookmarks.is_empty());
+    }
+
+    #[test]
+    fn test_overwrite_mode_and_visible_whitespace() {
+        let mut editor = EditorState::from_text("abc\tdef");
+        editor.set_caret(0, 1); // 游標在 'b'
+        assert!(editor.toggle_overwrite_mode());
+        editor.insert_char('X');
+        assert_eq!(editor.lines[0], "aXc\tdef");
+        assert_eq!(editor.selection.head.col, 2);
+
+        // 驗證 eol_x 與 apply_visible_whitespace
+        let vlines = editor.generate_visible_lines(10.0);
+        assert_eq!(vlines.len(), 1);
+        // "aXc\tdef" 展開後為 "aXc def" 共 7 欄 -> eol_x = 70.0
+        assert_eq!(vlines[0].eol_x, 70.0);
+
+        let raw = "\ta b";
+        let expanded = expand_tabs(raw, 4);
+        let base_spans = vec![HighlightSpan::new(expanded, (200, 200, 200))];
+        let ws_spans = apply_visible_whitespace(raw, base_spans, true);
+        let joined: String = ws_spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(joined, "»   a·b");
+    }
+
+    #[test]
+    fn test_vertical_and_horizontal_scrolling() {
+        let mut editor = EditorState::from_text(&"0123456789".repeat(20));
+        editor.viewport.visible_col_count = 50;
+        assert!(editor.max_visual_columns() >= 200);
+
+        // 水平自動捲動：游標移至第 120 欄時，first_visible_col 應自動跟進
+        editor.set_caret(0, 120);
+        assert!(editor.viewport.first_visible_col > 0);
+        assert!(editor.viewport.first_visible_col <= 120);
+
+        // 水平與垂直捲軸手動定位測試
+        editor.scroll_to_col(30);
+        assert_eq!(editor.viewport.first_visible_col, 30);
+        editor.scroll_horizontal_by(-10);
+        assert_eq!(editor.viewport.first_visible_col, 20);
+
+        let mut ed_lines = EditorState::from_text("L1\nL2\nL3\nL4\nL5");
+        ed_lines.scroll_to_line(3);
+        assert_eq!(ed_lines.viewport.first_visible_line, 3);
+        ed_lines.scroll_to_line(999);
+        assert_eq!(ed_lines.viewport.first_visible_line, 4);
     }
 }

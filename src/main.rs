@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod core;
 
 use std::cell::RefCell;
@@ -12,8 +14,13 @@ use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 slint::include_modules!();
 
-const CELL_WIDTH: f32 = 8.5;
-const LINE_HEIGHT: f32 = 20.0;
+/// 根據字型大小計算等寬字元格網寬度 (cell_width) 與行高 (line_height)
+fn calc_editor_metrics(font_size: i32) -> (f32, f32) {
+    let fs = font_size.clamp(10, 32) as f32;
+    let cell_width = (fs * 0.55 * 2.0).round() / 2.0;
+    let line_height = (fs * 1.35).round().max(18.0);
+    (cell_width, line_height)
+}
 
 // ── 選單列模型 ─────────────────────────────────────────────────────
 // 選單結構沿用原版 MadEdit（檔案 / 編輯 / 搜尋 / 檢視 / 工具 / 視窗 / 說明），
@@ -353,6 +360,10 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
         EditMode::Hex => 2,
     };
 
+    let (cell_width, line_height) = calc_editor_metrics(ui.get_editor_font_size());
+    ui.set_cell_width(cell_width);
+    ui.set_line_height(line_height);
+
     ui.set_file_path(doc.file_name().into());
     ui.set_edit_mode(mode_idx);
     ui.set_encoding_name(doc.encoding.name().into());
@@ -361,8 +372,8 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_selected_newline(doc.newline_format.as_str().into());
     ui.set_current_syntax(doc.current_syntax.as_str().into());
 
-    // 同步可見行自繪資料（包含多色語法分段 spans 與書籤標記）
-    let visible_lines_data = doc.generate_visible_lines(CELL_WIDTH);
+    // 同步可見行自繪資料（包含多色語法分段 spans、書籤標記與行尾換行座標 eol_x）
+    let visible_lines_data = doc.generate_visible_lines(cell_width);
     let slint_lines: Vec<VisibleLine> = visible_lines_data
         .into_iter()
         .map(|l| {
@@ -371,7 +382,12 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
                 .into_iter()
                 .map(|s| HighlightSpan {
                     text: s.text.into(),
-                    color: slint::Color::from_argb_u8(255, s.color_rgb.0, s.color_rgb.1, s.color_rgb.2),
+                    color: slint::Color::from_argb_u8(
+                        255,
+                        s.color_rgb.0,
+                        s.color_rgb.1,
+                        s.color_rgb.2,
+                    ),
                 })
                 .collect();
 
@@ -385,18 +401,45 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
                 has_caret: l.has_caret,
                 caret_x: l.caret_x,
                 has_bookmark: l.has_bookmark,
+                eol_x: l.eol_x,
             }
         })
         .collect();
     ui.set_visible_lines(ModelRc::new(VecModel::from(slint_lines)));
 
-    // 同步游標位置座標資訊（列塊模式下顯示選取幾行幾欄）
+    // 同步原版 MadEdit 5 格狀態列資訊與捲軸 (Scrollbar) 狀態
     let head = doc.editor.selection.head;
+    let total_lines = doc
+        .line_index
+        .line_count()
+        .max(doc.editor.line_count())
+        .max(1);
+    let cur_line = head.line + 1;
+    let cur_col = head.col + 1;
+
+    ui.set_vscroll_first_line(doc.editor.viewport.first_visible_line as i32);
+    ui.set_vscroll_total_lines(total_lines as i32);
+    ui.set_vscroll_visible_lines(doc.editor.viewport.visible_line_count as i32);
+
+    let max_cols = doc
+        .editor
+        .max_visual_columns()
+        .max(doc.editor.viewport.first_visible_col + doc.editor.viewport.visible_col_count);
+    ui.set_hscroll_first_col(doc.editor.viewport.first_visible_col as i32);
+    ui.set_hscroll_total_cols(max_cols as i32);
+    ui.set_hscroll_visible_cols(doc.editor.viewport.visible_col_count as i32);
+
     if doc.editor.selection.is_block() && !doc.editor.selection.is_empty() {
         let bounds = doc.editor.selection.visual_bounds(&doc.editor);
-        ui.set_caret_status(
-            format!("Block: {}x{} (Ln {}, Col {})", bounds.line_count(), bounds.col_width(), head.line + 1, head.col + 1).into(),
+        let block_status = format!(
+            "行 : {} / {}  列 : {} [{}x{}]",
+            cur_line,
+            total_lines,
+            cur_col,
+            bounds.line_count(),
+            bounds.col_width()
         );
+        ui.set_caret_status(block_status.into());
     } else {
         // 格式對應原版 MadEdit 狀態列第一欄：Ln:<行> /<總行數>  Col:<欄>
         let total_lines = doc.editor.line_count();
@@ -405,23 +448,21 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
         );
     }
 
-    // 狀態列第二欄：字元位置 / 檔案大小
+    // 狀態列第二欄：字元位置 / 位元組位置 / 檔案大小
+    //   char_pos 為字元層級索引；byte_offset 由 DocumentBuffer 依目前編碼計算
     let char_pos = doc.editor.char_pos(head);
-    ui.set_status_charpos(format!("CharPos:{} /{}", char_pos, doc.len()).into());
+    let (_, byte_offset, _, sel_bytes) = doc.cursor_and_selection_metrics();
+    ui.set_status_charpos(format!("CharPos:{} (0x{:X}) /{}", char_pos, byte_offset, doc.len()).into());
 
-    // 狀態列第三欄：選取範圍大小
-    ui.set_status_selsize(format!("SelSize:{}", doc.editor.selection_char_count()).into());
+    // 狀態列第三欄：選取字元數 / 位元組數
+    let sel_chars = doc.editor.selection_char_count();
+    ui.set_status_selsize(format!("SelSize:{} ({}B)", sel_chars, sel_bytes).into());
 
-    // 狀態列第四欄：編碼 + 換行格式（沿用原版的 .DOS / .UNIX / .MAC 標記）
-    let newline_tag = match doc.newline_format {
-        NewLineFormat::Dos => ".DOS",
-        NewLineFormat::Unix => ".UNIX",
-        NewLineFormat::Mac => ".MAC",
-    };
-    ui.set_status_encoding(format!("{}{}", doc.encoding.name(), newline_tag).into());
+    // 狀態列第四欄：編碼 + BOM + 換行格式（沿用原版的 .BOM.DOS 樣式）
+    ui.set_status_encoding(doc.encoding_status_code().into());
 
-    // 狀態列第六欄：插入模式（本專案尚未支援覆寫模式，固定顯示 INS）
-    ui.set_status_insert("INS".into());
+    // 狀態列第六欄：插入 / 覆寫模式（對應原版 MadEdit 狀態列最右欄）
+    ui.set_status_insert(if doc.editor.overwrite_mode { "OVR" } else { "INS" }.into());
 
     // 選單列模型：依目前模式更新勾選狀態
     ui.set_menus(ModelRc::new(VecModel::from(build_menus(mode_idx))));
@@ -751,6 +792,13 @@ fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
     let doc = Rc::new(RefCell::new(DocumentBuffer::new()));
 
+    // 同步系統初始深淺色與控制字元顯示設定
+    {
+        let mut d = doc.borrow_mut();
+        d.is_dark_mode = main_window.get_is_dark_mode();
+        d.show_control_chars = main_window.get_show_control_chars();
+    }
+
     // 初始化支援編碼清單與畫面狀態
     let encoding_items: Vec<SharedString> = SUPPORTED_ENCODINGS
         .iter()
@@ -865,6 +913,126 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // 深淺色主題切換事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_toggle_theme(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let mut d = doc_clone.borrow_mut();
+            d.is_dark_mode = !d.is_dark_mode;
+            ui.set_is_dark_mode(d.is_dark_mode);
+            sync_ui_from_doc(&ui, &d);
+            ui.invoke_focus_editor();
+        });
+    }
+
+    // 控制字元顯示切換事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_toggle_control_chars(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let mut d = doc_clone.borrow_mut();
+            d.show_control_chars = !d.show_control_chars;
+            ui.set_show_control_chars(d.show_control_chars);
+            sync_ui_from_doc(&ui, &d);
+            ui.invoke_focus_editor();
+        });
+    }
+
+    // 插入/覆寫模式切換事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_toggle_overwrite_mode(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let mut d = doc_clone.borrow_mut();
+            d.editor.toggle_overwrite_mode();
+            sync_ui_from_doc(&ui, &d);
+            ui.invoke_focus_editor();
+        });
+    }
+
+    // 字級大小切換事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_font_size_changed(move |size_str| {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            if let Ok(sz) = size_str.trim().parse::<i32>() {
+                ui.set_editor_font_size(sz);
+                let d = doc_clone.borrow();
+                sync_ui_from_doc(&ui, &d);
+            }
+            ui.invoke_focus_editor();
+        });
+    }
+
+    // 選單列動作回呼綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_toggle_search_panel(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let next = !ui.get_show_search_panel();
+            ui.set_show_search_panel(next);
+            if next {
+                let d = doc_clone.borrow();
+                populate_search_query_from_selection(&ui, &d);
+            } else {
+                ui.invoke_focus_editor();
+            }
+        });
+    }
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_toggle_replace_panel(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            ui.set_show_search_panel(true);
+            ui.set_show_replace(true);
+            let d = doc_clone.borrow();
+            populate_search_query_from_selection(&ui, &d);
+        });
+    }
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_toggle_goto_panel(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            if ui.get_show_goto_panel() {
+                ui.set_show_goto_panel(false);
+                ui.invoke_focus_editor();
+            } else {
+                let d = doc_clone.borrow();
+                open_goto_panel(&ui, &d);
+            }
+        });
+    }
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_toggle_bookmark_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let mut d = doc_clone.borrow_mut();
+            d.toggle_bookmark();
+            sync_ui_from_doc(&ui, &d);
+            ui.invoke_focus_editor();
+        });
+    }
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_next_bookmark_clicked(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let mut d = doc_clone.borrow_mut();
+            d.next_bookmark();
+            sync_ui_from_doc(&ui, &d);
+            ui.invoke_focus_editor();
+        });
+    }
+
     // 重新解碼（Reinterpret Encoding）事件綁定
     {
         let ui_handle = main_window.as_weak();
@@ -898,7 +1066,21 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 換行格式切換（Newline Format Changed）事件綁定
+    // 語法突顯切換事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_syntax_changed(move |syntax_name| {
+            let mut d = doc_clone.borrow_mut();
+            d.set_syntax(syntax_name.as_str());
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+                ui.invoke_focus_editor();
+            }
+        });
+    }
+
+    // 換行格式轉換事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -920,28 +1102,27 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 搜尋面板關閉事件綁定
+    // 搜尋與取代面板事件綁定
     {
         let ui_handle = main_window.as_weak();
         main_window.on_close_search_panel(move || {
             if let Some(ui) = ui_handle.upgrade() {
                 ui.set_show_search_panel(false);
+                ui.invoke_focus_editor();
             }
         });
     }
 
-    // 取代列展開/收合事件綁定
     {
         let ui_handle = main_window.as_weak();
         main_window.on_toggle_replace_clicked(move || {
             if let Some(ui) = ui_handle.upgrade() {
-                let show = ui.get_show_replace();
-                ui.set_show_replace(!show);
+                let cur = ui.get_show_replace();
+                ui.set_show_replace(!cur);
             }
         });
     }
 
-    // 搜尋關鍵字即時變更事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -953,7 +1134,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 搜尋選項切換事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -965,7 +1145,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 尋找下一個匹配項事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -976,7 +1155,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 尋找上一個匹配項事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -987,7 +1165,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 單次取代事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -998,7 +1175,6 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // 全部取代事件綁定
     {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
@@ -1026,6 +1202,7 @@ fn main() -> Result<(), slint::PlatformError> {
         main_window.on_goto_cancelled(move || {
             let Some(ui) = ui_handle.upgrade() else { return; };
             ui.set_show_goto_panel(false);
+            ui.invoke_focus_editor();
         });
     }
 
@@ -1082,6 +1259,20 @@ fn main() -> Result<(), slint::PlatformError> {
                             d.editor.paste_from_clipboard();
                             d.sync_from_editor();
                         }
+                        "s" | "S" => {
+                            drop(d);
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.invoke_save_file_clicked();
+                            }
+                            return true;
+                        }
+                        "o" | "O" => {
+                            drop(d);
+                            if let Some(ui) = ui_handle.upgrade() {
+                                ui.invoke_open_file_clicked();
+                            }
+                            return true;
+                        }
                         "f" | "F" => {
                             if let Some(ui) = ui_handle.upgrade() {
                                 ui.set_show_search_panel(true);
@@ -1099,6 +1290,7 @@ fn main() -> Result<(), slint::PlatformError> {
                             if let Some(ui) = ui_handle.upgrade() {
                                 if ui.get_show_goto_panel() {
                                     ui.set_show_goto_panel(false);
+                                    ui.invoke_focus_editor();
                                 } else {
                                     open_goto_panel(&ui, &d);
                                 }
@@ -1130,7 +1322,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
             }
 
-            // 導覽鍵處理
+            // 導覽鍵與編輯鍵處理
             let handled = if key_str.starts_with(char::from(Key::LeftArrow)) {
                 d.editor.move_left(shift);
                 true
@@ -1155,6 +1347,9 @@ fn main() -> Result<(), slint::PlatformError> {
             } else if key_str.starts_with(char::from(Key::PageDown)) {
                 d.editor.move_page_down(shift);
                 true
+            } else if key_str.starts_with(char::from(Key::Insert)) {
+                d.editor.toggle_overwrite_mode();
+                true
             } else if key_str.starts_with(char::from(Key::Backspace)) || key_str == "\u{0008}" {
                 d.editor.delete_backspace();
                 d.sync_from_editor();
@@ -1163,7 +1358,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 d.editor.delete_forward();
                 d.sync_from_editor();
                 true
-            } else if key_str.starts_with(char::from(Key::Return)) || key_str == "\n" || key_str == "\r" {
+            } else if key_str.starts_with(char::from(Key::Return))
+                || key_str == "\n"
+                || key_str == "\r"
+            {
                 d.editor.insert_newline();
                 d.sync_from_editor();
                 true
@@ -1187,9 +1385,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 if let Some(ui) = ui_handle.upgrade() {
                     if ui.get_show_goto_panel() {
                         ui.set_show_goto_panel(false);
+                        ui.invoke_focus_editor();
                         true
                     } else if ui.get_show_search_panel() {
                         ui.set_show_search_panel(false);
+                        ui.invoke_focus_editor();
                         true
                     } else {
                         false
@@ -1208,8 +1408,18 @@ fn main() -> Result<(), slint::PlatformError> {
             if handled && shift && (alt || d.edit_mode == EditMode::Column) {
                 let anchor = d.editor.selection.anchor;
                 let head = d.editor.selection.head;
-                let anchor_line_text = d.editor.lines.get(anchor.line).map(|s| s.as_str()).unwrap_or("");
-                let head_line_text = d.editor.lines.get(head.line).map(|s| s.as_str()).unwrap_or("");
+                let anchor_line_text = d
+                    .editor
+                    .lines
+                    .get(anchor.line)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                let head_line_text = d
+                    .editor
+                    .lines
+                    .get(head.line)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
                 let a_vcol = char_col_to_visual_col(anchor_line_text, anchor.col);
                 let h_vcol = char_col_to_visual_col(head_line_text, head.col);
                 d.editor.selection = Selection::block(anchor, head, a_vcol, h_vcol);
@@ -1230,19 +1440,19 @@ fn main() -> Result<(), slint::PlatformError> {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
         main_window.on_mouse_clicked(move |x, y, alt| {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let (cell_width, line_height) = calc_editor_metrics(ui.get_editor_font_size());
             let mut d = doc_clone.borrow_mut();
             let is_block_mode = d.edit_mode == EditMode::Column || alt;
-            let target_vcol = (x / CELL_WIDTH).max(0.0).round() as usize;
-            let pos = d.editor.pos_from_pixel(x, y, CELL_WIDTH, LINE_HEIGHT);
+            let target_vcol = (x / cell_width).max(0.0).round() as usize;
+            let pos = d.editor.pos_from_pixel(x, y, cell_width, line_height);
             if is_block_mode {
                 d.editor.selection = Selection::block(pos, pos, target_vcol, target_vcol);
             } else {
                 d.editor.set_caret(pos.line, pos.col);
             }
-            if let Some(ui) = ui_handle.upgrade() {
-                ui.set_caret_visible(true);
-                sync_ui_from_doc(&ui, &d);
-            }
+            ui.set_caret_visible(true);
+            sync_ui_from_doc(&ui, &d);
         });
     }
 
@@ -1251,18 +1461,19 @@ fn main() -> Result<(), slint::PlatformError> {
         let ui_handle = main_window.as_weak();
         let doc_clone = Rc::clone(&doc);
         main_window.on_mouse_dragged(move |x, y, alt| {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            let (cell_width, line_height) = calc_editor_metrics(ui.get_editor_font_size());
             let mut d = doc_clone.borrow_mut();
-            let is_block_mode = d.edit_mode == EditMode::Column || alt || d.editor.selection.is_block();
-            let target_vcol = (x / CELL_WIDTH).max(0.0).round() as usize;
-            let pos = d.editor.pos_from_pixel(x, y, CELL_WIDTH, LINE_HEIGHT);
+            let is_block_mode =
+                d.edit_mode == EditMode::Column || alt || d.editor.selection.is_block();
+            let target_vcol = (x / cell_width).max(0.0).round() as usize;
+            let pos = d.editor.pos_from_pixel(x, y, cell_width, line_height);
             if is_block_mode {
                 d.editor.update_block_selection(pos, target_vcol);
             } else {
                 d.editor.selection.head = pos;
             }
-            if let Some(ui) = ui_handle.upgrade() {
-                sync_ui_from_doc(&ui, &d);
-            }
+            sync_ui_from_doc(&ui, &d);
         });
     }
 
@@ -1281,6 +1492,73 @@ fn main() -> Result<(), slint::PlatformError> {
                 sync_ui_from_doc(&ui, &d);
             }
         });
+    }
+
+    // 垂直捲軸滑塊跳轉與拖曳
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_vscroll_to(move |target_line| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_to_line(target_line.max(0) as usize);
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 垂直捲軸上下按鈕微調
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_vscroll_by(move |delta_lines| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_by(delta_lines);
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 水平捲軸滑塊跳轉與拖曳
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_hscroll_to(move |target_col| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_to_col(target_col.max(0) as usize);
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 水平捲軸左右按鈕與橫向滾輪微調
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_hscroll_by(move |delta_cols| {
+            let mut d = doc_clone.borrow_mut();
+            d.editor.scroll_horizontal_by(delta_cols);
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
+    // 命令列指定的檔案：於啟動時直接開啟（對應原版 MadEdit 的行為）
+    {
+        let startup_path = std::env::args()
+            .skip(1)
+            .find(|arg| !arg.starts_with('-') && std::path::Path::new(arg).is_file());
+        if let Some(path) = startup_path {
+            let mut d = doc.borrow_mut();
+            if let Err(e) = d.load_file(std::path::Path::new(&path)) {
+                eprintln!("Failed to open file {}: {}", path, e);
+            } else {
+                sync_ui_from_doc(&main_window, &d);
+            }
+        }
     }
 
     main_window.run()
