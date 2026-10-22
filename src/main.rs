@@ -38,6 +38,26 @@ fn update_search_status_ui(ui: &MainWindow, doc: &DocumentBuffer) {
     }
 }
 
+/// 統一更新搜尋結果 UI 反饋（DRY 萃取共用邏輯）
+fn update_search_ui_feedback(ui: &MainWindow, res: Option<(usize, usize)>, query: &str) {
+    if query.is_empty() {
+        ui.set_search_status_text("".into());
+    } else if let Some((cur, total)) = res {
+        ui.set_search_status_text(format!("{}/{}", cur, total).into());
+    } else {
+        ui.set_search_status_text("查無結果".into());
+    }
+}
+
+/// 若編輯器當前選取非空單行文字，自動填入搜尋關鍵字輸入框（DRY 萃取共用邏輯）
+fn populate_search_query_from_selection(ui: &MainWindow, doc: &DocumentBuffer) {
+    let selected = doc.editor.selected_text();
+    if !selected.is_empty() && !selected.contains('\n') {
+        ui.set_search_query(selected.into());
+        update_search_status_ui(ui, doc);
+    }
+}
+
 /// 產生狀態列顯示字串，包含位元組長度、修改標記與無損解碼錯誤警告
 fn format_status_info(doc: &DocumentBuffer) -> String {
     let modified_mark = if doc.is_modified { " *" } else { "" };
@@ -270,34 +290,10 @@ fn main() -> Result<(), slint::PlatformError> {
         main_window.on_find_next_clicked(move || {
             let Some(ui) = ui_handle.upgrade() else { return; };
             let query = ui.get_search_query();
-            let mut d = doc_clone.borrow_mut();
-
-            if d.edit_mode == EditMode::Hex {
-                match d.find_hex(query.as_str()) {
-                    Ok(offsets) if !offsets.is_empty() => {
-                        ui.set_search_status_text(
-                            format!("找到 {} 處 (首項: 0x{:X})", offsets.len(), offsets[0]).into(),
-                        );
-                    }
-                    Ok(_) => {
-                        ui.set_search_status_text("查無結果".into());
-                    }
-                    Err(e) => {
-                        ui.set_search_status_text(format!("Hex 格式錯誤: {}", e).into());
-                    }
-                }
-                return;
-            }
-
             let opts = get_search_options(&ui);
+            let mut d = doc_clone.borrow_mut();
             let res = d.find_next(query.as_str(), &opts);
-            if let Some((cur, total)) = res {
-                ui.set_search_status_text(format!("{}/{}", cur, total).into());
-            } else if query.is_empty() {
-                ui.set_search_status_text("".into());
-            } else {
-                ui.set_search_status_text("查無結果".into());
-            }
+            update_search_ui_feedback(&ui, res, query.as_str());
             sync_ui_from_doc(&ui, &d);
         });
     }
@@ -312,13 +308,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let opts = get_search_options(&ui);
             let mut d = doc_clone.borrow_mut();
             let res = d.find_prev(query.as_str(), &opts);
-            if let Some((cur, total)) = res {
-                ui.set_search_status_text(format!("{}/{}", cur, total).into());
-            } else if query.is_empty() {
-                ui.set_search_status_text("".into());
-            } else {
-                ui.set_search_status_text("查無結果".into());
-            }
+            update_search_ui_feedback(&ui, res, query.as_str());
             sync_ui_from_doc(&ui, &d);
         });
     }
@@ -383,22 +373,14 @@ fn main() -> Result<(), slint::PlatformError> {
                     "f" | "F" => {
                         if let Some(ui) = ui_handle.upgrade() {
                             ui.set_show_search_panel(true);
-                            let selected = d.editor.selected_text();
-                            if !selected.is_empty() && !selected.contains('\n') {
-                                ui.set_search_query(selected.into());
-                                update_search_status_ui(&ui, &d);
-                            }
+                            populate_search_query_from_selection(&ui, &d);
                         }
                     }
                     "h" | "H" => {
                         if let Some(ui) = ui_handle.upgrade() {
                             ui.set_show_search_panel(true);
                             ui.set_show_replace(true);
-                            let selected = d.editor.selected_text();
-                            if !selected.is_empty() && !selected.contains('\n') {
-                                ui.set_search_query(selected.into());
-                                update_search_status_ui(&ui, &d);
-                            }
+                            populate_search_query_from_selection(&ui, &d);
                         }
                     }
                     _ => return false,
@@ -459,11 +441,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     } else {
                         d.find_next(query.as_str(), &opts)
                     };
-                    if let Some((cur, total)) = res {
-                        ui.set_search_status_text(format!("{}/{}", cur, total).into());
-                    } else if !query.is_empty() {
-                        ui.set_search_status_text("查無結果".into());
-                    }
+                    update_search_ui_feedback(&ui, res, query.as_str());
                 }
                 true
             } else if key_str.starts_with(char::from(Key::Escape)) {

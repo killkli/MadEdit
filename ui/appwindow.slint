@@ -150,12 +150,13 @@ export component MainWindow inherits Window {
                         font-size: 13px;
                     }
 
-                    LineEdit {
+                    search-input := LineEdit {
                         width: 200px;
                         placeholder-text: "輸入關鍵字...";
                         text <=> root.search-query;
                         edited(t) => { root.search-query-changed(t); }
                         accepted => { root.find-next-clicked(); }
+                        init => { self.focus(); }
                     }
 
                     Button {

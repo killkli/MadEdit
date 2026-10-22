@@ -26,15 +26,25 @@ impl SearchOptions {
 pub struct SearchMatch {
     pub start: TextPosition,
     pub end: TextPosition,
+    pub byte_offset: usize,
+    pub byte_len: usize,
     pub matched_text: String,
 }
 
 impl SearchMatch {
     #[allow(dead_code)]
-    pub fn new(start: TextPosition, end: TextPosition, matched_text: String) -> Self {
+    pub fn new(
+        start: TextPosition,
+        end: TextPosition,
+        byte_offset: usize,
+        byte_len: usize,
+        matched_text: String,
+    ) -> Self {
         Self {
             start,
             end,
+            byte_offset,
+            byte_len,
             matched_text,
         }
     }
@@ -114,6 +124,7 @@ pub fn find_all_matches(
 ) -> Result<Vec<SearchMatch>, String> {
     let re = build_regex(query, options)?;
     let mut matches = Vec::new();
+    let mut line_start_byte_offset = 0;
 
     for (line_idx, line) in lines.iter().enumerate() {
         for m in re.find_iter(line) {
@@ -125,12 +136,26 @@ pub fn find_all_matches(
             matches.push(SearchMatch {
                 start: TextPosition::new(line_idx, start_col),
                 end: TextPosition::new(line_idx, end_col),
+                byte_offset: line_start_byte_offset + start_byte,
+                byte_len: end_byte - start_byte,
                 matched_text: m.as_str().to_string(),
             });
         }
+        line_start_byte_offset += line.len() + 1; // 預估包含換行字元
     }
 
     Ok(matches)
+}
+
+/// 計算匹配總次數
+#[allow(dead_code)]
+pub fn count_matches(
+    lines: &[String],
+    query: &str,
+    options: &SearchOptions,
+) -> Result<usize, String> {
+    let matches = find_all_matches(lines, query, options)?;
+    Ok(matches.len())
 }
 
 /// 尋找游標之後的下一個匹配項目（環狀循環）

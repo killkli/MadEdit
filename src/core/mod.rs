@@ -17,6 +17,6 @@ pub use model::{EditMode, NewLineFormat};
 pub use piece_table::{BufferSource, LineIndex, OriginalBuffer, Piece, PieceTable};
 #[allow(unused_imports)]
 pub use search::{
-    build_regex, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
+    build_regex, count_matches, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
     parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
 };

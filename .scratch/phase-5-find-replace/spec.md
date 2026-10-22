@@ -27,14 +27,14 @@ Status: closed
      - `F3` / `Enter`：尋找下一個。
      - `Shift+F3` / `Shift+Enter`：尋找上一個。
 
-## User Stories
+## 使用者故事 (User Stories)
 
-1. As a user, I want to press Ctrl+F to open an inline search bar, type a keyword, and see matches highlighted, so that I can easily find content.
-2. As a user, I want to toggle Match Case, Whole Word, and Regular Expressions, so that I have advanced query flexibility.
-3. As a user, I want to navigate between matches using F3 (Next) and Shift+F3 (Previous), so that I can step through results sequentially.
-4. As a user, I want to press Ctrl+H to open the replace bar, and replace single or all occurrences with instant feedback on replacement counts.
-5. As a user, I want to search for hex byte sequences (e.g., `48 65 6C 6C 6F`) while in Hex Mode, so that I can locate binary signatures.
-6. As a user, I want the search panel to show real-time match indices (e.g. `2/10`), so that I know where I am in the document.
+1. 身為使用者，我希望能按 Ctrl+F 開啟內嵌式搜尋列，輸入關鍵字並看到匹配項目高亮選取，以便快速尋找內容。
+2. 身為使用者，我希望能夠切換「大小寫符合」、「全字匹配」與「正規表達式」，以便具備進階且精準的檢索能力。
+3. 身為使用者，我希望使用 F3（下一個）與 Shift+F3（上一個）在匹配結果間循環導覽，以便逐項檢視結果。
+4. 身為使用者，我希望按 Ctrl+H 開啟取代列，執行單次或全部取代並即時獲得取代筆數反饋。
+5. 身為使用者，我希望在十六進位模式下能搜尋十六進位位元組序列（例如 `48 65 6C 6C 6F`），以便定位二進位特徵碼。
+6. 身為使用者，我希望搜尋面板能即時顯示目前匹配索引與總數（例如 `2/10`），以便掌握目前在文件中的位置。
 
 ## Implementation Decisions
 

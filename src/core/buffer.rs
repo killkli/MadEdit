@@ -411,11 +411,32 @@ impl DocumentBuffer {
         find_all_matches(&self.editor.lines, query, options)
     }
 
+    /// 計算符合搜尋條件之匹配總次數（支援文字模式與十六進位 Hex 模式）
+    #[allow(dead_code)]
+    pub fn count_matches(&self, query: &str, options: &SearchOptions) -> usize {
+        if query.is_empty() {
+            return 0;
+        }
+        if self.edit_mode == EditMode::Hex {
+            self.find_hex(query).map(|m| m.len()).unwrap_or(0)
+        } else {
+            self.find_all(query, options).map(|m| m.len()).unwrap_or(0)
+        }
+    }
+
     /// 取得搜尋匹配統計資訊：回傳 (當前選取匹配項索引1-based, 總匹配次數)
     #[allow(dead_code)]
     pub fn get_search_status(&self, query: &str, options: &SearchOptions) -> (usize, usize) {
         if query.is_empty() {
             return (0, 0);
+        }
+        if self.edit_mode == EditMode::Hex {
+            let offsets = match self.find_hex(query) {
+                Ok(o) => o,
+                Err(_) => return (0, 0),
+            };
+            let total = offsets.len();
+            return if total > 0 { (1, total) } else { (0, 0) };
         }
         let matches = match self.find_all(query, options) {
             Ok(m) => m,
@@ -451,6 +472,13 @@ impl DocumentBuffer {
         if query.is_empty() {
             return None;
         }
+        if self.edit_mode == EditMode::Hex {
+            let offsets = self.find_hex(query).ok()?;
+            if offsets.is_empty() {
+                return None;
+            }
+            return Some((1, offsets.len()));
+        }
         let matches = self.find_all(query, options).ok()?;
         if matches.is_empty() {
             return None;
@@ -476,6 +504,13 @@ impl DocumentBuffer {
     pub fn find_prev(&mut self, query: &str, options: &SearchOptions) -> Option<(usize, usize)> {
         if query.is_empty() {
             return None;
+        }
+        if self.edit_mode == EditMode::Hex {
+            let offsets = self.find_hex(query).ok()?;
+            if offsets.is_empty() {
+                return None;
+            }
+            return Some((offsets.len(), offsets.len()));
         }
         let matches = self.find_all(query, options).ok()?;
         if matches.is_empty() {
@@ -913,6 +948,23 @@ mod tests {
 
         let offsets_prefix = doc.find_hex("0x41 0x42").unwrap();
         assert_eq!(offsets_prefix, vec![0]);
+    }
+
+    #[test]
+    fn test_buffer_count_matches_and_hex_dispatch() {
+        let mut doc = DocumentBuffer::new();
+        doc.load_file_from_memory("ABCDEF ABCDEF".to_string());
+        let opts = SearchOptions::default();
+
+        // 文字模式計數
+        assert_eq!(doc.count_matches("ABC", &opts), 2);
+        assert_eq!(doc.count_matches("XYZ", &opts), 0);
+
+        // 切換至 Hex 模式
+        doc.set_edit_mode(EditMode::Hex);
+        assert_eq!(doc.count_matches("41 42", &opts), 2);
+        assert_eq!(doc.find_next("41 42", &opts), Some((1, 2)));
+        assert_eq!(doc.find_prev("41 42", &opts), Some((2, 2)));
     }
 }
 
