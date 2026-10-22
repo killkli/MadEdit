@@ -1,4 +1,4 @@
-# MadEdit-Rust 專案指南 (AGENTS.md)
+# MadEdit 專案指南 (AGENTS.md)
 
 本文件專為接手本專案的 AI 代理人撰寫，旨在提供完整的專案背景、架構設計、當前進度與後續開發指引。
 
@@ -26,6 +26,7 @@
 - **檔案對話框**：`rfd` (Rust File Dialog) - 支援跨平台原生系統視窗。
 - **編碼轉換**：`encoding_rs` - 高效能多字元編碼支援。
 - **記憶體對映**：`memmap2` - 支援超大檔案零拷貝秒開與隨機分頁存取。
+- **應用程式圖示**：`embed-resource`（build-dependency） - 僅於 Windows 目標平台啟用，將 `assets/madedit-icon.ico` 嵌入 `.exe` 資源；其他平台為空操作。
 - **設計哲學**：**KISS 原則 (Keep It Simple, Stupid)**，避免過度抽象與過早最佳化；核心資料邏輯（`src/core/`）與 UI 展現層（`ui/`）保持分離。
 
 ---
@@ -33,13 +34,25 @@
 ## 3. 專案目錄結構
 
 ```text
-D:\Git\MadEdit-Rust\
+D:\Git\MadEdit\
 ├── Cargo.toml              # 專案相依性與套件設定
 ├── Cargo.lock              # 相依性鎖定檔（需納入版控）
-├── build.rs                # Slint UI 編譯腳本 (slint_build::compile)
+├── build.rs                # Slint UI 編譯腳本 (slint_build::compile) + Windows 圖示資源嵌入
 ├── .gitignore
+├── assets\                 # 圖示資產與桌面整合檔
+│   ├── madedit-icon.svg    # 應用程式圖示來源真檔（唯一真實來源，人工編輯此檔）
+│   ├── madedit-icon.png    # Slint 視窗圖示（@image-url 內嵌）
+│   ├── madedit-icon.ico    # Windows 執行檔圖示資源
+│   ├── madedit.desktop     # Linux 桌面整合項目
+│   ├── make_icons.py       # 由 SVG 重新產生 PNG / ICO 的腳本
+│   ├── icons-src\          # 原版 MadEdit 工具列圖示來源（XPM，勿手動修改）
+│   │   └── README.md       # 圖示來源與 GNU GPL 授權說明
+│   ├── icons\              # 由 icons-src 轉換而來的 PNG（勿手動修改）
+│   └── make_toolbar_icons.py # XPM → PNG 轉換腳本（純標準函式庫）
 ├── ui\
-│   └── appwindow.slint     # 主視窗 Slint UI 介面（工具列、自繪編輯區、狀態列）
+│   ├── theme.slint         # 經典樣式元件庫（配色、按鈕、輸入框、核取方塊）
+│   ├── menubar.slint       # 經典選單列與彈出選單元件
+│   └── appwindow.slint     # 主視窗 Slint UI 介面（選單列、工具列、分頁、編輯區、狀態列）
 ├── src\
 │   ├── main.rs             # 應用程式入口點，負責 Slint UI 與 Core 狀態雙向綁定
 │   └── core\
@@ -59,7 +72,7 @@ D:\Git\MadEdit-Rust\
 
 ## 4. 常用開發指令
 
-請在 `D:\Git\MadEdit-Rust` 目錄下執行（Windows 環境使用 PowerShell）：
+請在 `D:\Git\MadEdit` 目錄下執行（Windows 環境使用 PowerShell）；Linux 環境則為 `/home/tenyi/Projects/MadEdit`：
 
 - **語法與型別檢查**：
   ```powershell
@@ -73,12 +86,29 @@ D:\Git\MadEdit-Rust\
   ```powershell
   cargo run
   ```
+- **重新產生應用程式圖示**（修改 `assets/madedit-icon.svg` 後執行）：
+  ```bash
+  python3 assets/make_icons.py
+  ```
+- **重新產生工具列圖示**（修改 `assets/icons-src/*.xpm` 後執行）：
+  ```bash
+  python3 assets/make_toolbar_icons.py
+  ```
 
 ---
 
 ## 5. 當前完成進度
 
 - [x] 專案基礎骨架與 Git 版本控制初始化。
+- [x] 專案正式更名為 MadEdit（移除 `-Rust` 套件後綴）：
+  - `Cargo.toml` 套件名 `MadEdit-Rust` → `MadEdit`，建置產出的執行檔命名為 `MadEdit`（Windows 為 `MadEdit.exe`）。
+  - Slint 主視窗標題同步改為 `MadEdit`；專案目錄更名為 `MadEdit`。
+  - 全面同步 `AGENTS.md`、`GLOSSARY.md`、ADR 與 `.scratch/` specs 中的專案名稱。
+- [x] 應用程式圖示與工作列整合：
+  - `assets/madedit-icon.svg` 為圖示唯一真實來源，`assets/make_icons.py` 產生 `madedit-icon.png`（Slint 視窗圖示）與多尺寸 `madedit-icon.ico`（Windows 執行檔圖示）。
+  - Slint `Window` 設定 `icon` 屬性，工作列 / 標題列顯示專屬圖示。
+  - `build.rs` 於 Windows 目標平台透過 `embed-resource` 將 `.ico` 嵌入 `.exe` 資源（缺少 RC.EXE / windres 時僅發警告、不中斷建置）；其他平台空操作。
+  - 提供 `assets/madedit.desktop` 供 Linux 桌面環境（啟動器 / 工作列）整合。
 - [x] Slint UI 整合（視窗、工具列按鈕、文字編輯區、狀態列）。
 - [x] 原生跨平台「開啟舊檔」與「儲存檔案」對話框。
 - [x] 模式切換 UI（文字 / 列塊 / 十六進位按鈕與狀態）。
@@ -129,6 +159,13 @@ D:\Git\MadEdit-Rust\
   - 存檔直接透過 Piece 清單串流寫出，徹底消除全檔記憶體佔用與按鍵重複全篇編碼之負擔。
 - [x] 狀態列即時顯示（長度、修改狀態標記、解碼警告、模式、換行與編碼）。
 - [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯、Piece Table 編輯/刪除、LineIndex 按需讀取與 CR/LF/CRLF 支援、大檔 mmap 秒開、大檔編輯與原子存檔測試、相容性查詢介面、字元格網視覺切片提取、矩形選取高亮渲染、列塊複製/剪下/貼上/多行同步打字、Buffer 列塊模式渲染測試）。
+- [x] 經典 MadEdit 風格介面重塑（Phase 10 完成）：
+  - 新增 `ui/theme.slint` 經典樣式元件庫（配色、`ClassicToolButton`、`ClassicButton`、`ClassicLineEdit`、`ClassicCheckBox`、`ToolbarSeparator`、自繪提示框）。
+  - 新增 `ui/menubar.slint` 經典選單列與彈出選單（`MenuItemDef` / `MenuDef` 資料模型、分隔線、核取記號、快捷鍵、停用項灰顯、單一共用 `PopupWindow` + `open-index`）。
+  - 重寫 `ui/appwindow.slint`：經典選單列 → 原版圖示工具列（6 組 21 個圖示）→ 分頁列 → 搜尋／跳轉／外部變更橫幅 → 編輯區 → 六欄位狀態列（Ln / CharPos / SelSize / 編碼.DOS / 唯讀 / INS）。
+  - `src/main.rs` 依原版 `CommandTable` 建構 7 個頂層選單（檔案／編輯／搜尋／檢視／工具／視窗／說明），以 Rust 端計算選單寬度、x-offset 與彈出選單尺寸，並以 `menu-action(string)` 回呼統一派送動作。
+  - 語法突顯／字元編碼／換行格式／重新解碼／轉換編碼改置於選單，點選後開啟通用可捲動選擇面板。
+  - 新增 `assets/icons-src/`（38 個原版 XPM 來源 + GPL 授權說明）與 `assets/make_toolbar_icons.py`（純標準函式庫 XPM→PNG 轉換器）。
 
 ### 已知問題（優先處理）
 
@@ -172,6 +209,11 @@ D:\Git\MadEdit-Rust\
 
 ### Phase 9: 外部檔案變更監控 (File Watcher & Auto Reload) - [已完成]
 - 已完成檔案時間戳記 (`mtime`) 比對、Windows 記憶體對映解鎖、Slint 定時器、頂部內嵌黃色通知橫幅與游標/書籤智慧保留重新載入。
+
+### Phase 10: 經典 MadEdit 風格介面重塑 (Classic UI Redesign) - [已完成]
+- 已完成經典 Windows 風格選單列、彈出選單、原版圖示工具列、分頁列與六欄位狀態列。
+- 已完成選單模型與核心狀態雙向同步（編輯模式核取記號、停用／啟用狀態、寬度與位置計算）。
+- 已完成原版 MadEdit XPM 圖示沿用與標準函式庫 PNG 轉換工具鏈。
 
 ---
 
