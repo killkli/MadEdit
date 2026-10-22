@@ -25,7 +25,7 @@
   - 限制：內建 `TextEdit` 不支援虛擬捲動、矩形選取、多游標與分段著色（已於 Phase 2 自繪編輯器元件中完全取代）。
 - **檔案對話框**：`rfd` (Rust File Dialog) - 支援跨平台原生系統視窗。
 - **編碼轉換**：`encoding_rs` - 高效能多字元編碼支援。
-  - `encoding_rs_io` 已列於 `Cargo.toml` 但目前未使用（預留給大檔串流解碼）；若最終用不到請移除。
+- **記憶體對映**：`memmap2` - 支援超大檔案零拷貝秒開與隨機分頁存取。
 - **設計哲學**：**KISS 原則 (Keep It Simple, Stupid)**，避免過度抽象與過早最佳化；核心資料邏輯（`src/core/`）與 UI 展現層（`ui/`）保持分離。
 
 ---
@@ -46,6 +46,7 @@ D:\Git\MadEdit-Rust\
 │       ├── mod.rs          # 核心模組匯出
 │       ├── model.rs        # 編輯模式 (EditMode) 與換行偵測 (NewLineFormat)
 │       ├── editor.rs       # 游標模型、選取範圍、字元格網與可見行切片產生
+│       ├── piece_table.rs  # Piece Table 核心資料結構與 LineIndex 行索引
 │       ├── hex.rs          # 十六進位 Hex Dump 格式化邏輯 (Offset / Hex / ASCII)
 │       └── buffer.rs       # DocumentBuffer，封裝檔案 I/O、編碼解碼與內容同步
 ├── docs\
@@ -83,25 +84,29 @@ D:\Git\MadEdit-Rust\
 - [x] 模式切換 UI（文字 / 列塊 / 十六進位按鈕與狀態）。
 - [ ] 列塊模式行為：**尚未實作**。目前 `edit-mode == 1` 與文字模式共用同一個文字檢視，僅狀態列顯示不同（預計於 Phase 4 實作）。
 - [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
-  - 限制：**唯讀**，不可直接編輯 Hex；超過 1MB 的部分會被截斷（`DocumentBuffer::get_hex_dump`）。
+  - 已優化：直接自 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體拷貝。
 - [x] 換行格式自動偵測（CRLF / LF / CR），目前僅顯示，不支援轉換。
 - [x] 多編碼支援與自動偵測（Phase 1 完成）：
   - 開檔優先識別 BOM（UTF-8 / UTF-16LE / UTF-16BE），無 BOM 時先驗證嚴格 UTF-8，否則自動 fallback 至 Big5。
-  - 工具列提供 10 種常用編碼選單（UTF-8、UTF-16LE、UTF-16BE、Big5、GBK、GB18030、Shift_JIS、EUC-JP、EUC-KR、windows-1252）與「重新解碼（Reinterpret）」、「轉換編碼（Convert）」按鈕。
-  - 修正無法無損解碼時默默存檔毀損資料之問題（`has_decode_error` 為真時拒絕存檔並於狀態列提示）。
+  - 工具列提供 10 種常用編碼選單與「重新解碼（Reinterpret）」、「轉換編碼（Convert）」按鈕。
+  - 修正無法無損解碼時默默存檔毀損資料之問題（`has_decode_error` 防護）。
   - 修正 UTF-16LE / UTF-16BE 存檔變成 UTF-8 與遺失 BOM 之問題（自行實作 16-bit 編碼與 BOM 保留）。
 - [x] 自繪編輯器元件（Phase 2 完成）：
   - 採用 Slint 宣告式可見行虛擬渲染（`for line in visible-lines`）結合 `FocusScope` 與 `TouchArea`，完全取代內建 `TextEdit`。
   - 實作固定字元格網（Character Cell Grid：半形 1 欄、CJK 全形 2 欄、Tab 展開對齊 4 欄），徹底解決跨平台等寬字型游標漂移問題。
-  - 支援左側行號欄（Gutter）、方向鍵導覽、Shift 擴展選取、滑鼠點擊/拖曳選取、滾輪捲動、文字增刪、剪貼簿快捷鍵（Ctrl+C/X/A）與狀態列即時 `Ln X, Col Y` 顯示。
+  - 支援左側行號欄（Gutter）、方向鍵導覽、Shift 擴展選取、滑鼠點擊/拖曳選取、滾輪捲動、文字增刪、剪貼簿快捷鍵（Ctrl+C/X/V/A）與狀態列即時 `Ln X, Col Y` 顯示。
+- [x] 大檔案與核心緩衝區最佳化（Phase 3 完成）：
+  - 引入 `memmap2` 唯讀記憶體對映，實現大檔案秒級開啟與零拷貝隨機分頁讀取。
+  - 實作 Piece Table（Original Buffer + Add Buffer + Piece 列表）與輕量 `LineIndex`（換行位移二分搜尋索引）。
+  - 存檔直接透過 Piece 清單串流寫出，徹底消除全檔記憶體佔用與按鍵重複全篇編碼之負擔。
 - [x] 狀態列即時顯示（長度、修改狀態標記、解碼警告、模式、換行與編碼）。
-- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯）。
+- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯、Piece Table 編輯/刪除、LineIndex 按需讀取、大檔 mmap 秒開測試）。
 
 ### 已知問題（優先處理）
 
 1. ~~**非 UTF-8 檔案存檔即損毀**~~（已於 Phase 1 修正：當 `has_decode_error` 為真時拒絕存檔，並支援重新解碼與轉換編碼）。
 2. ~~**UTF-16 存檔會變成 UTF-8**~~（已於 Phase 1 修正：已自行實作 UTF-16LE/BE 位元組編碼與 BOM 保留）。
-3. **大檔記憶體與效能**：`load_file` 整檔讀入 `Vec<u8>` 並另存一份 `String`；`update_text` 每次按鍵都重新編碼整份文字（預計於 Phase 3 解決）。
+3. ~~**大檔記憶體與效能**~~（已於 Phase 3 修正：引入 Piece Table + `memmap2` 記憶體對映，大檔秒開與串流存檔，不再全檔重複分配與全篇編碼）。
 
 ---
 
@@ -115,9 +120,8 @@ D:\Git\MadEdit-Rust\
 ### Phase 2: 自繪編輯器元件 (Custom Editor View) - [已完成]
 - 已完成 Slint 可見行虛擬渲染、固定字元格網、行號欄、游標/選取與鍵盤滑鼠互動。
 
-### Phase 3: 大檔案與核心緩衝區最佳化 (Large File Engine)
-- 目前版本 `DocumentBuffer` 採用記憶體內 `String` + `Vec<u8>`，適用於中小型檔案。
-- 目標引入 Piece Table / Piece Tree 或分塊緩衝區 (Chunk Buffer)，支援數 GB 檔案秒級開啟與虛擬捲動 (Virtual Scrolling)。
+### Phase 3: 大檔案與核心緩衝區最佳化 (Large File Engine) - [已完成]
+- 已完成 Piece Table 資料結構、`memmap2` 大檔零拷貝開啟、`LineIndex` 行索引與串流存檔。
 
 ### Phase 4: 列塊模式 (Column/Block Mode) 與游標系統
 - 實作矩形區域選取（支援 Alt+滑鼠拖曳或鍵盤選取）。

@@ -4,9 +4,9 @@
 
 **Blocked by:** 01: Piece Table 核心資料結構
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 實作 `LineIndex::build_from_piece_table`，記錄每行的位元組起始位移
-- [ ] 支援二分搜尋取得指定行號之 `(start_offset, end_offset)`
-- [ ] 實作按需讀取指定行範圍位元組並解碼出 `Vec<String>`
-- [ ] 撰寫單元測試覆蓋不同換行格式（CRLF / LF）與隨機行定位
+- [x] 實作 `LineIndex::build_from_piece_table`，記錄每行的位元組起始位移
+- [x] 支援二分搜尋取得指定行號之 `(start_offset, end_offset)`
+- [x] 實作按需讀取指定行範圍位元組並解碼出 `Vec<String>`
+- [x] 撰寫單元測試覆蓋不同換行格式（CRLF / LF）與隨機行定位

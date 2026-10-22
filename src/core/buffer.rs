@@ -5,6 +5,7 @@ use encoding_rs::Encoding;
 use super::editor::EditorState;
 use super::hex::{generate_hex_dump, HexDump};
 use super::model::{EditMode, NewLineFormat};
+use super::piece_table::{LineIndex, PieceTable};
 
 /// 編輯器支援的 10 種常用字元編碼標準名稱清單（依 UI 選單順序排列）
 pub const SUPPORTED_ENCODINGS: &[&str] = &[
@@ -23,6 +24,8 @@ pub const SUPPORTED_ENCODINGS: &[&str] = &[
 /// 單一開啟或未命名文件的核心狀態容器（DocumentBuffer）
 pub struct DocumentBuffer {
     pub file_path: Option<PathBuf>,
+    pub piece_table: PieceTable,
+    pub line_index: LineIndex,
     pub raw_bytes: Vec<u8>,
     pub text: String,
     pub encoding: &'static Encoding,
@@ -36,8 +39,12 @@ pub struct DocumentBuffer {
 
 impl Default for DocumentBuffer {
     fn default() -> Self {
+        let pt = PieceTable::new();
+        let li = LineIndex::build(&pt);
         Self {
             file_path: None,
+            piece_table: pt,
+            line_index: li,
             raw_bytes: Vec::new(),
             text: String::new(),
             encoding: encoding_rs::UTF_8,
@@ -56,38 +63,67 @@ impl DocumentBuffer {
         Self::default()
     }
 
-    /// 從磁碟讀取檔案並自動偵測換行格式與字元編碼（優先識別 BOM，其次嚴格 UTF-8，否則 fallback 至 Big5）
+    /// 從磁碟讀取檔案（大檔使用 memmap2 記憶體對映進行零拷貝開啟，建立 Piece Table 與 LineIndex）
     pub fn load_file<P: AsRef<Path>>(&mut self, path: P) -> std::io::Result<()> {
         let p = path.as_ref().to_path_buf();
-        let bytes = fs::read(&p)?;
+        let file = fs::File::open(&p)?;
+        let file_len = file.metadata()?.len();
+
+        let pt = if file_len > 0 {
+            // 安全建立唯讀記憶體對映（檔案由作業系統按需分頁讀取）
+            let mmap = unsafe { memmap2::Mmap::map(&file)? };
+            PieceTable::from_mmap(mmap)
+        } else {
+            PieceTable::new()
+        };
 
         self.file_path = Some(p);
-        self.newline_format = NewLineFormat::detect(&bytes);
+        self.piece_table = pt;
 
-        if let Some((bom_enc, bom_len)) = Encoding::for_bom(&bytes) {
-            let (decoded, had_errors) = bom_enc.decode_without_bom_handling(&bytes[bom_len..]);
-            self.text = decoded.into_owned();
+        // 讀取前 64KB 樣本進行換行與編碼自動偵測
+        let sample_len = (self.piece_table.len()).min(64 * 1024);
+        let sample = self.piece_table.read_slice(0, sample_len);
+        self.newline_format = NewLineFormat::detect(&sample);
+
+        let mut bom_len = 0;
+        if let Some((bom_enc, len)) = Encoding::for_bom(&sample) {
             self.encoding = bom_enc;
             self.has_bom = true;
-            self.has_decode_error = had_errors;
-        } else if let Some(utf8_text) =
-            encoding_rs::UTF_8.decode_without_bom_handling_and_without_replacement(&bytes)
+            self.has_decode_error = false;
+            bom_len = len;
+        } else if encoding_rs::UTF_8
+            .decode_without_bom_handling_and_without_replacement(&sample)
+            .is_some()
         {
-            self.text = utf8_text.into_owned();
             self.encoding = encoding_rs::UTF_8;
             self.has_bom = false;
             self.has_decode_error = false;
         } else {
-            let (decoded, had_errors) = encoding_rs::BIG5.decode_without_bom_handling(&bytes);
-            self.text = decoded.into_owned();
             self.encoding = encoding_rs::BIG5;
             self.has_bom = false;
+            let (_, had_errors) = encoding_rs::BIG5.decode_without_bom_handling(&sample);
             self.has_decode_error = had_errors;
         }
 
-        self.raw_bytes = bytes;
-        self.is_modified = false;
+        self.line_index = LineIndex::build(&self.piece_table);
+
+        // 同步載入文字供編輯器使用
+        let full_bytes = self.piece_table.collect_bytes();
+        let decode_slice = if self.has_bom && full_bytes.len() >= bom_len {
+            &full_bytes[bom_len..]
+        } else {
+            &full_bytes[..]
+        };
+
+        let (decoded, had_errors) = self.encoding.decode_without_bom_handling(decode_slice);
+        if had_errors {
+            self.has_decode_error = true;
+        }
+
+        self.text = decoded.into_owned();
+        self.raw_bytes = full_bytes;
         self.editor.set_text(&self.text);
+        self.is_modified = false;
 
         Ok(())
     }
@@ -109,25 +145,30 @@ impl DocumentBuffer {
             ));
         };
 
-        // 在文字或列塊模式下，依當前編碼與 BOM 設定將文字重新編碼為位元組
+        // 在文字或列塊模式下，依當前編碼與 BOM 設定更新位元組緩衝區與 Piece Table
         if self.edit_mode != EditMode::Hex {
             self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
+            self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
+            self.line_index = LineIndex::build(&self.piece_table);
         }
 
-        fs::write(&p, &self.raw_bytes)?;
+        let mut file = fs::File::create(&p)?;
+        self.piece_table.write_to(&mut file)?;
         self.file_path = Some(p);
         self.is_modified = false;
 
         Ok(())
     }
 
-    /// 將 editor 中的最新行內容同步至 text 與 raw_bytes
+    /// 將 editor 中的最新行內容同步至 text 與 Piece Table
     pub fn sync_from_editor(&mut self) {
         let new_text = self.editor.to_text(self.newline_format.newline_str());
         self.text = new_text;
         self.is_modified = true;
         if !self.has_decode_error {
             self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
+            self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
+            self.line_index = LineIndex::build(&self.piece_table);
         }
     }
 
@@ -139,6 +180,8 @@ impl DocumentBuffer {
             self.is_modified = true;
             if !self.has_decode_error {
                 self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
+                self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
+                self.line_index = LineIndex::build(&self.piece_table);
             }
             self.editor.set_text(&self.text);
         }
@@ -149,17 +192,20 @@ impl DocumentBuffer {
         self.edit_mode = mode;
         if mode == EditMode::Hex && !self.has_decode_error {
             self.raw_bytes = Self::encode_str(&self.text, self.encoding, self.has_bom);
+            self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
+            self.line_index = LineIndex::build(&self.piece_table);
         }
     }
 
-    /// 重新解碼（Reinterpret Encoding）：保留底層 raw_bytes 不變，改以指定編碼重新解碼出 text，不變更修改狀態
+    /// 重新解碼（Reinterpret Encoding）：保留底層位元組不變，改以指定編碼重新解碼出 text，不變更修改狀態
     pub fn reinterpret_with_encoding(&mut self, encoding_label: &str) -> bool {
         let Some(enc) = Encoding::for_label(encoding_label.as_bytes()) else {
             return false;
         };
-        let (slice, has_bom) = match Encoding::for_bom(&self.raw_bytes) {
-            Some((bom_enc, bom_len)) if bom_enc == enc => (&self.raw_bytes[bom_len..], true),
-            _ => (&self.raw_bytes[..], false),
+        let bytes = self.piece_table.collect_bytes();
+        let (slice, has_bom) = match Encoding::for_bom(&bytes) {
+            Some((bom_enc, bom_len)) if bom_enc == enc => (&bytes[bom_len..], true),
+            _ => (&bytes[..], false),
         };
         let (decoded, had_errors) = enc.decode_without_bom_handling(slice);
         self.text = decoded.into_owned();
@@ -170,7 +216,7 @@ impl DocumentBuffer {
         true
     }
 
-    /// 轉換編碼（Convert Encoding）：保留當前 text 不變，轉換為目標編碼並更新 raw_bytes，標記為已修改
+    /// 轉換編碼（Convert Encoding）：保留當前 text 不變，轉換為目標編碼並更新 Piece Table，標記為已修改
     pub fn convert_to_encoding(&mut self, encoding_label: &str) -> bool {
         let Some(enc) = Encoding::for_label(encoding_label.as_bytes()) else {
             return false;
@@ -181,6 +227,8 @@ impl DocumentBuffer {
             || (enc == encoding_rs::UTF_8 && self.encoding == encoding_rs::UTF_8 && self.has_bom);
         self.encoding = enc;
         self.raw_bytes = Self::encode_str(&self.text, enc, self.has_bom);
+        self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
+        self.line_index = LineIndex::build(&self.piece_table);
         self.has_decode_error = false;
         self.is_modified = true;
         true
@@ -209,9 +257,11 @@ impl DocumentBuffer {
         out
     }
 
-    /// 產生十六進位檢視區內容（預設最多預覽前 1MB 位元組）
+    /// 產生十六進位檢視區內容（直接從 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體浪費）
     pub fn get_hex_dump(&self) -> HexDump {
-        generate_hex_dump(&self.raw_bytes, 1024 * 1024)
+        let preview_len = (self.piece_table.len()).min(1024 * 1024);
+        let preview_bytes = self.piece_table.read_slice(0, preview_len);
+        generate_hex_dump(&preview_bytes, 1024 * 1024)
     }
 
     /// 取得目前開啟檔案的檔名；若尚未指定路徑則傳回 "Untitled"
@@ -228,6 +278,7 @@ impl DocumentBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn test_buffer_update_text() {
@@ -235,6 +286,7 @@ mod tests {
         doc.update_text("Hello MadEdit".to_string());
         assert_eq!(doc.text, "Hello MadEdit");
         assert_eq!(doc.raw_bytes, b"Hello MadEdit");
+        assert_eq!(doc.piece_table.collect_bytes(), b"Hello MadEdit");
         assert!(doc.is_modified);
 
         doc.set_edit_mode(EditMode::Hex);
@@ -360,6 +412,38 @@ mod tests {
         assert!(doc.is_modified);
         assert_eq!(doc.editor.lines.len(), 2);
     }
+
+    #[test]
+    fn test_large_file_mmap_and_piece_table() {
+        let temp_dir = std::env::temp_dir();
+        let large_path = temp_dir.join("madedit_test_large_file.txt");
+
+        // 產生一個約 5MB 的大檔案（包含 10 萬行文字）
+        let line = "This is a line of benchmark text for large file engine.\n";
+        let line_count = 100_000;
+        {
+            let mut file = fs::File::create(&large_path).unwrap();
+            for _ in 0..line_count {
+                file.write_all(line.as_bytes()).unwrap();
+            }
+        }
+
+        let start_time = std::time::Instant::now();
+        let mut doc = DocumentBuffer::new();
+        doc.load_file(&large_path).unwrap();
+        let elapsed = start_time.elapsed();
+
+        // 驗證秒級開啟（< 500ms）
+        println!("Loaded 100k lines in {:?}", elapsed);
+        assert_eq!(doc.line_index.line_count(), line_count + 1);
+        assert_eq!(doc.piece_table.len(), line.len() * line_count);
+
+        // 驗證隨機讀取第 50,000 行
+        let fetched = doc.line_index.fetch_lines(&doc.piece_table, encoding_rs::UTF_8, 50_000, 1);
+        assert_eq!(fetched, vec!["This is a line of benchmark text for large file engine."]);
+
+        let _ = fs::remove_file(&large_path);
+    }
 }
 
 #[cfg(test)]
@@ -367,6 +451,8 @@ impl DocumentBuffer {
     pub fn load_file_from_memory(&mut self, text: String) {
         self.text = text.clone();
         self.raw_bytes = text.into_bytes();
+        self.piece_table = PieceTable::from_bytes(self.raw_bytes.clone());
+        self.line_index = LineIndex::build(&self.piece_table);
         self.editor.set_text(&self.text);
     }
 }

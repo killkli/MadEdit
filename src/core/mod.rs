@@ -2,6 +2,7 @@ pub mod buffer;
 pub mod editor;
 pub mod hex;
 pub mod model;
+pub mod piece_table;
 
 pub use buffer::{DocumentBuffer, SUPPORTED_ENCODINGS};
 #[allow(unused_imports)]
@@ -11,3 +12,5 @@ pub use editor::{
 };
 #[allow(unused_imports)]
 pub use model::{EditMode, NewLineFormat};
+#[allow(unused_imports)]
+pub use piece_table::{BufferSource, LineIndex, OriginalBuffer, Piece, PieceTable};

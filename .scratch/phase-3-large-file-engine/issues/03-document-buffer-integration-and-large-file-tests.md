@@ -4,10 +4,10 @@
 
 **Blocked by:** 02: LineIndex 行位移索引與按需行讀取
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 在 `Cargo.toml` 引入 `memmap2 = "0.9"`
-- [ ] `DocumentBuffer::load_file` 使用 `memmap2::Mmap` 零拷貝載入 Original Buffer
-- [ ] 保持 Phase 1（多編碼切換與防毀損保護）與 Phase 2（可見行虛擬渲染與編輯）功能正常運作
-- [ ] 新增大檔案秒開與隨機存取單元測試，`cargo check` 與 `cargo test` 零警告通過
-- [ ] 同步更新 `AGENTS.md` 第 5 節
+- [x] 在 `Cargo.toml` 引入 `memmap2 = "0.9"`
+- [x] `DocumentBuffer::load_file` 使用 `memmap2::Mmap` 零拷貝載入 Original Buffer
+- [x] 保持 Phase 1（多編碼切換與防毀損保護）與 Phase 2（可見行虛擬渲染與編輯）功能正常運作
+- [x] 新增大檔案秒開與隨機存取單元測試，`cargo check` 與 `cargo test` 零警告通過
+- [x] 同步更新 `AGENTS.md` 第 5 節

@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] 定義 `BufferSource`（Original / Add）與 `Piece`（source, offset, length）
-- [ ] 實作 `PieceTable::new()`、`from_bytes()`、`len()`、`read_slice()`
-- [ ] 實作 `insert(offset, bytes)` 與 `delete(offset, length)`，支援跨片段的拆分與銜接
-- [ ] 撰寫單元測試覆蓋片段拆分、連續編輯與邊界極值
+- [x] 定義 `BufferSource`（Original / Add）與 `Piece`（source, offset, length）
+- [x] 實作 `PieceTable::new()`、`from_bytes()`、`len()`、`read_slice()`
+- [x] 實作 `insert(offset, bytes)` 與 `delete(offset, length)`，支援跨片段的拆分與銜接
+- [x] 撰寫單元測試覆蓋片段拆分、連續編輯與邊界極值
