@@ -177,7 +177,7 @@ D:\Git\MadEdit-Rust\
 2. **一律使用繁體中文**：溝通、文件與程式碼註解皆使用 `zh-TW` 繁體中文，註解需詳細說明意圖。
 3. **保持測試完整性**：新增核心邏輯時務必加入對應單元測試，並確保 `cargo test` 與 `cargo check` 零 Warning 通過。
 4. **Git 規範**：
-   - 主分支為 `master`；新功能請開 `feat/<名稱>` 分支開發。
+   - 主分支為 `main`；新功能請開 `feat/<名稱>` 分支開發。
    - Commit 遵循 Conventional Commits (例如 `feat: ...`, `fix: ...`, `refactor: ...`)。
 5. **文件同步**：完成功能或發現新限制時，同步更新本檔第 5 節進度與已知問題。
 
