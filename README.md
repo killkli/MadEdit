@@ -57,7 +57,8 @@ MadEdit-Rust/
 ├── build.rs                # Windows 執行檔圖示嵌入
 ├── assets/                 # 應用程式圖示、工具列圖示（取自原版）、拼字字典
 ├── scripts/
-│   └── make_appbundle.sh   # 產生 macOS MadEdit.app
+│   ├── make_appbundle.sh   # 產生 macOS MadEdit.app
+│   └── make_linux_dist.sh  # 產生 Linux 發行壓縮檔
 ├── src/
 │   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
 │   ├── app/                # egui 介面層（選單、工具列、自繪編輯區、Hex 檢視、對話框、命令表）
@@ -106,6 +107,22 @@ macOS 上的 GUI 程式需放在 `.app` bundle 內，才能正確顯示 Dock 圖
 
 > 由於未經 Apple 公證，從網路下載的 App 第一次開啟時可能被 Gatekeeper 阻擋，
 > 請在 Finder 中按右鍵選「打開」，或執行 `xattr -cr MadEdit.app` 移除隔離屬性。
+
+### Linux 發行檔
+
+可直接從 [Releases](https://github.com/tenyi/MadEdit/releases) 下載 `MadEdit-<版本>-linux-x86_64.tar.gz`，
+解壓縮後執行 `./MadEdit`，或執行 `./install.sh` 安裝到 `~/.local`（含應用程式選單項目與圖示）。
+
+自行打包時使用 [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) 鎖定 glibc 2.28，
+讓同一個執行檔可在較舊的發行版（如 Ubuntu 20.04）上執行：
+
+```bash
+cargo install cargo-zigbuild
+uv tool install ziglang        # 或自行安裝 zig 並略過下一行的環境變數
+CARGO_ZIGBUILD_ZIG_PATH=$(which python-zig) ./scripts/make_linux_dist.sh
+```
+
+產物位於 `dist/MadEdit-<版本>-linux-x86_64.tar.gz`（含執行檔、拼字字典、`.desktop`、圖示與 `install.sh`）。
 
 ---
 
