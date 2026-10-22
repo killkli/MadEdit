@@ -14,6 +14,7 @@ export struct VisibleLine {
     sel_width: length,
     has_caret: bool,
     caret_x: length,
+    has_bookmark: bool,
 }
 
 export component MainWindow inherits Window {
@@ -55,6 +56,10 @@ export component MainWindow inherits Window {
     in-out property <[string]> syntax-list: ["Plain Text"];
     in-out property <string> current-syntax: "Plain Text";
 
+    // 換行格式屬性
+    in-out property <[string]> newline-list: ["CRLF (Windows)", "LF (Unix/macOS)", "CR (Classic Mac)"];
+    in-out property <string> selected-newline: "CRLF (Windows)";
+
     // 指定行號跳轉面板屬性
     in-out property <bool> show-goto-panel: false;
     in-out property <string> goto-label-text: "移至行 (1 - 1):";
@@ -66,6 +71,7 @@ export component MainWindow inherits Window {
     callback reinterpret-encoding-clicked(string);
     callback convert-encoding-clicked(string);
     callback syntax-changed(string);
+    callback newline-format-changed(string);
     callback goto-confirmed(string);
     callback goto-cancelled();
 
@@ -144,6 +150,15 @@ export component MainWindow inherits Window {
                 model: root.syntax-list;
                 current-value <=> root.current-syntax;
                 selected(val) => { root.syntax-changed(val); }
+            }
+
+            Rectangle { width: 12px; }
+
+            ComboBox {
+                width: 140px;
+                model: root.newline-list;
+                current-value <=> root.selected-newline;
+                selected(val) => { root.newline-format-changed(val); }
             }
 
             Rectangle { horizontal-stretch: 1; }
@@ -339,17 +354,35 @@ export component MainWindow inherits Window {
                         border-width: 1px;
                         border-color: #e5e5e5;
 
-                        for line[i] in root.visible-lines : Text {
+                        for line[i] in root.visible-lines : Rectangle {
                             x: 0;
                             y: i * root.line-height;
-                            width: root.gutter-width - 8px;
+                            width: root.gutter-width;
                             height: root.line-height;
-                            text: line.line_number > 0 ? (line.line_number + "") : "";
-                            color: #888888;
-                            font-family: "Consolas, Courier New, monospace";
-                            font-size: 13px;
-                            horizontal-alignment: right;
-                            vertical-alignment: center;
+
+                            // 書籤標記：藍色小圓點
+                            if line.has_bookmark : Rectangle {
+                                x: 6px;
+                                y: (root.line-height - 8px) / 2;
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: #3b82f6;
+                            }
+
+                            Text {
+                                x: 0;
+                                y: 0;
+                                width: root.gutter-width - 8px;
+                                height: root.line-height;
+                                text: line.line_number > 0 ? (line.line_number + "") : "";
+                                color: line.has_bookmark ? #1d4ed8 : #888888;
+                                font-family: "Consolas, Courier New, monospace";
+                                font-size: 13px;
+                                font-weight: line.has_bookmark ? 700 : 400;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
                         }
                     }
 

@@ -388,6 +388,21 @@ impl DocumentBuffer {
         true
     }
 
+    /// 轉換換行格式（CRLF / LF / CR）：以目標換行符重新拼裝最新文字並同步至 Piece Table，標記為已修改
+    pub fn convert_newline_format(&mut self, new_format: NewLineFormat) -> bool {
+        if self.newline_format == new_format {
+            return false;
+        }
+        self.newline_format = new_format;
+        self.is_modified = true;
+        // 大檔未快取時防護不覆寫
+        if self.piece_table.len() <= SMALL_FILE_CACHE_LIMIT || !self.text.is_empty() {
+            self.text = self.editor.to_text(new_format.newline_str());
+            self.sync_bytes_to_piece_table();
+        }
+        true
+    }
+
     /// 將字串依指定編碼與 BOM 設定轉換為位元組序列（修正 encoding_rs 對 UTF-16 輸出為 UTF-8 的問題）
     fn encode_str(text: &str, enc: &'static Encoding, has_bom: bool) -> Vec<u8> {
         let mut out = Vec::new();
@@ -477,6 +492,26 @@ impl DocumentBuffer {
     /// 智慧行首（首次按下 Home 移動至縮排後第一個非空白字元，再次按下時移動至欄位 0）
     pub fn move_home_smart(&mut self, expand_selection: bool) {
         self.editor.move_home_smart(expand_selection);
+    }
+
+    /// 切換游標所在行的書籤狀態
+    pub fn toggle_bookmark(&mut self) -> bool {
+        self.editor.toggle_bookmark()
+    }
+
+    /// 環狀跳轉至下一個書籤行
+    pub fn next_bookmark(&mut self) -> bool {
+        self.editor.next_bookmark()
+    }
+
+    /// 環狀跳轉至上一個書籤行
+    pub fn prev_bookmark(&mut self) -> bool {
+        self.editor.prev_bookmark()
+    }
+
+    /// 清空所有書籤
+    pub fn clear_all_bookmarks(&mut self) {
+        self.editor.clear_all_bookmarks();
     }
 
     /// 取得目前文字在搜尋條件下的所有匹配項目列表
@@ -1180,6 +1215,38 @@ mod tests {
         assert_eq!(parse_goto_offset("10"), Some(0x10));
         assert_eq!(parse_goto_offset(""), None);
         assert_eq!(parse_goto_offset("xyz"), None);
+    }
+
+    #[test]
+    fn test_convert_newline_format() {
+        let mut doc = DocumentBuffer::new();
+        doc.newline_format = NewLineFormat::Dos;
+        doc.load_file_from_memory("A\r\nB\r\nC".to_string());
+        assert_eq!(doc.newline_format, NewLineFormat::Dos);
+        assert_eq!(doc.piece_table.collect_bytes(), b"A\r\nB\r\nC");
+
+        // 轉換為 LF (Unix)
+        assert!(doc.convert_newline_format(NewLineFormat::Unix));
+        assert_eq!(doc.newline_format, NewLineFormat::Unix);
+        assert_eq!(doc.text, "A\nB\nC");
+        assert_eq!(doc.piece_table.collect_bytes(), b"A\nB\nC");
+        assert!(doc.is_modified);
+
+        // 重複轉換相同格式應回傳 false
+        assert!(!doc.convert_newline_format(NewLineFormat::Unix));
+
+        // 轉換為 CR (Mac)
+        assert!(doc.convert_newline_format(NewLineFormat::Mac));
+        assert_eq!(doc.newline_format, NewLineFormat::Mac);
+        assert_eq!(doc.text, "A\rB\rC");
+        assert_eq!(doc.piece_table.collect_bytes(), b"A\rB\rC");
+
+        // 驗證存檔至實體磁碟檔案的二進位位元組是否確實為目標換行符
+        let tmp_file = std::env::temp_dir().join(format!("test_nl_{}.txt", std::process::id()));
+        doc.save_file(Some(tmp_file.clone())).unwrap();
+        let saved_bytes = std::fs::read(&tmp_file).unwrap();
+        assert_eq!(saved_bytes, b"A\rB\rC");
+        let _ = std::fs::remove_file(&tmp_file);
     }
 }
 
