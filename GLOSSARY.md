@@ -5,7 +5,7 @@
 ## Language
 
 **DocumentBuffer**:
-代表單一開啟或未命名文件的核心狀態容器，維護底層原始位元組（`raw_bytes`）、文字內容（`text`）、字元編碼（`encoding`）、換行格式（`newline_format`）與編輯模式（`edit_mode`）。
+代表單一開啟或未命名文件的核心狀態容器，整合大檔案 Piece Table 引擎、字元編碼（`encoding`）、換行格式（`newline_format`）與編輯模式（`edit_mode`）。
 _Avoid_: FileState, EditorModel, TextBuffer
 
 **EditMode**:
@@ -17,15 +17,27 @@ _Avoid_: ViewMode, DisplayMode
 _Avoid_: LineEnding, EOL
 
 **Reinterpret Encoding (重新解碼)**:
-保持底層原始位元組（`raw_bytes`）不變，改以新指定的字元編碼重新將 `raw_bytes` 解碼為 `text`，用於修正開啟檔案時的編碼誤判，不將文件標記為已修改。
+保持底層原始位元組不變，改以新指定的字元編碼重新解碼為文字，用於修正開啟檔案時的編碼誤判，不將文件標記為已修改。
 _Avoid_: Reload Encoding, Switch Encoding
 
 **Convert Encoding (轉換編碼)**:
-保持當前文字內容（`text`）不變，將文件目標編碼改為新指定的字元編碼，並將 `text` 重新編碼更新至 `raw_bytes`，同時將文件標記為已修改（`is_modified = true`）。
+保持當前文字內容不變，將文件目標編碼改為新指定的字元編碼，並將文字重新編碼更新至底層位元組，同時將文件標記為已修改（`is_modified = true`）。
 _Avoid_: Transcode, Change Encoding
 
+**PieceTable**:
+大檔案編輯核心資料結構，由唯讀的原始緩衝區（Original Buffer，可基於 mmap）、追加緩衝區（Add Buffer）以及一連串指向緩衝區位移與長度的片段清單（Pieces）組成。
+_Avoid_: GapBuffer, Rope, ChunkTree
+
+**Piece**:
+Piece Table 中的單一片段節點，記錄該片段來自 Original 還是 Add 緩衝區、在該緩衝區的起始位移（offset）與長度（length）。
+_Avoid_: Span, BufferNode
+
+**LineIndex**:
+大檔案行位移索引，記錄文件中每一行的起始位元組位移（Byte Offset），支援二分搜尋以實現 $O(\log N)$ 行號查詢與按需隨機解碼。
+_Avoid_: LineOffsets, LineMap
+
 **TextPosition**:
-文字在文件中的 0-based 邏輯座標 `(line, column)`，其中 `line` 為行索引，`column` 為行內的字元索引（Unicode scalar value 或 char offset）。
+文字在文件中的 0-based 邏輯座標 `(line, column)`，其中 `line` 為行索引，`column` 為行內的字元索引（char offset）。
 _Avoid_: TextCursor, BufferPoint
 
 **VisualColumn**:
