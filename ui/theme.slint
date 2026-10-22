@@ -87,47 +87,28 @@ export component ClassicToolButton inherits Theme {
     touch := TouchArea {
         enabled: root.enabled;
         clicked => { root.clicked(); }
-        // 滑鼠移入時顯示經典黃色提示框
-        changed has-hover => {
-            if (self.has-hover && root.tooltip != "") {
-                tip-popup.show();
-            } else {
-                tip-popup.close();
-            }
-        }
-    }
-
-    // 量測提示文字寬度（透明且置於按鈕外，僅供提示框計算尺寸）
-    measure := Text {
-        text: root.tooltip;
-        opacity: 0;
-        x: 0;
-        y: 0;
     }
 
     // 經典 Windows 樣式的提示框（黃底黑框）
-    tip-popup := PopupWindow {
-        x: (root.width - self.width) / 2;
-        y: root.height + 2px;
-        width: max(90px, measure.width + 14px);
-        height: 22px;
-        close-policy: no-auto-close;
-
+    // 使用內建 Tooltip 而非 PopupWindow：一般 PopupWindow 開啟時，Slint 會丟棄落在彈出視窗外的
+    // 滑鼠事件，導致滑鼠停留出現提示框後點擊按鈕無效；Tooltip 為不攔截輸入的覆蓋層。
+    if root.tooltip != "" : Tooltip {
         Rectangle {
             background: #ffffe1;
             border-width: 1px;
             border-color: #000000;
 
-            Text {
-                x: 6px;
-                width: parent.width - 12px;
-                height: parent.height;
-                text: root.tooltip;
-                color: #000000;
-                font-size: 12px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                overflow: elide;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                padding-top: 3px;
+                padding-bottom: 3px;
+
+                Text {
+                    text: root.tooltip;
+                    color: #000000;
+                    font-size: 12px;
+                }
             }
         }
     }
@@ -168,47 +149,28 @@ export component ClassicButton inherits Theme {
     touch := TouchArea {
         enabled: root.enabled;
         clicked => { root.clicked(); }
-        // 滑鼠移入時顯示經典黃色提示框
-        changed has-hover => {
-            if (self.has-hover && root.tooltip != "") {
-                tip-popup.show();
-            } else {
-                tip-popup.close();
-            }
-        }
-    }
-
-    // 量測提示文字寬度（透明且置於按鈕外，僅供提示框計算尺寸）
-    measure := Text {
-        text: root.tooltip;
-        opacity: 0;
-        x: 0;
-        y: 0;
     }
 
     // 經典 Windows 樣式的提示框（黃底黑框）
-    tip-popup := PopupWindow {
-        x: (root.width - self.width) / 2;
-        y: root.height + 2px;
-        width: max(90px, measure.width + 14px);
-        height: 22px;
-        close-policy: no-auto-close;
-
+    // 使用內建 Tooltip 而非 PopupWindow：一般 PopupWindow 開啟時，Slint 會丟棄落在彈出視窗外的
+    // 滑鼠事件，導致滑鼠停留出現提示框後點擊按鈕無效；Tooltip 為不攔截輸入的覆蓋層。
+    if root.tooltip != "" : Tooltip {
         Rectangle {
             background: #ffffe1;
             border-width: 1px;
             border-color: #000000;
 
-            Text {
-                x: 6px;
-                width: parent.width - 12px;
-                height: parent.height;
-                text: root.tooltip;
-                color: #000000;
-                font-size: 12px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                overflow: elide;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                padding-top: 3px;
+                padding-bottom: 3px;
+
+                Text {
+                    text: root.tooltip;
+                    color: #000000;
+                    font-size: 12px;
+                }
             }
         }
     }
