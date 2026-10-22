@@ -1,3 +1,5 @@
+use super::syntax::HighlightSpan;
+
 /// 文字在文件中的 0-based 邏輯座標（行索引與字元索引）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct TextPosition {
@@ -292,6 +294,7 @@ impl Default for EditorState {
 pub struct VisibleLineData {
     pub line_number: i32,
     pub text: String,
+    pub spans: Vec<HighlightSpan>,
     pub has_selection: bool,
     pub sel_start_x: f32,
     pub sel_width: f32,
@@ -874,6 +877,7 @@ impl EditorState {
             result.push(VisibleLineData {
                 line_number,
                 text: expand_tabs(line_text, 4),
+                spans: Vec::new(),
                 has_selection: line_has_sel && sel_width > 0.0,
                 sel_start_x,
                 sel_width,

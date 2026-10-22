@@ -4,6 +4,7 @@ pub mod hex;
 pub mod model;
 pub mod piece_table;
 pub mod search;
+pub mod syntax;
 
 pub use buffer::{DocumentBuffer, SUPPORTED_ENCODINGS};
 #[allow(unused_imports)]
@@ -20,3 +21,5 @@ pub use search::{
     build_regex, count_matches, find_all_matches, find_hex_matches, find_next_match, find_prev_match,
     parse_hex_query, replace_all_matches, SearchMatch, SearchOptions,
 };
+#[allow(unused_imports)]
+pub use syntax::{detect_syntax_from_path, highlight_line, highlight_lines, HighlightSpan, SUPPORTED_SYNTAXES};

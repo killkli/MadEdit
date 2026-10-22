@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use core::{
     char_col_to_visual_col, DocumentBuffer, EditMode, SearchOptions, Selection, SUPPORTED_ENCODINGS,
+    SUPPORTED_SYNTAXES,
 };
 use slint::platform::Key;
 use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
@@ -82,19 +83,32 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_encoding_name(doc.encoding.name().into());
     ui.set_selected_encoding(doc.encoding.name().into());
     ui.set_newline_format(doc.newline_format.as_str().into());
+    ui.set_current_syntax(doc.current_syntax.as_str().into());
 
-    // 同步可見行自繪資料
+    // 同步可見行自繪資料（包含多色語法分段 spans）
     let visible_lines_data = doc.generate_visible_lines(CELL_WIDTH);
     let slint_lines: Vec<VisibleLine> = visible_lines_data
         .into_iter()
-        .map(|l| VisibleLine {
-            line_number: l.line_number,
-            text: l.text.into(),
-            has_selection: l.has_selection,
-            sel_start_x: l.sel_start_x,
-            sel_width: l.sel_width,
-            has_caret: l.has_caret,
-            caret_x: l.caret_x,
+        .map(|l| {
+            let slint_spans: Vec<HighlightSpan> = l
+                .spans
+                .into_iter()
+                .map(|s| HighlightSpan {
+                    text: s.text.into(),
+                    color: slint::Color::from_argb_u8(255, s.color_rgb.0, s.color_rgb.1, s.color_rgb.2),
+                })
+                .collect();
+
+            VisibleLine {
+                line_number: l.line_number,
+                text: l.text.into(),
+                spans: ModelRc::new(VecModel::from(slint_spans)),
+                has_selection: l.has_selection,
+                sel_start_x: l.sel_start_x,
+                sel_width: l.sel_width,
+                has_caret: l.has_caret,
+                caret_x: l.caret_x,
+            }
         })
         .collect();
     ui.set_visible_lines(ModelRc::new(VecModel::from(slint_lines)));
@@ -130,6 +144,13 @@ fn main() -> Result<(), slint::PlatformError> {
         .map(|&s| SharedString::from(s))
         .collect();
     main_window.set_encoding_list(ModelRc::new(VecModel::from(encoding_items)));
+
+    // 初始化支援語法清單
+    let syntax_items: Vec<SharedString> = SUPPORTED_SYNTAXES
+        .iter()
+        .map(|&s| SharedString::from(s))
+        .collect();
+    main_window.set_syntax_list(ModelRc::new(VecModel::from(syntax_items)));
     sync_ui_from_doc(&main_window, &doc.borrow());
 
     // 游標閃爍計時器（每 500ms 切換閃爍狀態）
@@ -234,6 +255,19 @@ fn main() -> Result<(), slint::PlatformError> {
                 if let Some(ui) = ui_handle.upgrade() {
                     sync_ui_from_doc(&ui, &d);
                 }
+            }
+        });
+    }
+
+    // 語法突顯切換（Syntax Changed）事件綁定
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_syntax_changed(move |syn_name| {
+            let mut d = doc_clone.borrow_mut();
+            d.set_syntax(syn_name.as_str());
+            if let Some(ui) = ui_handle.upgrade() {
+                sync_ui_from_doc(&ui, &d);
             }
         });
     }

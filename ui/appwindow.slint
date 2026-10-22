@@ -1,8 +1,14 @@
 import { Button, ComboBox, ScrollView, LineEdit, CheckBox } from "std-widgets.slint";
 
+export struct HighlightSpan {
+    text: string,
+    color: color,
+}
+
 export struct VisibleLine {
     line_number: int,
     text: string,
+    spans: [HighlightSpan],
     has_selection: bool,
     sel_start_x: length,
     sel_width: length,
@@ -45,11 +51,16 @@ export component MainWindow inherits Window {
     in-out property <bool> search-whole-word: false;
     in-out property <bool> search-use-regex: false;
 
+    // 語法突顯屬性
+    in-out property <[string]> syntax-list: ["Plain Text"];
+    in-out property <string> current-syntax: "Plain Text";
+
     callback open-file-clicked();
     callback save-file-clicked();
     callback mode-changed(int);
     callback reinterpret-encoding-clicked(string);
     callback convert-encoding-clicked(string);
+    callback syntax-changed(string);
 
     // 搜尋與取代回呼
     callback find-next-clicked();
@@ -117,6 +128,15 @@ export component MainWindow inherits Window {
             Button {
                 text: "轉換編碼";
                 clicked => { root.convert-encoding-clicked(root.selected-encoding); }
+            }
+
+            Rectangle { width: 12px; }
+
+            ComboBox {
+                width: 120px;
+                model: root.syntax-list;
+                current-value <=> root.current-syntax;
+                selected(val) => { root.syntax-changed(val); }
             }
 
             Rectangle { horizontal-stretch: 1; }
@@ -326,16 +346,32 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // 3. 文字內容層（頂層）
-                        for line[i] in root.visible-lines : Text {
+                        // 3. 文字內容層（頂層：支援語法多色分段渲染與單色回退）
+                        for line[i] in root.visible-lines : HorizontalLayout {
                             x: 0;
                             y: i * root.line-height;
                             height: root.line-height;
-                            text: line.text;
-                            font-family: "Consolas, Courier New, monospace";
-                            font-size: 14px;
-                            color: #222222;
-                            vertical-alignment: center;
+                            spacing: 0px;
+                            alignment: start;
+
+                            if line.spans.length > 0 : HorizontalLayout {
+                                spacing: 0px;
+                                for span in line.spans : Text {
+                                    text: span.text;
+                                    font-family: "Consolas, Courier New, monospace";
+                                    font-size: 14px;
+                                    color: span.color;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if line.spans.length == 0 : Text {
+                                text: line.text;
+                                font-family: "Consolas, Courier New, monospace";
+                                font-size: 14px;
+                                color: #222222;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }
@@ -420,6 +456,12 @@ export component MainWindow inherits Window {
                 Text {
                     vertical-alignment: center;
                     text: "編碼: " + root.encoding-name;
+                    font-size: 12px;
+                }
+
+                Text {
+                    vertical-alignment: center;
+                    text: "語法: " + root.current-syntax;
                     font-size: 12px;
                 }
             }

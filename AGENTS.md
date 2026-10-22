@@ -92,6 +92,11 @@ D:\Git\MadEdit-Rust\
   - 實作環狀循環導覽（`find_next`、`find_prev`）與單次/全部取代（`replace_current`、`replace_all`），自動高亮選取並捲動可視範圍，精確統計取代計數。
   - 在 Slint UI 實作編輯區頂部內嵌式可收合面板，包含搜尋框、取代框、核取方塊、即時匹配統計（如 `3/15`）、上一個/下一個、取代/全部取代與關閉按鈕。
   - 支援全套快捷鍵：`Ctrl+F`（開啟搜尋列並自動帶入選取文字與聚焦）、`Ctrl+H`（開啟搜尋與取代列）、`Esc`（收合面板）、`F3`（尋找下一個）、`Shift+F3`（尋找上一個）。
+- [x] 語法突顯 (Syntax Highlighting)（Phase 6 完成）：
+  - 整合 `syntect` 語法引擎（支援 Rust, C/C++, Python, JavaScript, TypeScript, JSON, Markdown, HTML, CSS, XML, YAML, SQL 等 30+ 種主流語言）與 `InspiredGitHub` 淺色主題。
+  - 實作副檔名語言自動識別與「純文字 (Plain Text)」回退模式。
+  - 可見行資料結構引入 `HighlightSpan`（`text` 與 `color`），在 Slint 自繪編輯器頂層實現文字分段多色著色渲染，幾何選取圖層與色彩層徹底解耦。
+  - 工具列提供語言切換下拉選單，狀態列即時顯示當前語法名稱。
 - [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
   - 已優化：直接自 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體拷貝。
 - [x] 換行格式自動偵測（CRLF / LF / CR），目前僅顯示，不支援轉換。
@@ -139,8 +144,13 @@ D:\Git\MadEdit-Rust\
 - 已完成核心搜尋引擎（純文字/大小寫/全字/Regex/Hex Byte）、環狀循環導覽、取代與全部取代。
 - 已完成 Slint 內嵌可收合面板、即時進度（`3/15`）、快捷鍵（Ctrl+F、Ctrl+H、Esc、F3、Shift+F3）與自動聚焦。
 
-### Phase 6: 語法突顯 (Syntax Highlighting)
-- 整合 `syntect` 或自建輕量詞法分析器，為各程式語言提供語法突顯功能。
+### Phase 6: 語法突顯 (Syntax Highlighting) - [已完成]
+- 已整合 `syntect` 語法引擎（30+ 種主流語言與 InspiredGitHub 主題）。
+- 已完成開檔自動識別、工具列語言切換選單、可見行多色文字分段渲染與狀態列顯示。
+
+### Phase 7: 列號跳轉與編輯增強 (Go to Line & Editing Enhancements)
+- 提供快捷鍵（Ctrl+G）指定行號與欄位快速跳轉對話框。
+- 支援常用程式碼編輯操作（行上下移動、複製行、刪除整行）。
 
 ---
 
