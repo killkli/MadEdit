@@ -129,7 +129,8 @@ impl App {
             last_autosave: 0.0,
             last_disk_check: 0.0,
             allow_close: false,
-            clipboard: arboard::Clipboard::new().ok(),
+            // 測試時不連接系統剪貼簿，避免結果受使用者剪貼簿內容影響或覆寫它
+            clipboard: if cfg!(test) { None } else { arboard::Clipboard::new().ok() },
             screenshot: screenshot.map(|p| (p, 0)),
             pending: Vec::new(),
             focus_editor: true,
