@@ -49,8 +49,12 @@ export component MainWindow inherits Window {
     // ── 主題與顯示選項 ──────────────────────────────────────────
     // 深色主題預設跟隨系統配色設定，使用者可於工具列手動切換
     in-out property <bool> is-dark-mode: Palette.color-scheme == ColorScheme.dark;
+    // 深淺色一變動就通知 Rust 端重新產生語法配色（含啟動時系統配色晚到的情況）
+    callback theme-changed();
+    changed is-dark-mode => { root.theme-changed(); }
     in-out property <bool> show-control-chars: true; // 顯示控制字元（↵ 等）
     in-out property <int> editor-font-size: 14;       // 編輯區字級
+    in-out property <string> editor-font-family;       // 編輯區等寬字型（由 Rust 依本機已安裝字型挑選）
     in-out property <[string]> font-size-list: ["12", "13", "14", "16", "18", "20"];
     in-out property <string> selected-font-size: "14";
 
@@ -75,6 +79,9 @@ export component MainWindow inherits Window {
     in-out property <length> line-height: 20px;
     in-out property <length> gutter-width: 54px;
     in-out property <bool> caret-visible: true;
+    // 游標所在可見列（-1 表示不在可視範圍）與 x 座標，供 IME 輸入代理定位
+    in-out property <int> caret-row: -1;
+    in-out property <length> caret-x: 0px;
 
     // 垂直與水平捲軸 (Scrollbar) 狀態屬性
     in-out property <int> vscroll-first-line: 0;
@@ -168,6 +175,7 @@ export component MainWindow inherits Window {
 
     // 編輯器互動回呼
     callback key-pressed(string, bool, bool, bool) -> bool;
+    callback ime-commit(string);
     callback mouse-clicked(length, length, bool);
     callback mouse-dragged(length, length, bool);
     callback scrolled(float);
@@ -178,7 +186,7 @@ export component MainWindow inherits Window {
 
     // 讓外部強制將鍵盤焦點歸還給編輯區
     public function focus-editor() {
-        editor-focus.focus();
+        ime-input.focus();
     }
 
     VerticalLayout {
@@ -670,12 +678,16 @@ export component MainWindow inherits Window {
 
         // ── 編輯檢視區（尺標 + 編輯器 + 捲軸）────────────────
         // 常駐 FocusScope：承接鍵盤事件，並讓滑鼠點擊後焦點回到編輯區
+        // 實際鍵盤焦點落在內部的 ime-input（TextInput），因為 Slint 只把輸入法組字事件
+        // 送給 TextInput；此處以 capture-key-pressed 搶先攔截一般按鍵交給 Rust 處理，
+        // Rust 未處理的按鍵與輸入法組字才會落到 ime-input。
         editor-focus := FocusScope {
             vertical-stretch: 1;
-            init => { self.focus(); }
+            focus-on-click: false;
+            init => { ime-input.focus(); }
 
             // 鍵盤事件統一交由 Rust 端處理（依序判斷各快捷鍵與編輯操作）
-            key-pressed(event) => {
+            capture-key-pressed(event) => {
                 if (root.key-pressed(event.text, event.modifiers.control, event.modifiers.shift, event.modifiers.alt)) {
                     return accept;
                 }
@@ -737,7 +749,7 @@ export component MainWindow inherits Window {
                                         x: 2px;
                                         y: 1px;
                                         text: (g * 10) + "";
-                                        font-family: "Consolas, Courier New, monospace";
+                                        font-family: root.editor-font-family;
                                         font-size: 10px;
                                         color: theme.ruler-fg;
                                     }
@@ -792,7 +804,7 @@ export component MainWindow inherits Window {
                                     height: root.line-height;
                                     text: line.line_number > 0 ? (line.line_number + "") : "";
                                     color: line.has_bookmark ? #1d4ed8 : (line.has_caret ? theme.text-color : theme.gutter-fg);
-                                    font-family: "Consolas, Courier New, monospace";
+                                    font-family: root.editor-font-family;
                                     font-size: 13px;
                                     font-weight: (line.has_bookmark || line.has_caret) ? 700 : 400;
                                     horizontal-alignment: right;
@@ -812,7 +824,7 @@ export component MainWindow inherits Window {
                                 pointer-event(event) => {
                                     self.is-alt-down = event.modifiers.alt;
                                     if (event.kind == PointerEventKind.down) {
-                                        editor-focus.focus();
+                                        ime-input.focus();
                                         root.mouse-clicked(self.mouse-x - root.h-offset, self.mouse-y, event.modifiers.alt);
                                     }
                                 }
@@ -868,7 +880,7 @@ export component MainWindow inherits Window {
                                     spacing: 0px;
                                     for span in line.spans : Text {
                                         text: span.text;
-                                        font-family: "Consolas, Courier New, monospace";
+                                        font-family: root.editor-font-family;
                                         font-size: root.editor-font-size * 1px;
                                         color: span.color;
                                         vertical-alignment: center;
@@ -877,7 +889,7 @@ export component MainWindow inherits Window {
 
                                 if line.spans.length == 0 : Text {
                                     text: line.text;
-                                    font-family: "Consolas, Courier New, monospace";
+                                    font-family: root.editor-font-family;
                                     font-size: root.editor-font-size * 1px;
                                     color: theme.text-color;
                                     vertical-alignment: center;
@@ -891,7 +903,7 @@ export component MainWindow inherits Window {
                                     y: i * root.line-height;
                                     height: root.line-height;
                                     text: "↵";
-                                    font-family: "Consolas, Courier New, monospace";
+                                    font-family: root.editor-font-family;
                                     font-size: (root.editor-font-size - 1) * 1px;
                                     color: theme.eol-fg;
                                     vertical-alignment: center;
@@ -935,7 +947,7 @@ export component MainWindow inherits Window {
                                     vup-touch := TouchArea {
                                         clicked => {
                                             root.vscroll-by(-1);
-                                            editor-focus.focus();
+                                            ime-input.focus();
                                         }
                                     }
                                 }
@@ -964,7 +976,7 @@ export component MainWindow inherits Window {
                                     vtrack-touch := TouchArea {
                                         pointer-event(event) => {
                                             if (event.kind == PointerEventKind.down) {
-                                                editor-focus.focus();
+                                                ime-input.focus();
                                                 root.vscroll-to(Math.round(Math.clamp((self.mouse-y - vtrack.thumb-h / 2) / vtrack.avail-h, 0.0, 1.0) * Math.max(0, vtrack.total - 1)));
                                             }
                                         }
@@ -994,7 +1006,7 @@ export component MainWindow inherits Window {
                                     vdown-touch := TouchArea {
                                         clicked => {
                                             root.vscroll-by(1);
-                                            editor-focus.focus();
+                                            ime-input.focus();
                                         }
                                     }
                                 }
@@ -1027,7 +1039,7 @@ export component MainWindow inherits Window {
                                 hleft-touch := TouchArea {
                                     clicked => {
                                         root.hscroll-by(-4);
-                                        editor-focus.focus();
+                                        ime-input.focus();
                                     }
                                 }
                             }
@@ -1057,7 +1069,7 @@ export component MainWindow inherits Window {
                                 htrack-touch := TouchArea {
                                     pointer-event(event) => {
                                         if (event.kind == PointerEventKind.down) {
-                                            editor-focus.focus();
+                                            ime-input.focus();
                                             root.hscroll-to(Math.round(Math.clamp((self.mouse-x - htrack.thumb-w / 2) / htrack.avail-w, 0.0, 1.0) * htrack.max-first-col));
                                         }
                                     }
@@ -1083,7 +1095,7 @@ export component MainWindow inherits Window {
                                 hright-touch := TouchArea {
                                     clicked => {
                                         root.hscroll-by(4);
-                                        editor-focus.focus();
+                                        ime-input.focus();
                                     }
                                 }
                             }
@@ -1111,7 +1123,7 @@ export component MainWindow inherits Window {
                     // 位址偏移欄（Offset）
                     Text {
                         text: root.hex-offset-text;
-                        font-family: "Consolas, Courier New, monospace";
+                        font-family: root.editor-font-family;
                         font-size: 13px;
                         color: theme.hex-offset-fg;
                     }
@@ -1119,7 +1131,7 @@ export component MainWindow inherits Window {
                     // 十六進位位元組欄（Hex Dump）
                     Text {
                         text: root.hex-content-text;
-                        font-family: "Consolas, Courier New, monospace";
+                        font-family: root.editor-font-family;
                         font-size: 13px;
                         color: theme.text-color;
                     }
@@ -1127,13 +1139,46 @@ export component MainWindow inherits Window {
                     // 可視 ASCII 預覽欄（ASCII Dump）
                     Text {
                         text: root.hex-ascii-text;
-                        font-family: "Consolas, Courier New, monospace";
+                        font-family: root.editor-font-family;
                         font-size: 13px;
                         color: theme.hex-ascii-fg;
                     }
 
                     Rectangle { horizontal-stretch: 1; }
                 }
+                }
+            }
+            // ── IME 輸入代理 ─────────────────────────────────
+            // 置於游標位置（尺標 20px 之下、行號欄之右），讓組字中文字顯示在游標處，
+            // 輸入法候選窗也會出現在附近。text 平時保持空白，只顯示組字中的 preedit。
+            property <bool> ime-at-caret: root.edit-mode != 2 && root.caret-row >= 0;
+            // 組字外框：空白 TextInput 仍有微小寬度，因此以半格寬為門檻判斷是否正在組字
+            if ime-input.preferred-width > root.cell-width / 2 : Rectangle {
+                x: ime-input.x;
+                y: ime-input.y;
+                width: ime-input.preferred-width + 2px;
+                height: root.line-height;
+                background: theme.editor-bg;
+                border-width: 1px;
+                border-color: theme.caret-fg;
+            }
+            ime-input := TextInput {
+                x: editor-focus.ime-at-caret ? root.gutter-width + root.caret-x + root.h-offset : 0px;
+                y: editor-focus.ime-at-caret ? 20px + root.caret-row * root.line-height : 0px;
+                width: 600px;
+                height: root.line-height;
+                single-line: true;
+                vertical-alignment: center;
+                text-cursor-width: 0px;
+                font-family: root.editor-font-family;
+                font-size: root.editor-font-size * 1px;
+                color: theme.text-color;
+                // 輸入法提交（或 Rust 未處理而落入的字元）一律轉交 Rust 插入並清空
+                edited => {
+                    if (self.text != "") {
+                        root.ime-commit(self.text);
+                        self.text = "";
+                    }
                 }
             }
         }

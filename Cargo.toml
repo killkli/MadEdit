@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 encoding_rs = "0.8.42"
 encoding_rs_io = "0.1.8"
+fontique = "0.11.1"
 memmap2 = "0.9"
 regex = "1.11"
 rfd = "0.17.2"

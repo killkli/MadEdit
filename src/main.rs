@@ -4,6 +4,7 @@ mod core;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use core::{
     char_col_to_visual_col, parse_goto_line_col, parse_goto_offset, DocumentBuffer, EditMode,
     NewLineFormat, SearchOptions, Selection, SUPPORTED_ENCODINGS, SUPPORTED_NEWLINES,
@@ -14,10 +15,46 @@ use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 slint::include_modules!();
 
+/// 編輯區等寬字型偏好清單：(字型家族名, 半形字寬佔 em 的比例)
+///
+/// Slint 的 font-family 只接受單一家族名，因此由 Rust 在執行期挑出本機實際安裝的第一個。
+/// Sarasa / Noto Mono CJK 的半形字寬恰為全形一半，最符合「半形 1 欄、全形 2 欄」的格網模型；
+/// 其餘為各平台內建的拉丁等寬字型後備（CJK 字元由系統字型回退補字，寬度可能與格網略有出入）。
+const EDITOR_FONTS: &[(&str, f32)] = &[
+    ("Sarasa Term TC", 0.5),
+    ("Sarasa Term SC", 0.5),
+    ("Sarasa Mono TC", 0.5),
+    ("Sarasa Mono SC", 0.5),
+    ("Noto Sans Mono CJK TC", 0.5),
+    ("Noto Sans Mono CJK SC", 0.5),
+    ("Menlo", 0.602),
+    ("Consolas", 0.55),
+    ("DejaVu Sans Mono", 0.602),
+    ("Courier New", 0.6),
+];
+
+/// 回傳選定的編輯區字型 (家族名, 字寬比例)；找不到任何偏好字型時沿用預設字型與 0.55 比例
+fn editor_font() -> (&'static str, f32) {
+    static FONT: OnceLock<(&'static str, f32)> = OnceLock::new();
+    *FONT.get_or_init(|| {
+        let mut collection = fontique::Collection::new(fontique::CollectionOptions {
+            shared: false,
+            system_fonts: true,
+        });
+        EDITOR_FONTS
+            .iter()
+            .copied()
+            .find(|(name, _)| collection.family_by_name(name).is_some())
+            .unwrap_or(("", 0.55))
+    })
+}
+
 /// 根據字型大小計算等寬字元格網寬度 (cell_width) 與行高 (line_height)
+///
+/// cell_width 不做取整，必須與字型實際字寬一致，否則長行的游標與文字會逐字累積漂移。
 fn calc_editor_metrics(font_size: i32) -> (f32, f32) {
     let fs = font_size.clamp(10, 32) as f32;
-    let cell_width = (fs * 0.55 * 2.0).round() / 2.0;
+    let cell_width = fs * editor_font().1;
     let line_height = (fs * 1.35).round().max(18.0);
     (cell_width, line_height)
 }
@@ -373,7 +410,16 @@ fn sync_ui_from_doc(ui: &MainWindow, doc: &DocumentBuffer) {
     ui.set_current_syntax(doc.current_syntax.as_str().into());
 
     // 同步可見行自繪資料（包含多色語法分段 spans、書籤標記與行尾換行座標 eol_x）
-    let visible_lines_data = doc.generate_visible_lines(cell_width);
+    let visible_lines_data = doc.generate_visible_lines(
+        cell_width,
+        ui.get_is_dark_mode(),
+        ui.get_show_control_chars(),
+    );
+
+    // 游標所在可見列與 x 座標，供 IME 輸入代理（TextInput）定位組字與候選窗
+    let caret_row = visible_lines_data.iter().position(|l| l.has_caret);
+    ui.set_caret_row(caret_row.map_or(-1, |i| i as i32));
+    ui.set_caret_x(caret_row.map_or(0.0, |i| visible_lines_data[i].caret_x));
     let slint_lines: Vec<VisibleLine> = visible_lines_data
         .into_iter()
         .map(|l| {
@@ -824,14 +870,8 @@ fn save_rgba_as_bmp(path: &str, width: u32, height: u32, rgba_data: &[u8]) -> st
 
 fn main() -> Result<(), slint::PlatformError> {
     let main_window = MainWindow::new()?;
+    main_window.set_editor_font_family(editor_font().0.into());
     let doc = Rc::new(RefCell::new(DocumentBuffer::new()));
-
-    // 同步系統初始深淺色與控制字元顯示設定
-    {
-        let mut d = doc.borrow_mut();
-        d.is_dark_mode = main_window.get_is_dark_mode();
-        d.show_control_chars = main_window.get_show_control_chars();
-    }
 
     // 初始化支援編碼清單與畫面狀態
     let encoding_items: Vec<SharedString> = SUPPORTED_ENCODINGS
@@ -950,14 +990,21 @@ fn main() -> Result<(), slint::PlatformError> {
     // 深淺色主題切換事件綁定
     {
         let ui_handle = main_window.as_weak();
-        let doc_clone = Rc::clone(&doc);
         main_window.on_toggle_theme(move || {
             let Some(ui) = ui_handle.upgrade() else { return; };
-            let mut d = doc_clone.borrow_mut();
-            d.is_dark_mode = !d.is_dark_mode;
-            ui.set_is_dark_mode(d.is_dark_mode);
-            sync_ui_from_doc(&ui, &d);
+            // 語法配色由 theme-changed 回呼重新同步
+            ui.set_is_dark_mode(!ui.get_is_dark_mode());
             ui.invoke_focus_editor();
+        });
+    }
+
+    // 深淺色變更（含系統配色於執行期切換）時，依新主題重新產生語法配色
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_theme_changed(move || {
+            let Some(ui) = ui_handle.upgrade() else { return; };
+            sync_ui_from_doc(&ui, &doc_clone.borrow());
         });
     }
 
@@ -967,10 +1014,8 @@ fn main() -> Result<(), slint::PlatformError> {
         let doc_clone = Rc::clone(&doc);
         main_window.on_toggle_control_chars(move || {
             let Some(ui) = ui_handle.upgrade() else { return; };
-            let mut d = doc_clone.borrow_mut();
-            d.show_control_chars = !d.show_control_chars;
-            ui.set_show_control_chars(d.show_control_chars);
-            sync_ui_from_doc(&ui, &d);
+            ui.set_show_control_chars(!ui.get_show_control_chars());
+            sync_ui_from_doc(&ui, &doc_clone.borrow());
             ui.invoke_focus_editor();
         });
     }
@@ -1469,6 +1514,24 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // IME 輸入法提交的文字（倉頡、注音等組字完成後由 TextInput 代理轉交）
+    {
+        let ui_handle = main_window.as_weak();
+        let doc_clone = Rc::clone(&doc);
+        main_window.on_ime_commit(move |text| {
+            if text.is_empty() {
+                return;
+            }
+            let mut d = doc_clone.borrow_mut();
+            d.editor.insert_text(text.as_str());
+            d.sync_from_editor();
+            if let Some(ui) = ui_handle.upgrade() {
+                ui.set_caret_visible(true);
+                sync_ui_from_doc(&ui, &d);
+            }
+        });
+    }
+
     // 自繪編輯器滑鼠點擊定位（支援列塊模式與 Alt 鍵矩形定位）
     {
         let ui_handle = main_window.as_weak();
@@ -1588,7 +1651,6 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         if std::env::args().any(|arg| arg == "--test-light") {
             main_window.set_is_dark_mode(false);
-            doc.borrow_mut().is_dark_mode = false;
         }
 
         let startup_path = std::env::args()

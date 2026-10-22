@@ -46,8 +46,6 @@ pub struct DocumentBuffer {
     pub editor: EditorState,
     pub hex_start_offset: usize,
     pub last_modified: Option<std::time::SystemTime>,
-    pub is_dark_mode: bool,
-    pub show_control_chars: bool,
 }
 
 impl Default for DocumentBuffer {
@@ -70,8 +68,6 @@ impl Default for DocumentBuffer {
             editor: EditorState::default(),
             hex_start_offset: 0,
             last_modified: None,
-            is_dark_mode: false,
-            show_control_chars: false,
         }
     }
 }
@@ -234,7 +230,14 @@ impl DocumentBuffer {
     }
 
     /// 根據可視視窗（Viewport）與字元格網寬度產生可見行繪製資料（支援大檔案按需解碼）
-    pub fn generate_visible_lines(&self, cell_width: f32) -> Vec<super::editor::VisibleLineData> {
+    ///
+    /// `is_dark` 與 `show_control_chars` 由 UI 端傳入，UI 為深淺色與控制字元顯示的唯一真值來源。
+    pub fn generate_visible_lines(
+        &self,
+        cell_width: f32,
+        is_dark: bool,
+        show_control_chars: bool,
+    ) -> Vec<super::editor::VisibleLineData> {
         let start_line = self.editor.viewport.first_visible_line;
         let count = self.editor.viewport.visible_line_count;
 
@@ -262,12 +265,12 @@ impl DocumentBuffer {
         // 依據當前設定之語法與深淺色主題為可視行產生多色分段（Viewport 按需高亮，支援多行註解與字串）
         let line_texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
         let spans_batch =
-            highlight_lines_with_theme(&self.current_syntax, &line_texts, self.is_dark_mode);
+            highlight_lines_with_theme(&self.current_syntax, &line_texts, is_dark);
         for ((line_data, spans), raw_line) in
             lines.iter_mut().zip(spans_batch).zip(raw_lines.iter())
         {
-            if self.show_control_chars {
-                line_data.spans = apply_visible_whitespace(raw_line, spans, self.is_dark_mode);
+            if show_control_chars {
+                line_data.spans = apply_visible_whitespace(raw_line, spans, is_dark);
             } else {
                 line_data.spans = spans;
             }
@@ -1066,7 +1069,7 @@ mod tests {
         assert_eq!(fetched, vec!["This is a line of benchmark text for large file engine."]);
 
         // 驗證可見行按需渲染（第 0 行至第 30 行）
-        let visible = doc.generate_visible_lines(8.5);
+        let visible = doc.generate_visible_lines(8.5, false, false);
         assert!(!visible.is_empty());
         assert_eq!(visible[0].line_number, 1);
         assert_eq!(visible[0].text, "This is a line of benchmark text for large file engine.");
@@ -1128,7 +1131,7 @@ mod tests {
             4,
         );
 
-        let visible = doc.generate_visible_lines(10.0);
+        let visible = doc.generate_visible_lines(10.0, false, false);
         assert_eq!(visible.len(), 4);
         assert!(!visible[0].has_selection);
         assert!(visible[1].has_selection);
@@ -1262,7 +1265,7 @@ mod tests {
 
         // 預設為 Plain Text
         assert_eq!(doc.current_syntax, "Plain Text");
-        let visible_plain = doc.generate_visible_lines(10.0);
+        let visible_plain = doc.generate_visible_lines(10.0, false, false);
         assert_eq!(visible_plain.len(), 3);
         assert_eq!(visible_plain[0].spans.len(), 1);
         assert_eq!(visible_plain[0].spans[0].color_rgb, (34, 34, 34));
@@ -1270,7 +1273,7 @@ mod tests {
         // 切換至 Rust 語法
         doc.set_syntax("Rust");
         assert_eq!(doc.current_syntax, "Rust");
-        let visible_rust = doc.generate_visible_lines(10.0);
+        let visible_rust = doc.generate_visible_lines(10.0, false, false);
         assert_eq!(visible_rust.len(), 3);
         // 第一行 "fn main() {" 應被拆成多個語法 spans
         assert!(visible_rust[0].spans.len() > 1);
@@ -1284,7 +1287,7 @@ mod tests {
             3,
             7,
         );
-        let visible_block = doc.generate_visible_lines(10.0);
+        let visible_block = doc.generate_visible_lines(10.0, false, false);
         assert!(visible_block[0].has_selection);
         assert_eq!(visible_block[0].sel_start_x, 30.0);
         assert!(visible_block[0].spans.len() > 1);
