@@ -317,11 +317,12 @@ impl Document {
         self.pristine_bytes = None;
         self.text_changed(start);
 
-        // 連續輸入合併為一筆
+        // 連續輸入合併為一筆；已存檔的紀錄不再合併，否則 serial 不前進，存檔後的輸入不會被視為修改
         let mergeable = kind == EditKind::Typing
             && old_changed.len() == 1
             && new_changed.len() == 1
             && self.redo.is_empty()
+            && self.serial != self.saved_serial
             && self.undo.last().is_some_and(|last| {
                 last.kind == EditKind::Typing
                     && last.start == start
@@ -568,33 +569,7 @@ impl Document {
             return Err(SaveError::DecodeErrors);
         }
 
-        // 先產生暫存檔（同目錄，檔名後附加，不取代原副檔名）
-        let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let tmp = target.with_file_name(format!(".{}.madedit-{}.tmp", file_name, std::process::id()));
-        let write_result: Result<(), SaveError> = (|| {
-            let mut f = fs::File::create(&tmp)?;
-            if in_hex {
-                self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(&mut f)?;
-            } else {
-                let bytes = self.encode().map_err(SaveError::Unmappable)?;
-                f.write_all(&bytes)?;
-            }
-            f.sync_all()?;
-            Ok(())
-        })();
-        if let Err(e) = write_result {
-            let _ = fs::remove_file(&tmp);
-            return Err(e);
-        }
-        // 保留原檔權限
-        if let Ok(meta) = fs::metadata(&target) {
-            let _ = fs::set_permissions(&tmp, meta.permissions());
-        }
-        // 原子取代：失敗時原檔與記憶體內容都不受影響
-        if let Err(e) = fs::rename(&tmp, &target) {
-            let _ = fs::remove_file(&tmp);
-            return Err(SaveError::Io(e));
-        }
+        self.write_atomic(&target)?;
 
         if self.hex_only {
             // 改由新檔案提供資料（舊的檔案控制代碼指向已被取代的檔案）
@@ -631,11 +606,42 @@ impl Document {
 
     /// 另存一份副本（不改變文件路徑與修改狀態）
     pub fn save_copy(&self, target: &Path) -> Result<(), SaveError> {
-        let mut f = fs::File::create(target)?;
-        if self.mode == EditMode::Hex {
-            self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(&mut f)?;
-        } else {
-            f.write_all(&self.encode().map_err(SaveError::Unmappable)?)?;
+        if self.mode != EditMode::Hex && self.has_decode_error {
+            return Err(SaveError::DecodeErrors);
+        }
+        self.write_atomic(target)
+    }
+
+    /// 將目前內容寫入同目錄暫存檔，成功後原子取代目標檔
+    ///
+    /// 編碼或寫入失敗時目標檔不受影響（不會先被截斷）。
+    fn write_atomic(&self, target: &Path) -> Result<(), SaveError> {
+        // 暫存檔放在同目錄，檔名後附加，不取代原副檔名
+        let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let tmp = target.with_file_name(format!(".{}.madedit-{}.tmp", file_name, std::process::id()));
+        let write_result: Result<(), SaveError> = (|| {
+            let mut f = fs::File::create(&tmp)?;
+            if self.mode == EditMode::Hex {
+                self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(&mut f)?;
+            } else {
+                let bytes = self.encode().map_err(SaveError::Unmappable)?;
+                f.write_all(&bytes)?;
+            }
+            f.sync_all()?;
+            Ok(())
+        })();
+        if let Err(e) = write_result {
+            let _ = fs::remove_file(&tmp);
+            return Err(e);
+        }
+        // 保留原檔權限
+        if let Ok(meta) = fs::metadata(target) {
+            let _ = fs::set_permissions(&tmp, meta.permissions());
+        }
+        // 原子取代：失敗時原檔與記憶體內容都不受影響
+        if let Err(e) = fs::rename(&tmp, target) {
+            let _ = fs::remove_file(&tmp);
+            return Err(SaveError::Io(e));
         }
         Ok(())
     }
@@ -878,6 +884,49 @@ mod tests {
         assert!(doc.save(Some(&bad), false).is_err());
         assert_eq!(doc.editor.lines, vec!["keep me"]);
         assert!(doc.is_modified());
+    }
+
+    #[test]
+    fn test_typing_after_save_marks_modified() {
+        let p = temp_path("typing_after_save.txt");
+        let mut doc = Document::default();
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Typing, hint, |e| e.insert_char('a'));
+        doc.save(Some(&p), false).unwrap();
+        assert!(!doc.is_modified());
+        // 存檔後的輸入不可合併進已存檔的復原紀錄
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Typing, hint, |e| e.insert_char('b'));
+        assert_eq!(doc.editor.lines, vec!["ab"]);
+        assert!(doc.is_modified());
+        // 復原一次回到存檔時的狀態
+        assert!(doc.undo());
+        assert_eq!(doc.editor.lines, vec!["a"]);
+        assert!(!doc.is_modified());
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn test_save_copy_failure_keeps_existing_target() {
+        let p = temp_path("copy_unmappable.txt");
+        fs::write(&p, b"existing").unwrap();
+        let mut doc = Document::new_untitled(encoding_rs::SHIFT_JIS, false, NewLineFormat::Unix, syntax::PLAIN_TEXT);
+        doc.editor.set_text("한국어");
+        assert!(matches!(doc.save_copy(&p), Err(SaveError::Unmappable(_))));
+        assert_eq!(fs::read(&p).unwrap(), b"existing");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn test_save_copy_refuses_decode_errors() {
+        let p = temp_path("copy_decode_error.txt");
+        fs::write(&p, b"existing").unwrap();
+        let mut doc = Document::default();
+        doc.editor.set_text("A\u{FFFD}B");
+        doc.has_decode_error = true;
+        assert!(matches!(doc.save_copy(&p), Err(SaveError::DecodeErrors)));
+        assert_eq!(fs::read(&p).unwrap(), b"existing");
+        let _ = fs::remove_file(&p);
     }
 
     #[test]
