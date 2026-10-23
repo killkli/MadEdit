@@ -100,3 +100,21 @@ fn test_mode_switch_keeps_content() {
     h.run_steps(2);
     assert_eq!(text(&mut h), "hello");
 }
+
+#[test]
+fn test_switch_tab_by_number_shortcut() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::New);
+    h.state_mut().pending.push(C::New);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().tabs.len(), 3);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num1);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().active, 0);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num9);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().active, 2, "第 9 個快捷鍵切至最後一個分頁");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num5);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().active, 2, "分頁不存在時不動作");
+}

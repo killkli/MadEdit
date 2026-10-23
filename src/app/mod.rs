@@ -504,7 +504,9 @@ impl App {
             c,
             C::New | C::Open | C::Save | C::SaveAs | C::SaveAll | C::Close | C::Find | C::FindNext | C::FindPrevious
                 | C::Replace | C::QuickFind | C::FindInFiles | C::GoToLine | C::GoToPosition | C::NextWindow
-                | C::PreviousWindow | C::ToggleWindow | C::FullScreen | C::Print | C::RecentFilesList
+                | C::PreviousWindow | C::ToggleWindow | C::FullScreen | C::Print | C::RecentFilesList | C::SwitchTab1
+                | C::SwitchTab2 | C::SwitchTab3 | C::SwitchTab4 | C::SwitchTab5 | C::SwitchTab6 | C::SwitchTab7
+                | C::SwitchTab8 | C::SwitchLastTab
         )
     }
 

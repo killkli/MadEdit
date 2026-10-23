@@ -201,6 +201,16 @@ commands! {
     PreviousWindow => "menuPreviousWindow", "上一個視窗(&P)", "F5";
     NextWindow => "menuNextWindow", "下一個視窗(&N)", "F6";
     WindowList => "menuWindowList", "視窗清單(&W)...", "";
+    // 以下僅供快捷鍵使用，不放進選單（原版無此命令；第 9 個為最後一個分頁，同瀏覽器慣例）
+    SwitchTab1 => "menuSwitchTab1", "切換至第 1 個分頁", "Ctrl+1";
+    SwitchTab2 => "menuSwitchTab2", "切換至第 2 個分頁", "Ctrl+2";
+    SwitchTab3 => "menuSwitchTab3", "切換至第 3 個分頁", "Ctrl+3";
+    SwitchTab4 => "menuSwitchTab4", "切換至第 4 個分頁", "Ctrl+4";
+    SwitchTab5 => "menuSwitchTab5", "切換至第 5 個分頁", "Ctrl+5";
+    SwitchTab6 => "menuSwitchTab6", "切換至第 6 個分頁", "Ctrl+6";
+    SwitchTab7 => "menuSwitchTab7", "切換至第 7 個分頁", "Ctrl+7";
+    SwitchTab8 => "menuSwitchTab8", "切換至第 8 個分頁", "Ctrl+8";
+    SwitchLastTab => "menuSwitchLastTab", "切換至最後一個分頁", "Ctrl+9";
 
     // ── 說明 ──
     About => "menuAbout", "關於 MadEdit(&A)...", "";

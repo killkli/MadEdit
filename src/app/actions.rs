@@ -639,6 +639,15 @@ impl App {
                 let n = self.tabs.len();
                 self.activate((self.active + 1) % n);
             }
+            C::SwitchTab1 => self.activate(0),
+            C::SwitchTab2 => self.activate(1),
+            C::SwitchTab3 => self.activate(2),
+            C::SwitchTab4 => self.activate(3),
+            C::SwitchTab5 => self.activate(4),
+            C::SwitchTab6 => self.activate(5),
+            C::SwitchTab7 => self.activate(6),
+            C::SwitchTab8 => self.activate(7),
+            C::SwitchLastTab => self.activate(self.tabs.len() - 1),
             C::WindowList => self.dialog = Some(Dialog::WindowList),
             C::About => self.dialog = Some(Dialog::About),
 
