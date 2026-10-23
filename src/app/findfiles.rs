@@ -3,7 +3,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use eframe::egui;
 use regex::Regex;
@@ -40,12 +42,23 @@ pub struct FindInFiles {
     pub running: bool,
     /// 已在編輯器開啟的檔案（正規化路徑），背景取代不得寫入；搜尋期間新開的檔案也會加入
     opened: Arc<Mutex<HashSet<PathBuf>>>,
+    /// 要求背景執行緒在處理下一個檔案前停止
+    cancel: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
 }
 
 impl FindInFiles {
     /// 檔案在編輯器中開啟時呼叫，避免執行中的背景取代覆寫它
     pub fn mark_opened(&self, canonical: &Path) {
         self.opened.lock().unwrap_or_else(|e| e.into_inner()).insert(canonical.to_path_buf());
+    }
+
+    /// 程式結束前呼叫：要求背景執行緒停止並等它寫完目前的檔案，避免寫入途中被中止
+    pub fn stop_worker(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+        if let Some(w) = self.worker.take() {
+            let _ = w.join();
+        }
     }
 }
 
@@ -154,15 +167,20 @@ impl App {
         let (tx, rx) = channel();
         let opened = Arc::new(Mutex::new(opened));
         self.fif.opened = Arc::clone(&opened);
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.fif.cancel = Arc::clone(&cancel);
         self.fif.rx = Some(rx);
         self.fif.running = true;
         self.fif.summary = if replace.is_some() { format!("取代中…（開啟中的檔案已取代 {replaced_total} 處）") } else { "搜尋中…".into() };
-        std::thread::spawn(move || {
+        self.fif.worker = Some(std::thread::spawn(move || {
             let mut files = Vec::new();
             collect_files(&dir, &opts.file_filter, &opts.exclude_filter, opts.subdirectories, &mut files);
             let total = files.len();
             let is_opened = |f: &Path| opened.lock().unwrap_or_else(|e| e.into_inner()).contains(&canonical(f));
             for f in files {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
                 if is_opened(&f) {
                     continue;
                 }
@@ -213,7 +231,7 @@ impl App {
                                     let _ = tx.send(Msg::Error(format!("略過（已在編輯器中開啟）：{}", f.display())));
                                     continue;
                                 }
-                                if let Err(e) = std::fs::write(&f, out) {
+                                if let Err(e) = crate::core::document::atomic_write(&f, |w| std::io::Write::write_all(w, &out)) {
                                     let _ = tx.send(Msg::Error(format!("{}：{e}", f.display())));
                                 } else {
                                     let _ = tx.send(Msg::Replaced { path: f.clone(), count });
@@ -227,7 +245,7 @@ impl App {
                 }
             }
             let _ = tx.send(Msg::Done { files: total });
-        });
+        }));
     }
 
     pub fn find_results_panel(&mut self, ui: &mut egui::Ui) {

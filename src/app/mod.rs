@@ -974,6 +974,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        self.fif.stop_worker();
         self.save_session();
     }
 }

@@ -618,34 +618,15 @@ impl Document {
     ///
     /// 編碼或寫入失敗時目標檔不受影響（不會先被截斷）。
     fn write_atomic(&self, target: &Path) -> Result<(), SaveError> {
-        // 暫存檔放在同目錄，檔名後附加，不取代原副檔名
-        let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let tmp = target.with_file_name(format!(".{}.madedit-{}.tmp", file_name, std::process::id()));
-        let write_result: Result<(), SaveError> = (|| {
-            let mut f = fs::File::create(&tmp)?;
+        atomic_write(target, |f| {
             if self.mode == EditMode::Hex {
-                self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(&mut f)?;
+                self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(f)?;
             } else {
                 let bytes = self.encode().map_err(SaveError::Unmappable)?;
                 f.write_all(&bytes)?;
             }
-            f.sync_all()?;
             Ok(())
-        })();
-        if let Err(e) = write_result {
-            let _ = fs::remove_file(&tmp);
-            return Err(e);
-        }
-        // 保留原檔權限
-        if let Ok(meta) = fs::metadata(target) {
-            let _ = fs::set_permissions(&tmp, meta.permissions());
-        }
-        // 原子取代：失敗時原檔與記憶體內容都不受影響
-        if let Err(e) = fs::rename(&tmp, target) {
-            let _ = fs::remove_file(&tmp);
-            return Err(SaveError::Io(e));
-        }
-        Ok(())
+        })
     }
 
     fn refresh_disk_stamp(&mut self) {
@@ -761,6 +742,35 @@ impl NewLineFormat {
     pub fn default_for_platform() -> Self {
         if cfg!(windows) { NewLineFormat::Dos } else { NewLineFormat::Unix }
     }
+}
+
+/// 以 `write` 寫入同目錄暫存檔並 `sync_all`，成功後保留原檔權限並原子取代 `target`
+///
+/// 寫入失敗或行程在寫入途中中止時，`target` 維持原狀（不會先被截斷）。
+pub fn atomic_write<E: From<std::io::Error>>(target: &Path, write: impl FnOnce(&mut fs::File) -> Result<(), E>) -> Result<(), E> {
+    // 暫存檔放在同目錄，檔名後附加，不取代原副檔名
+    let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = target.with_file_name(format!(".{}.madedit-{}.tmp", file_name, std::process::id()));
+    let write_result: Result<(), E> = (|| {
+        let mut f = fs::File::create(&tmp)?;
+        write(&mut f)?;
+        f.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        let _ = fs::remove_file(&tmp);
+        return Err(e);
+    }
+    // 保留原檔權限
+    if let Ok(meta) = fs::metadata(target) {
+        let _ = fs::set_permissions(&tmp, meta.permissions());
+    }
+    // 原子取代：失敗時原檔不受影響
+    if let Err(e) = fs::rename(&tmp, target) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    Ok(())
 }
 
 /// 復原／重做時還原書籤快照，並保留編輯之後使用者自行做的書籤增刪
@@ -938,6 +948,30 @@ mod tests {
         assert!(doc.undo());
         assert_eq!(doc.editor.lines, vec!["a"]);
         assert!(!doc.is_modified());
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn test_atomic_write_failure_keeps_target_and_removes_tmp() {
+        let p = temp_path("atomic_fail.txt");
+        fs::write(&p, b"original").unwrap();
+        // 寫入一半後失敗（模擬寫入途中出錯）：目標檔不可被截斷，也不可留下暫存檔
+        let r: std::io::Result<()> = atomic_write(&p, |f| {
+            f.write_all(b"half")?;
+            Err(std::io::Error::other("中途失敗"))
+        });
+        assert!(r.is_err());
+        assert_eq!(fs::read(&p).unwrap(), b"original");
+        let dir = p.parent().unwrap();
+        let name = p.file_name().unwrap().to_string_lossy().into_owned();
+        let leftover = fs::read_dir(dir).unwrap().flatten().any(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with(&format!(".{name}.madedit-"))
+        });
+        assert!(!leftover, "暫存檔應已刪除");
+        // 成功時取代內容
+        atomic_write::<std::io::Error>(&p, |f| f.write_all(b"new")).unwrap();
+        assert_eq!(fs::read(&p).unwrap(), b"new");
         let _ = fs::remove_file(&p);
     }
 
