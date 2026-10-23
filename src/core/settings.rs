@@ -1,7 +1,7 @@
 //! 使用者設定（對應原版「選項」對話框與 MadEdit.cfg），以 JSON 存於系統設定目錄
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -377,20 +377,57 @@ impl Settings {
 
     /// 載入設定；檔案不存在或格式錯誤時使用預設值
     pub fn load() -> Self {
-        Self::path()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+        Self::load_checked().0
+    }
+
+    /// 載入設定，並回傳需要告知使用者的錯誤（設定檔損毀時已另存備份）
+    pub fn load_checked() -> (Self, Option<String>) {
+        match Self::path() {
+            Some(p) => Self::load_from(&p),
+            None => (Self::default(), None),
+        }
+    }
+
+    /// 自指定路徑載入；檔案不存在時靜默使用預設值，讀取或解析失敗時先把原檔複製為 `.bak`
+    /// 再使用預設值，避免之後存回設定時永久覆蓋使用者的原始設定
+    fn load_from(path: &Path) -> (Self, Option<String>) {
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
+            Err(e) => return (Self::default(), Some(Self::corrupt_message(path, &e.to_string()))),
+        };
+        match serde_json::from_str(&text) {
+            Ok(s) => (s, None),
+            Err(e) => (Self::default(), Some(Self::corrupt_message(path, &e.to_string()))),
+        }
+    }
+
+    /// 備份無法使用的設定檔並產生提示訊息
+    fn corrupt_message(path: &Path, err: &str) -> String {
+        let mut bak = path.as_os_str().to_owned();
+        bak.push(".bak");
+        let bak = PathBuf::from(bak);
+        match std::fs::copy(path, &bak) {
+            Ok(_) => format!("設定檔無法讀取，已改用預設設定。\n原設定檔已備份為 {}\n\n錯誤：{err}", bak.display()),
+            Err(e) => format!("設定檔無法讀取，已改用預設設定（備份失敗：{e}）。\n\n錯誤：{err}"),
+        }
     }
 
     /// 寫回設定檔
     pub fn save(&self) -> std::io::Result<()> {
-        let Some(path) = Self::path() else { return Ok(()) };
+        match Self::path() {
+            Some(p) => self.save_to(&p),
+            None => Ok(()),
+        }
+    }
+
+    /// 以原子寫入存到指定路徑，寫入途中中止也不會留下截斷的設定檔
+    fn save_to(&self, path: &Path) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, json)
+        super::document::atomic_write(path, |f| std::io::Write::write_all(f, json.as_bytes()))
     }
 
     /// 將項目移到歷史清單最前面
@@ -426,6 +463,44 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("madedit_settings_{}_{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
+
+    #[test]
+    fn test_settings_save_and_load_roundtrip() {
+        let dir = temp_dir("roundtrip");
+        let p = dir.join("settings.json");
+        let mut s = Settings::default();
+        s.add_recent_file(PathBuf::from("/a.txt"));
+        s.save_to(&p).unwrap();
+        let (loaded, err) = Settings::load_from(&p);
+        assert!(err.is_none());
+        assert_eq!(loaded.recent_files, vec![PathBuf::from("/a.txt")]);
+        // 檔案不存在：靜默使用預設值
+        let (_, err) = Settings::load_from(&dir.join("missing.json"));
+        assert!(err.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_corrupt_settings_are_backed_up_and_reported() {
+        let dir = temp_dir("corrupt");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("settings.json");
+        let truncated = r#"{"recent_files": ["/a.txt""#;
+        std::fs::write(&p, truncated).unwrap();
+        let (loaded, err) = Settings::load_from(&p);
+        assert!(err.is_some());
+        assert!(loaded.recent_files.is_empty());
+        // 原始內容保留在 .bak，之後存回預設值也不會遺失
+        loaded.save_to(&p).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("settings.json.bak")).unwrap(), truncated);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn test_settings_roundtrip_and_partial_json() {

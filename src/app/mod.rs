@@ -82,6 +82,9 @@ pub struct App {
     goto: GotoBar,
     dialog: Option<Dialog>,
     confirm: Option<Confirm>,
+    /// 關閉流程中「儲存」需要再確認（外部修改、解碼錯誤等）時暫存的待關閉分頁與是否結束程式，
+    /// 存檔成功後由此接續關閉；再確認被取消時清除
+    pending_close: Option<(Vec<u64>, bool)>,
     macros: MacroState,
     spell: Option<SpellChecker>,
     spell_error: Option<String>,
@@ -104,7 +107,7 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext, files: Vec<PathBuf>, screenshot: Option<PathBuf>) -> Self {
-        let settings = Settings::load();
+        let (settings, settings_error) = Settings::load_checked();
         let mut app = Self {
             settings,
             tabs: Vec::new(),
@@ -119,6 +122,7 @@ impl App {
             goto: GotoBar::default(),
             dialog: None,
             confirm: None,
+            pending_close: None,
             macros: MacroState::default(),
             spell: None,
             spell_error: None,
@@ -165,6 +169,13 @@ impl App {
         }
         if app.settings.spell_check {
             app.load_spell();
+        }
+        if let Some(text) = settings_error {
+            if app.confirm.is_none() {
+                app.confirm = Some(Confirm::Message { title: "設定檔損毀".into(), text });
+            } else {
+                app.set_status(text);
+            }
         }
         app
     }
@@ -229,6 +240,8 @@ impl App {
             self.activate(i);
             return true;
         }
+        // 先登記再讀檔：執行中的背景取代不會再寫入這個檔案，正在寫入時則等寫完才讀
+        self.fif.mark_opened(&canon);
         match Document::open(&canon, &self.open_options()) {
             Ok(mut doc) => {
                 use crate::core::settings::OpenViewMode;
@@ -968,6 +981,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        self.fif.stop_worker();
         self.save_session();
     }
 }

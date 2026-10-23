@@ -557,7 +557,7 @@ impl App {
             });
             if ctx.input(|i| i.key_pressed(Key::Escape)) {
                 st.capturing = None;
-            } else if let Some(mut sc) = pressed {
+            } else if let Some(mut sc) = pressed.filter(commands::is_bindable) {
                 // 只保留邏輯修飾鍵（macOS 的 ⌘ 視為 Ctrl）
                 sc.modifiers = egui::Modifiers { mac_cmd: false, ..sc.modifiers };
                 let text = commands::shortcut_to_string(&sc);
@@ -729,7 +729,7 @@ impl App {
                                 draft.key_bindings.insert(c.id().to_string(), l);
                             }
                             if st.capturing == Some(c) {
-                                ui.colored_label(egui::Color32::from_rgb(220, 120, 0), "請按下新的快捷鍵（Esc 取消）…");
+                                ui.colored_label(egui::Color32::from_rgb(220, 120, 0), "請按下新的快捷鍵（需含 Ctrl／⌘／Alt，F 鍵除外；Esc 取消）…");
                             } else if ui.button("新增快捷鍵…").clicked() {
                                 st.capturing = Some(c);
                             }
@@ -867,9 +867,11 @@ impl App {
                         if self.save_tab(idx, false) {
                             self.close_now(id);
                             self.continue_close(ids, *exit);
-                        } else if self.confirm.is_none() {
-                            // 使用者取消另存對話框：中止關閉
+                        } else if self.confirm.is_some() {
+                            // 存檔需要再確認：記下關閉流程，確認後存檔成功再接續關閉
+                            self.pending_close = Some((ids.clone(), *exit));
                         }
+                        // 否則為使用者取消另存對話框：中止關閉
                         return;
                     }
                     Some(1) => {
@@ -900,7 +902,7 @@ impl App {
                     keep = false;
                     if c {
                         let (id, path) = (*id, path.clone());
-                        self.save_with(id, path, true);
+                        self.save_and_continue_close(id, path, true);
                         return;
                     }
                 }
@@ -926,7 +928,7 @@ impl App {
                         let bom = self.tabs[i].doc.has_bom;
                         if self.tabs[i].doc.convert_encoding(encoding_rs::UTF_8, bom).is_ok() {
                             let (id, path) = (*id, path.clone());
-                            self.save_with(id, path, false);
+                            self.save_and_continue_close(id, path, false);
                             return;
                         }
                     }
@@ -954,7 +956,7 @@ impl App {
                     let (id, path) = (*id, path.clone());
                     match c {
                         0 => {
-                            self.save_with(id, path, false);
+                            self.save_and_continue_close(id, path, false);
                             return;
                         }
                         1 => self.reload_tab(id),
@@ -986,6 +988,20 @@ impl App {
         }
         if keep && self.confirm.is_none() {
             self.confirm = Some(confirm);
+        } else if !keep && self.confirm.is_none() {
+            // 確認視窗已關閉且沒有後續確認（取消、重新載入或存檔失敗）：中止暫存的關閉流程
+            self.pending_close = None;
+        }
+    }
+
+    /// 存檔；若關閉流程正等待這份文件存檔，成功後接續關閉
+    fn save_and_continue_close(&mut self, id: u64, path: Option<std::path::PathBuf>, allow_lossy: bool) {
+        if !self.save_with(id, path, allow_lossy) {
+            return;
+        }
+        if let Some((ids, exit)) = self.pending_close.take_if(|(ids, _)| ids[0] == id) {
+            self.close_now(id);
+            self.continue_close(&ids, exit);
         }
     }
 

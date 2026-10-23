@@ -1,7 +1,11 @@
 //! 在多個檔案中尋找／取代：背景執行緒掃描資料夾，結果顯示於下方面板
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use eframe::egui;
 use regex::Regex;
@@ -36,6 +40,31 @@ pub struct FindInFiles {
     pub collapsed: bool,
     rx: Option<Receiver<Msg>>,
     pub running: bool,
+    /// 已在編輯器開啟的檔案（正規化路徑），背景取代不得寫入；搜尋期間新開的檔案也會加入
+    opened: Arc<Mutex<HashSet<PathBuf>>>,
+    /// 要求背景執行緒在處理下一個檔案前停止
+    cancel: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl FindInFiles {
+    /// 檔案在編輯器中開啟時呼叫，避免執行中的背景取代覆寫它
+    pub fn mark_opened(&self, canonical: &Path) {
+        self.opened.lock().unwrap_or_else(|e| e.into_inner()).insert(canonical.to_path_buf());
+    }
+
+    /// 程式結束前呼叫：要求背景執行緒停止並等它寫完目前的檔案，避免寫入途中被中止
+    pub fn stop_worker(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+        if let Some(w) = self.worker.take() {
+            let _ = w.join();
+        }
+    }
+}
+
+/// 正規化路徑（解析符號連結、相對路徑與 macOS 的 /tmp 等別名），失敗時沿用原路徑
+fn canonical(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
 /// 簡單的萬用字元比對（* 與 ?，不分大小寫），多個樣式以 ; 或空白分隔
@@ -86,18 +115,19 @@ impl App {
         self.fif.collapsed = false;
         let max_chars = self.settings.max_search_result_chars.max(20);
 
-        // 已開啟的文件直接在記憶體中處理（取代可復原）
-        let mut opened: Vec<PathBuf> = Vec::new();
+        // 已開啟的文件直接在記憶體中處理（取代可復原）；兩側路徑都正規化後再比對
+        let dir_canon = canonical(Path::new(&opts.directory));
+        let mut opened: HashSet<PathBuf> = HashSet::new();
         let mut replaced_total = 0;
         for t in &mut self.tabs {
             // 未命名文件沒有路徑，結果無法定位，略過
             let Some(p) = t.doc.path.clone() else { continue };
             let in_scope = opts.opened_files_only
-                || (p.starts_with(&opts.directory) && wildcard_match(&opts.file_filter, &p.file_name().unwrap_or_default().to_string_lossy()));
+                || (canonical(&p).starts_with(&dir_canon) && wildcard_match(&opts.file_filter, &p.file_name().unwrap_or_default().to_string_lossy()));
             if !in_scope {
                 continue;
             }
-            opened.push(p.clone());
+            opened.insert(canonical(&p));
             if let Some(rep) = &replace {
                 if !t.doc.read_only {
                     let hint = t.doc.whole_hint();
@@ -135,15 +165,23 @@ impl App {
         crate::core::settings::Settings::push_history(&mut self.settings.recent_dirs, opts.directory.clone());
         let default_enc = encoding::encoding_for_name(&self.settings.default_encoding).unwrap_or(encoding_rs::BIG5);
         let (tx, rx) = channel();
+        let opened = Arc::new(Mutex::new(opened));
+        self.fif.opened = Arc::clone(&opened);
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.fif.cancel = Arc::clone(&cancel);
         self.fif.rx = Some(rx);
         self.fif.running = true;
         self.fif.summary = if replace.is_some() { format!("取代中…（開啟中的檔案已取代 {replaced_total} 處）") } else { "搜尋中…".into() };
-        std::thread::spawn(move || {
+        self.fif.worker = Some(std::thread::spawn(move || {
             let mut files = Vec::new();
             collect_files(&dir, &opts.file_filter, &opts.exclude_filter, opts.subdirectories, &mut files);
             let total = files.len();
+            let is_opened = |f: &Path| opened.lock().unwrap_or_else(|e| e.into_inner()).contains(&canonical(f));
             for f in files {
-                if opened.contains(&f) {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                if is_opened(&f) {
                     continue;
                 }
                 let Ok(bytes) = std::fs::read(&f) else { continue };
@@ -186,7 +224,14 @@ impl App {
                         }
                         match encoding::encode_text(&new_text, d.encoding, d.has_bom) {
                             Ok(out) => {
-                                if let Err(e) = std::fs::write(&f, out) {
+                                // 寫入前再確認一次（搜尋期間可能新開了這個檔案）；寫入期間持有鎖，
+                                // 讓同時開檔的 UI 等到寫完才讀檔
+                                let guard = opened.lock().unwrap_or_else(|e| e.into_inner());
+                                if guard.contains(&canonical(&f)) {
+                                    let _ = tx.send(Msg::Error(format!("略過（已在編輯器中開啟）：{}", f.display())));
+                                    continue;
+                                }
+                                if let Err(e) = crate::core::document::atomic_write(&f, |w| std::io::Write::write_all(w, &out)) {
                                     let _ = tx.send(Msg::Error(format!("{}：{e}", f.display())));
                                 } else {
                                     let _ = tx.send(Msg::Replaced { path: f.clone(), count });
@@ -200,7 +245,7 @@ impl App {
                 }
             }
             let _ = tx.send(Msg::Done { files: total });
-        });
+        }));
     }
 
     pub fn find_results_panel(&mut self, ui: &mut egui::Ui) {

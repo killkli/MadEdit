@@ -474,19 +474,7 @@ pub fn apply_action(doc: &mut Document, view: &mut ViewState, act: &EdAction, se
         EdAction::BackTab => indent_selection(doc, settings, false),
         EdAction::Backspace => {
             let hint = doc.selection_hint();
-            doc.edit(EditKind::Typing, hint, |ed| {
-                if ed.selection.is_block() && ed.selection.is_empty() {
-                    // 零寬矩形：刪除每行游標左側一個字
-                    let b = ed.selection.visual_bounds(ed);
-                    if b.min_vcol > 0 {
-                        let (a, h, v) = (ed.selection.anchor, ed.selection.head, b.min_vcol);
-                        ed.selection = Selection::block(a, h, v - 1, v);
-                        ed.delete_selection();
-                        return;
-                    }
-                }
-                ed.delete_backspace()
-            });
+            doc.edit(EditKind::Typing, hint, |ed| ed.delete_backspace());
         }
         EdAction::Delete => {
             let hint = doc.selection_hint();

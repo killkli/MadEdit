@@ -317,11 +317,12 @@ impl Document {
         self.pristine_bytes = None;
         self.text_changed(start);
 
-        // 連續輸入合併為一筆
+        // 連續輸入合併為一筆；已存檔的紀錄不再合併，否則 serial 不前進，存檔後的輸入不會被視為修改
         let mergeable = kind == EditKind::Typing
             && old_changed.len() == 1
             && new_changed.len() == 1
             && self.redo.is_empty()
+            && self.serial != self.saved_serial
             && self.undo.last().is_some_and(|last| {
                 last.kind == EditKind::Typing
                     && last.start == start
@@ -383,7 +384,8 @@ impl Document {
         let end = rec.start + rec.new.len();
         self.editor.lines.splice(rec.start..end, rec.old.iter().cloned());
         self.editor.selection = rec.sel_before;
-        self.editor.bookmarks = rec.bm_before.clone();
+        self.editor.bookmarks = carry_bookmarks(&self.editor.bookmarks, &rec.bm_after, &rec.bm_before, rec.start, rec.new.len(), rec.old.len());
+        self.editor.bookmarks.retain(|&l| l < self.editor.lines.len());
         self.editor.clamp_caret();
         self.serial = rec.serial_before;
         self.text_changed(rec.start);
@@ -399,7 +401,8 @@ impl Document {
         let end = rec.start + rec.old.len();
         self.editor.lines.splice(rec.start..end, rec.new.iter().cloned());
         self.editor.selection = rec.sel_after;
-        self.editor.bookmarks = rec.bm_after.clone();
+        self.editor.bookmarks = carry_bookmarks(&self.editor.bookmarks, &rec.bm_before, &rec.bm_after, rec.start, rec.old.len(), rec.new.len());
+        self.editor.bookmarks.retain(|&l| l < self.editor.lines.len());
         self.editor.clamp_caret();
         self.serial = rec.serial_after;
         self.text_changed(rec.start);
@@ -568,33 +571,7 @@ impl Document {
             return Err(SaveError::DecodeErrors);
         }
 
-        // 先產生暫存檔（同目錄，檔名後附加，不取代原副檔名）
-        let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let tmp = target.with_file_name(format!(".{}.madedit-{}.tmp", file_name, std::process::id()));
-        let write_result: Result<(), SaveError> = (|| {
-            let mut f = fs::File::create(&tmp)?;
-            if in_hex {
-                self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(&mut f)?;
-            } else {
-                let bytes = self.encode().map_err(SaveError::Unmappable)?;
-                f.write_all(&bytes)?;
-            }
-            f.sync_all()?;
-            Ok(())
-        })();
-        if let Err(e) = write_result {
-            let _ = fs::remove_file(&tmp);
-            return Err(e);
-        }
-        // 保留原檔權限
-        if let Ok(meta) = fs::metadata(&target) {
-            let _ = fs::set_permissions(&tmp, meta.permissions());
-        }
-        // 原子取代：失敗時原檔與記憶體內容都不受影響
-        if let Err(e) = fs::rename(&tmp, &target) {
-            let _ = fs::remove_file(&tmp);
-            return Err(SaveError::Io(e));
-        }
+        self.write_atomic(&target)?;
 
         if self.hex_only {
             // 改由新檔案提供資料（舊的檔案控制代碼指向已被取代的檔案）
@@ -631,13 +608,25 @@ impl Document {
 
     /// 另存一份副本（不改變文件路徑與修改狀態）
     pub fn save_copy(&self, target: &Path) -> Result<(), SaveError> {
-        let mut f = fs::File::create(target)?;
-        if self.mode == EditMode::Hex {
-            self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(&mut f)?;
-        } else {
-            f.write_all(&self.encode().map_err(SaveError::Unmappable)?)?;
+        if self.mode != EditMode::Hex && self.has_decode_error {
+            return Err(SaveError::DecodeErrors);
         }
-        Ok(())
+        self.write_atomic(target)
+    }
+
+    /// 將目前內容寫入同目錄暫存檔，成功後原子取代目標檔
+    ///
+    /// 編碼或寫入失敗時目標檔不受影響（不會先被截斷）。
+    fn write_atomic(&self, target: &Path) -> Result<(), SaveError> {
+        atomic_write(target, |f| {
+            if self.mode == EditMode::Hex {
+                self.hex.as_ref().expect("Hex 模式必有位元組緩衝").data.write_to(f)?;
+            } else {
+                let bytes = self.encode().map_err(SaveError::Unmappable)?;
+                f.write_all(&bytes)?;
+            }
+            Ok(())
+        })
     }
 
     fn refresh_disk_stamp(&mut self) {
@@ -753,6 +742,68 @@ impl NewLineFormat {
     pub fn default_for_platform() -> Self {
         if cfg!(windows) { NewLineFormat::Dos } else { NewLineFormat::Unix }
     }
+}
+
+/// 以 `write` 寫入同目錄暫存檔並 `sync_all`，成功後保留原檔權限並原子取代 `target`
+///
+/// 寫入失敗或行程在寫入途中中止時，`target` 維持原狀（不會先被截斷）。
+pub fn atomic_write<E: From<std::io::Error>>(target: &Path, write: impl FnOnce(&mut fs::File) -> Result<(), E>) -> Result<(), E> {
+    // 暫存檔放在同目錄，檔名後附加，不取代原副檔名
+    let file_name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = target.with_file_name(format!(".{}.madedit-{}.tmp", file_name, std::process::id()));
+    let write_result: Result<(), E> = (|| {
+        let mut f = fs::File::create(&tmp)?;
+        write(&mut f)?;
+        f.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        let _ = fs::remove_file(&tmp);
+        return Err(e);
+    }
+    // 保留原檔權限
+    if let Ok(meta) = fs::metadata(target) {
+        let _ = fs::set_permissions(&tmp, meta.permissions());
+    }
+    // 原子取代：失敗時原檔不受影響
+    if let Err(e) = fs::rename(&tmp, target) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    Ok(())
+}
+
+/// 復原／重做時還原書籤快照，並保留編輯之後使用者自行做的書籤增刪
+///
+/// `current` 為目前書籤，`expected` 為未經使用者變動時應有的書籤（與 `current` 同一座標），
+/// `target` 為要還原的快照。該次編輯把第 `start` 行起的 `from_len` 行換成 `to_len` 行，
+/// 使用者的增刪依此換算到 `target` 的行號座標後套用。
+fn carry_bookmarks(
+    current: &BTreeSet<usize>,
+    expected: &BTreeSet<usize>,
+    target: &BTreeSet<usize>,
+    start: usize,
+    from_len: usize,
+    to_len: usize,
+) -> BTreeSet<usize> {
+    let map = |l: usize| {
+        if l < start {
+            l
+        } else if l >= start + from_len {
+            l - from_len + to_len
+        } else {
+            // 位於被取代範圍內：落到對應範圍內最接近的一行
+            start + (l - start).min(to_len.saturating_sub(1))
+        }
+    };
+    let mut out = target.clone();
+    for &l in current.difference(expected) {
+        out.insert(map(l));
+    }
+    for &l in expected.difference(current) {
+        out.remove(&map(l));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -881,6 +932,73 @@ mod tests {
     }
 
     #[test]
+    fn test_typing_after_save_marks_modified() {
+        let p = temp_path("typing_after_save.txt");
+        let mut doc = Document::default();
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Typing, hint, |e| e.insert_char('a'));
+        doc.save(Some(&p), false).unwrap();
+        assert!(!doc.is_modified());
+        // 存檔後的輸入不可合併進已存檔的復原紀錄
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Typing, hint, |e| e.insert_char('b'));
+        assert_eq!(doc.editor.lines, vec!["ab"]);
+        assert!(doc.is_modified());
+        // 復原一次回到存檔時的狀態
+        assert!(doc.undo());
+        assert_eq!(doc.editor.lines, vec!["a"]);
+        assert!(!doc.is_modified());
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn test_atomic_write_failure_keeps_target_and_removes_tmp() {
+        let p = temp_path("atomic_fail.txt");
+        fs::write(&p, b"original").unwrap();
+        // 寫入一半後失敗（模擬寫入途中出錯）：目標檔不可被截斷，也不可留下暫存檔
+        let r: std::io::Result<()> = atomic_write(&p, |f| {
+            f.write_all(b"half")?;
+            Err(std::io::Error::other("中途失敗"))
+        });
+        assert!(r.is_err());
+        assert_eq!(fs::read(&p).unwrap(), b"original");
+        let dir = p.parent().unwrap();
+        let name = p.file_name().unwrap().to_string_lossy().into_owned();
+        let leftover = fs::read_dir(dir).unwrap().flatten().any(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with(&format!(".{name}.madedit-"))
+        });
+        assert!(!leftover, "暫存檔應已刪除");
+        // 成功時取代內容
+        atomic_write::<std::io::Error>(&p, |f| f.write_all(b"new")).unwrap();
+        assert_eq!(fs::read(&p).unwrap(), b"new");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn test_save_copy_failure_keeps_existing_target() {
+        let p = temp_path("copy_unmappable.txt");
+        fs::write(&p, b"existing").unwrap();
+        let mut doc = Document::new_untitled(encoding_rs::SHIFT_JIS, false, NewLineFormat::Unix, syntax::PLAIN_TEXT);
+        doc.editor.set_text("한국어");
+        assert!(matches!(doc.save_copy(&p), Err(SaveError::Unmappable(_))));
+        assert_eq!(fs::read(&p).unwrap(), b"existing");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn test_save_copy_refuses_decode_errors() {
+        let p = temp_path("copy_decode_error.txt");
+        fs::write(&p, b"existing").unwrap();
+        let mut doc = Document::default();
+        doc.editor.set_text("A\u{FFFD}B");
+        doc.has_decode_error = true;
+        assert!(matches!(doc.save_copy(&p), Err(SaveError::DecodeErrors)));
+        assert_eq!(fs::read(&p).unwrap(), b"existing");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
     fn test_large_file_opens_hex_only_and_saves() {
         let p = temp_path("big.bin");
         fs::write(&p, vec![b'x'; 5000]).unwrap();
@@ -923,5 +1041,55 @@ mod tests {
         // BOM 3 + "中a" 4 + CRLF 2 + 0
         assert_eq!(doc.byte_offset_of(TextPosition::new(1, 0)), 9);
         assert_eq!(doc.byte_offset_of(TextPosition::new(0, 1)), 6);
+    }
+
+    #[test]
+    fn test_undo_keeps_bookmarks_added_after_edit() {
+        let mut doc = Document::default();
+        doc.editor.set_text("a\nb\nc");
+        // 在第 0 行插入一行，再於移位後的第 2、3 行加書籤
+        doc.editor.set_caret(0, 0);
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Other, hint, |e| e.insert_text("new\n"));
+        assert_eq!(doc.editor.lines, vec!["new", "a", "b", "c"]);
+        doc.editor.set_caret(2, 0);
+        doc.editor.toggle_bookmark();
+        doc.editor.set_caret(3, 0);
+        doc.editor.toggle_bookmark();
+        // 復原後書籤保留並隨行號回移
+        assert!(doc.undo());
+        assert_eq!(doc.editor.lines, vec!["a", "b", "c"]);
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([1, 2]));
+        // 復原後取消一個書籤，重做時該取消也保留
+        doc.editor.set_caret(1, 0);
+        doc.editor.toggle_bookmark();
+        assert!(doc.redo());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([3]));
+    }
+
+    #[test]
+    fn test_undo_still_restores_bookmarks_moved_by_edit() {
+        let mut doc = Document::default();
+        doc.editor.set_text("a\nb");
+        doc.editor.set_caret(1, 0);
+        doc.editor.toggle_bookmark();
+        // 刪除第 0 行，書籤隨之移到第 0 行；復原應回到第 1 行
+        doc.editor.set_caret(0, 0);
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Other, hint, |e| e.delete_lines());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([0]));
+        assert!(doc.undo());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([1]));
+    }
+
+    #[test]
+    fn test_undo_keeps_bookmark_toggled_on_edited_line() {
+        // 審查報告 2.6 的重現步驟：輸入後在同一行加書籤，復原不可吃掉書籤
+        let mut doc = Document::default();
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Typing, hint, |e| e.insert_char('x'));
+        doc.editor.toggle_bookmark();
+        assert!(doc.undo());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([0]));
     }
 }

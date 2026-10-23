@@ -2,6 +2,7 @@
 
 use eframe::egui::{Event, ImeEvent, Key, Modifiers};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 
 use super::commands::C;
 use super::{App, Confirm};
@@ -91,6 +92,28 @@ fn test_close_modified_document_asks_first() {
 }
 
 #[test]
+fn test_close_save_with_second_confirm_still_closes() {
+    // 關閉時選「儲存」而存檔需要再確認（檔案已被外部修改）：確認覆寫後仍要完成關閉
+    let p = std::env::temp_dir().join(format!("madedit_ui_close_{}.txt", std::process::id()));
+    std::fs::write(&p, "old").unwrap();
+    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    h.run_steps(3);
+    type_text(&mut h, "x");
+    std::fs::write(&p, "changed outside").unwrap();
+    h.state_mut().pending.push(C::Close);
+    h.run_steps(2);
+    h.get_by_label("儲存").click();
+    h.run_steps(2);
+    assert!(matches!(h.state_mut().confirm, Some(Confirm::OverwriteExternal { .. })));
+    h.get_by_label("覆寫").click();
+    h.run_steps(2);
+    assert!(h.state_mut().confirm.is_none());
+    assert!(h.state_mut().doc().path.is_none(), "分頁應已關閉");
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "xold");
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
 fn test_mode_switch_keeps_content() {
     let mut h = harness();
     type_text(&mut h, "hello");
@@ -117,4 +140,37 @@ fn test_switch_tab_by_number_shortcut() {
     h.key_press_modifiers(Modifiers::COMMAND, Key::Num5);
     h.run_steps(2);
     assert_eq!(h.state_mut().active, 2, "分頁不存在時不動作");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_replace_in_files_skips_opened_file_via_symlink_alias() {
+    // 以符號連結別名指定資料夾時，已開啟的檔案仍須只在記憶體中取代、不寫入磁碟
+    let base = std::env::temp_dir().join(format!("madedit_ui_fif_{}", std::process::id()));
+    let real = base.join("real");
+    let alias = base.join("alias");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let opened = real.join("opened.txt");
+    let closed = real.join("closed.txt");
+    std::fs::write(&opened, "old").unwrap();
+    std::fs::write(&closed, "old").unwrap();
+
+    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![opened.clone()], None));
+    h.run_steps(3);
+    h.state_mut().settings.find_in_files.directory = alias.to_string_lossy().into_owned();
+    h.state_mut().start_find_in_files("old".into(), Some("new".into()));
+    for _ in 0..200 {
+        h.run_steps(1);
+        if !h.state_mut().fif.running {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!h.state_mut().fif.running);
+    assert_eq!(h.state_mut().doc().text(), "new");
+    assert_eq!(std::fs::read_to_string(&opened).unwrap(), "old", "已開啟的檔案不可被背景寫入");
+    assert_eq!(std::fs::read_to_string(&closed).unwrap(), "new");
+    let _ = std::fs::remove_dir_all(&base);
 }

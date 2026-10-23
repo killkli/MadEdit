@@ -798,11 +798,12 @@ impl EditorState {
 
     /// 刪除選取範圍；若有選取並刪除成功回傳 true
     pub fn delete_selection(&mut self) -> bool {
-        if self.selection.is_empty() {
-            return false;
-        }
         if self.selection.is_block() {
             let bounds = self.selection.visual_bounds(self);
+            // 列塊以欄寬判斷是否有內容：零寬矩形沒有可刪的字；單行有寬度的矩形（anchor == head）仍要刪
+            if bounds.min_vcol == bounds.max_vcol {
+                return false;
+            }
             for line_idx in bounds.min_line..=bounds.max_line {
                 if line_idx < self.lines.len() {
                     let (_, start_c, end_c) = extract_visual_slice(&self.lines[line_idx], bounds.min_vcol, bounds.max_vcol);
@@ -834,6 +835,9 @@ impl EditorState {
             self.clamp_caret();
             self.scroll_caret_into_view();
             return true;
+        }
+        if self.selection.is_empty() {
+            return false;
         }
         let start = self.selection.start();
         let end = self.selection.end();
@@ -1094,6 +1098,18 @@ impl EditorState {
 
     /// Backspace 刪除鍵處理
     pub fn delete_backspace(&mut self) {
+        if self.selection.is_block() {
+            let b = self.selection.visual_bounds(self);
+            if b.min_vcol == b.max_vcol && (b.min_vcol > 0 || b.min_line != b.max_line) {
+                // 零寬矩形：刪除每行游標左側一個字；位於第 0 欄的多行矩形不動作
+                if b.min_vcol > 0 {
+                    let (a, h, v) = (self.selection.anchor, self.selection.head, b.min_vcol);
+                    self.selection = Selection::block(a, h, v - 1, v);
+                    self.delete_selection();
+                }
+                return;
+            }
+        }
         if self.delete_selection() {
             return;
         }
@@ -1119,6 +1135,16 @@ impl EditorState {
 
     /// Delete 往前刪除鍵處理
     pub fn delete_forward(&mut self) {
+        if self.selection.is_block() {
+            let b = self.selection.visual_bounds(self);
+            if b.min_vcol == b.max_vcol && b.min_line != b.max_line {
+                // 多行零寬矩形：刪除每行游標右側一個字（單行時與一般 Delete 相同）
+                let (a, h, v) = (self.selection.anchor, self.selection.head, b.min_vcol);
+                self.selection = Selection::block(a, h, v, v + 1);
+                self.delete_selection();
+                return;
+            }
+        }
         if self.delete_selection() {
             return;
         }
@@ -1729,5 +1755,31 @@ mod tests {
         editor.set_caret(1, 3);
         editor.paste_from_clipboard(true);
         assert_eq!(editor.lines, vec!["ABCD", "EFGBH", "IJ F"]);
+    }
+
+    #[test]
+    fn test_zero_width_block_backspace_and_delete() {
+        // 單行零寬矩形：Backspace 刪除游標左側一個字
+        let mut editor = EditorState::from_text("abcd\nefgh\nijkl");
+        let p = TextPosition::new(0, 2);
+        editor.selection = Selection::block(p, p, 2, 2);
+        editor.delete_backspace();
+        assert_eq!(editor.lines, vec!["acd", "efgh", "ijkl"]);
+
+        // 多行零寬矩形：Backspace 刪除每行游標左側一個字，矩形保持零寬
+        editor.selection = Selection::block(TextPosition::new(0, 2), TextPosition::new(2, 2), 2, 2);
+        editor.delete_backspace();
+        assert_eq!(editor.lines, vec!["ad", "egh", "ikl"]);
+        assert!(editor.selection.is_block());
+        assert_eq!(editor.selection.head, TextPosition::new(2, 1));
+
+        // 多行零寬矩形：Delete 刪除每行游標右側一個字
+        editor.delete_forward();
+        assert_eq!(editor.lines, vec!["a", "eh", "il"]);
+
+        // 第 0 欄的多行零寬矩形：Backspace 不合併行
+        editor.selection = Selection::block(TextPosition::new(1, 0), TextPosition::new(2, 0), 0, 0);
+        editor.delete_backspace();
+        assert_eq!(editor.lines, vec!["a", "eh", "il"]);
     }
 }
