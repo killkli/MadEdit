@@ -18,7 +18,7 @@ fn type_text(h: &mut Harness<'static, App>, s: &str) {
 }
 
 fn text(h: &mut Harness<'static, App>) -> String {
-    h.state_mut().doc().text()
+    h.state_mut().doc().editor.lines.join("\n")
 }
 
 #[test]
