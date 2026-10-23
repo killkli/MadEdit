@@ -67,7 +67,8 @@ D:\Git\MadEdit\
 │   │   ├── find.rs         # 搜尋／取代列與跳行列
 │   │   ├── findfiles.rs    # 在多個檔案中尋找／取代（背景執行緒）
 │   │   ├── macros.rs       # 巨集錄製與播放（JSON 步驟清單）
-│   │   ├── print.rs        # 列印與預覽（產生 HTML 交給瀏覽器）
+│   │   ├── print.rs        # 列印內容模型與 HTML 列印（交給瀏覽器）
+│   │   ├── preview.rs      # App 內預覽列印視窗（A4 分頁、翻頁、縮放）
 │   │   ├── fonts.rs        # 系統字型列舉與 egui 字型鏈
 │   │   ├── ui_tests.rs     # egui_kittest 鍵盤／輸入法互動測試
 │   │   └── visual_tests.rs # 離屏繪製截圖（預設略過）

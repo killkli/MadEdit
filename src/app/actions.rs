@@ -43,6 +43,33 @@ fn insert_block(ed: &mut EditorState, first_line: usize, min_vcol: usize, texts:
 }
 
 impl App {
+    /// 將第 `idx` 個分頁的文件轉為 HTML，交給系統瀏覽器並自動開啟列印對話框
+    fn print_doc(&mut self, idx: usize) {
+        let Some(tab) = self.tabs.get(idx) else { return };
+        let doc = &tab.doc;
+        let html = print::document_html(doc, &self.settings.print, &self.fonts.editor_family, self.settings.font_size, true);
+        if let Err(e) = print::open_html(&doc.display_name(), &html) {
+            self.message("列印", e);
+        }
+    }
+
+    /// 顯示預覽列印視窗（獨立原生視窗；後端不支援多視窗時改為內嵌視窗）
+    pub fn show_print_preview(&mut self, ctx: &egui::Context) {
+        let Some(mut pv) = self.preview.take() else { return };
+        // 預覽中的文件已被關閉時，一併關閉預覽
+        let Some(idx) = self.tabs.iter().position(|t| t.doc.id == pv.doc_id) else { return };
+        let builder = egui::ViewportBuilder::default()
+            .with_title(format!("預覽列印 - {}", pv.title))
+            .with_inner_size([880.0, 960.0])
+            .with_min_inner_size([480.0, 360.0]);
+        let action = ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-print-preview"), builder, |ui, _class| pv.ui(ui));
+        match action {
+            super::preview::PreviewAction::None => self.preview = Some(pv),
+            super::preview::PreviewAction::Print => self.print_doc(idx),
+            super::preview::PreviewAction::Close => {}
+        }
+    }
+
     /// 執行命令
     pub fn run(&mut self, ctx: &egui::Context, c: C) {
         if self.macros.recording {
@@ -121,13 +148,13 @@ impl App {
                 }
             }
             C::PageSetup => self.dialog = Some(Dialog::PageSetup),
-            C::PrintPreview | C::Print => {
+            C::PrintPreview => {
+                // 於 App 內開啟獨立的預覽列印視窗
                 let doc = self.doc();
-                let html = print::document_html(doc, &self.settings.print, &self.fonts.editor_family, self.settings.font_size, c == C::Print);
-                if let Err(e) = print::open_html(&doc.display_name(), &html) {
-                    self.message("列印", e);
-                }
+                let content = print::build_content(doc, &self.settings.print);
+                self.preview = Some(super::preview::PrintPreview::new(doc.id, doc.display_name(), content, self.settings.font_size));
             }
+            C::Print => self.print_doc(self.active),
             C::RecentFilesList => self.dialog = Some(Dialog::RecentFiles { filter: String::new() }),
             C::Exit => {
                 let ids = self.tabs.iter().map(|t| t.doc.id).collect();

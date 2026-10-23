@@ -9,6 +9,7 @@ pub mod fonts;
 pub mod hexview;
 mod macros;
 mod menus;
+mod preview;
 mod print;
 pub mod view;
 #[cfg(test)]
@@ -103,6 +104,8 @@ pub struct App {
     focus_editor: bool,
     /// 簡繁轉換的安全模式（不轉換易誤轉的字）
     chinese_safe: bool,
+    /// 開啟中的預覽列印視窗
+    preview: Option<preview::PrintPreview>,
 }
 
 impl App {
@@ -139,6 +142,7 @@ impl App {
             pending: Vec::new(),
             focus_editor: true,
             chinese_safe: true,
+            preview: None,
         };
         app.load_icons(&cc.egui_ctx);
         app.rebuild_bindings();
@@ -954,6 +958,7 @@ impl eframe::App for App {
         });
 
         self.show_dialogs(&ctx);
+        self.show_print_preview(&ctx);
         self.show_confirm(&ctx);
         self.fif.poll(&ctx);
 
