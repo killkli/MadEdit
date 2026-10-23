@@ -269,9 +269,32 @@ pub fn modifiers_match(pressed: Modifiers, pattern: Modifiers) -> bool {
     }
 }
 
+/// 快捷鍵擷取時是否接受此組合
+///
+/// 沒有 Ctrl／⌘／Alt 的按鍵（含只加 Shift）只接受 F1～F35；否則 Enter、Backspace、方向鍵、
+/// 一般字元等編輯用按鍵會被命令攔截，編輯器再也收不到。
+pub fn is_bindable(sc: &KeyboardShortcut) -> bool {
+    let m = sc.modifiers;
+    if m.command || m.mac_cmd || m.ctrl || m.alt {
+        return true;
+    }
+    let name = sc.logical_key.name();
+    name.len() > 1 && name.starts_with('F') && name[1..].bytes().all(|b| b.is_ascii_digit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_bindable_requires_modifier_except_function_keys() {
+        for s in ["F3", "Shift+F3", "Ctrl+Enter", "Alt+Backspace", "Ctrl+A", "MacCtrl+A"] {
+            assert!(is_bindable(&parse_shortcut(s).unwrap()), "{s} 應可綁定");
+        }
+        for s in ["Enter", "Backspace", "Tab", "Up", "Space", "A", "Shift+A", "Shift+Up", "Delete"] {
+            assert!(!is_bindable(&parse_shortcut(s).unwrap()), "{s} 不應可綁定");
+        }
+    }
 
     #[test]
     fn test_ids_unique_and_shortcuts_parse() {

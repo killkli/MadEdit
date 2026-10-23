@@ -557,7 +557,7 @@ impl App {
             });
             if ctx.input(|i| i.key_pressed(Key::Escape)) {
                 st.capturing = None;
-            } else if let Some(mut sc) = pressed {
+            } else if let Some(mut sc) = pressed.filter(commands::is_bindable) {
                 // 只保留邏輯修飾鍵（macOS 的 ⌘ 視為 Ctrl）
                 sc.modifiers = egui::Modifiers { mac_cmd: false, ..sc.modifiers };
                 let text = commands::shortcut_to_string(&sc);
@@ -729,7 +729,7 @@ impl App {
                                 draft.key_bindings.insert(c.id().to_string(), l);
                             }
                             if st.capturing == Some(c) {
-                                ui.colored_label(egui::Color32::from_rgb(220, 120, 0), "請按下新的快捷鍵（Esc 取消）…");
+                                ui.colored_label(egui::Color32::from_rgb(220, 120, 0), "請按下新的快捷鍵（需含 Ctrl／⌘／Alt，F 鍵除外；Esc 取消）…");
                             } else if ui.button("新增快捷鍵…").clicked() {
                                 st.capturing = Some(c);
                             }
