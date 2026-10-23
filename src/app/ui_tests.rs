@@ -2,6 +2,7 @@
 
 use eframe::egui::{Event, ImeEvent, Key, Modifiers};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 
 use super::commands::C;
 use super::{App, Confirm};
@@ -88,6 +89,28 @@ fn test_close_modified_document_asks_first() {
     h.run_steps(2);
     assert!(matches!(h.state_mut().confirm, Some(Confirm::Close { .. })));
     assert_eq!(h.state_mut().tabs.len(), 1);
+}
+
+#[test]
+fn test_close_save_with_second_confirm_still_closes() {
+    // 關閉時選「儲存」而存檔需要再確認（檔案已被外部修改）：確認覆寫後仍要完成關閉
+    let p = std::env::temp_dir().join(format!("madedit_ui_close_{}.txt", std::process::id()));
+    std::fs::write(&p, "old").unwrap();
+    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    h.run_steps(3);
+    type_text(&mut h, "x");
+    std::fs::write(&p, "changed outside").unwrap();
+    h.state_mut().pending.push(C::Close);
+    h.run_steps(2);
+    h.get_by_label("儲存").click();
+    h.run_steps(2);
+    assert!(matches!(h.state_mut().confirm, Some(Confirm::OverwriteExternal { .. })));
+    h.get_by_label("覆寫").click();
+    h.run_steps(2);
+    assert!(h.state_mut().confirm.is_none());
+    assert!(h.state_mut().doc().path.is_none(), "分頁應已關閉");
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "xold");
+    let _ = std::fs::remove_file(&p);
 }
 
 #[test]

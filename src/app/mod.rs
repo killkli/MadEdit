@@ -82,6 +82,9 @@ pub struct App {
     goto: GotoBar,
     dialog: Option<Dialog>,
     confirm: Option<Confirm>,
+    /// 關閉流程中「儲存」需要再確認（外部修改、解碼錯誤等）時暫存的待關閉分頁與是否結束程式，
+    /// 存檔成功後由此接續關閉；再確認被取消時清除
+    pending_close: Option<(Vec<u64>, bool)>,
     macros: MacroState,
     spell: Option<SpellChecker>,
     spell_error: Option<String>,
@@ -119,6 +122,7 @@ impl App {
             goto: GotoBar::default(),
             dialog: None,
             confirm: None,
+            pending_close: None,
             macros: MacroState::default(),
             spell: None,
             spell_error: None,

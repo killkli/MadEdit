@@ -384,7 +384,8 @@ impl Document {
         let end = rec.start + rec.new.len();
         self.editor.lines.splice(rec.start..end, rec.old.iter().cloned());
         self.editor.selection = rec.sel_before;
-        self.editor.bookmarks = rec.bm_before.clone();
+        self.editor.bookmarks = carry_bookmarks(&self.editor.bookmarks, &rec.bm_after, &rec.bm_before, rec.start, rec.new.len(), rec.old.len());
+        self.editor.bookmarks.retain(|&l| l < self.editor.lines.len());
         self.editor.clamp_caret();
         self.serial = rec.serial_before;
         self.text_changed(rec.start);
@@ -400,7 +401,8 @@ impl Document {
         let end = rec.start + rec.old.len();
         self.editor.lines.splice(rec.start..end, rec.new.iter().cloned());
         self.editor.selection = rec.sel_after;
-        self.editor.bookmarks = rec.bm_after.clone();
+        self.editor.bookmarks = carry_bookmarks(&self.editor.bookmarks, &rec.bm_before, &rec.bm_after, rec.start, rec.old.len(), rec.new.len());
+        self.editor.bookmarks.retain(|&l| l < self.editor.lines.len());
         self.editor.clamp_caret();
         self.serial = rec.serial_after;
         self.text_changed(rec.start);
@@ -761,6 +763,39 @@ impl NewLineFormat {
     }
 }
 
+/// 復原／重做時還原書籤快照，並保留編輯之後使用者自行做的書籤增刪
+///
+/// `current` 為目前書籤，`expected` 為未經使用者變動時應有的書籤（與 `current` 同一座標），
+/// `target` 為要還原的快照。該次編輯把第 `start` 行起的 `from_len` 行換成 `to_len` 行，
+/// 使用者的增刪依此換算到 `target` 的行號座標後套用。
+fn carry_bookmarks(
+    current: &BTreeSet<usize>,
+    expected: &BTreeSet<usize>,
+    target: &BTreeSet<usize>,
+    start: usize,
+    from_len: usize,
+    to_len: usize,
+) -> BTreeSet<usize> {
+    let map = |l: usize| {
+        if l < start {
+            l
+        } else if l >= start + from_len {
+            l - from_len + to_len
+        } else {
+            // 位於被取代範圍內：落到對應範圍內最接近的一行
+            start + (l - start).min(to_len.saturating_sub(1))
+        }
+    };
+    let mut out = target.clone();
+    for &l in current.difference(expected) {
+        out.insert(map(l));
+    }
+    for &l in expected.difference(current) {
+        out.remove(&map(l));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -972,5 +1007,55 @@ mod tests {
         // BOM 3 + "中a" 4 + CRLF 2 + 0
         assert_eq!(doc.byte_offset_of(TextPosition::new(1, 0)), 9);
         assert_eq!(doc.byte_offset_of(TextPosition::new(0, 1)), 6);
+    }
+
+    #[test]
+    fn test_undo_keeps_bookmarks_added_after_edit() {
+        let mut doc = Document::default();
+        doc.editor.set_text("a\nb\nc");
+        // 在第 0 行插入一行，再於移位後的第 2、3 行加書籤
+        doc.editor.set_caret(0, 0);
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Other, hint, |e| e.insert_text("new\n"));
+        assert_eq!(doc.editor.lines, vec!["new", "a", "b", "c"]);
+        doc.editor.set_caret(2, 0);
+        doc.editor.toggle_bookmark();
+        doc.editor.set_caret(3, 0);
+        doc.editor.toggle_bookmark();
+        // 復原後書籤保留並隨行號回移
+        assert!(doc.undo());
+        assert_eq!(doc.editor.lines, vec!["a", "b", "c"]);
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([1, 2]));
+        // 復原後取消一個書籤，重做時該取消也保留
+        doc.editor.set_caret(1, 0);
+        doc.editor.toggle_bookmark();
+        assert!(doc.redo());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([3]));
+    }
+
+    #[test]
+    fn test_undo_still_restores_bookmarks_moved_by_edit() {
+        let mut doc = Document::default();
+        doc.editor.set_text("a\nb");
+        doc.editor.set_caret(1, 0);
+        doc.editor.toggle_bookmark();
+        // 刪除第 0 行，書籤隨之移到第 0 行；復原應回到第 1 行
+        doc.editor.set_caret(0, 0);
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Other, hint, |e| e.delete_lines());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([0]));
+        assert!(doc.undo());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([1]));
+    }
+
+    #[test]
+    fn test_undo_keeps_bookmark_toggled_on_edited_line() {
+        // 審查報告 2.6 的重現步驟：輸入後在同一行加書籤，復原不可吃掉書籤
+        let mut doc = Document::default();
+        let hint = doc.selection_hint();
+        doc.edit(EditKind::Typing, hint, |e| e.insert_char('x'));
+        doc.editor.toggle_bookmark();
+        assert!(doc.undo());
+        assert_eq!(doc.editor.bookmarks, BTreeSet::from([0]));
     }
 }
