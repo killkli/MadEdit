@@ -120,6 +120,10 @@ D:\Git\MadEdit\
   ```bash
   CARGO_ZIGBUILD_ZIG_PATH=$(which python-zig) ./scripts/make_linux_dist.sh
   ```
+- **建置並安裝到本機 Linux**（Arch / Omarchy；安裝到 `~/.local`，啟動器即可找到）：
+  ```bash
+  ./scripts/install_linux.sh
+  ```
 - **打包 Windows 發行檔**（輸出至 `dist/`）：
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1

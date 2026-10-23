@@ -65,7 +65,10 @@ rm -rf "${APP_DIR}/dictionaries"
 install -m 755 "${SRC}/MadEdit" "${APP_DIR}/MadEdit"
 cp -r "${SRC}/dictionaries" "${APP_DIR}/"
 ln -sf "${APP_DIR}/MadEdit" "${PREFIX}/bin/MadEdit"
-cp "${SRC}/madedit.desktop" "${PREFIX}/share/applications/"
+# Exec 改寫為絕對路徑：從啟動器（如 Walker）開啟時 PATH 不一定含 ${PREFIX}/bin；
+# %F 讓「以此程式開啟」可傳入檔案
+sed "s|^Exec=.*|Exec=${APP_DIR}/MadEdit %F|" "${SRC}/madedit.desktop" \
+    > "${PREFIX}/share/applications/madedit.desktop"
 cp "${SRC}/madedit-icon.png" "${PREFIX}/share/icons/hicolor/48x48/apps/"
 command -v update-desktop-database >/dev/null && update-desktop-database -q "${PREFIX}/share/applications" || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q "${PREFIX}/share/icons/hicolor" || true
