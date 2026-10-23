@@ -141,3 +141,36 @@ fn test_switch_tab_by_number_shortcut() {
     h.run_steps(2);
     assert_eq!(h.state_mut().active, 2, "分頁不存在時不動作");
 }
+
+#[cfg(unix)]
+#[test]
+fn test_replace_in_files_skips_opened_file_via_symlink_alias() {
+    // 以符號連結別名指定資料夾時，已開啟的檔案仍須只在記憶體中取代、不寫入磁碟
+    let base = std::env::temp_dir().join(format!("madedit_ui_fif_{}", std::process::id()));
+    let real = base.join("real");
+    let alias = base.join("alias");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let opened = real.join("opened.txt");
+    let closed = real.join("closed.txt");
+    std::fs::write(&opened, "old").unwrap();
+    std::fs::write(&closed, "old").unwrap();
+
+    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![opened.clone()], None));
+    h.run_steps(3);
+    h.state_mut().settings.find_in_files.directory = alias.to_string_lossy().into_owned();
+    h.state_mut().start_find_in_files("old".into(), Some("new".into()));
+    for _ in 0..200 {
+        h.run_steps(1);
+        if !h.state_mut().fif.running {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!h.state_mut().fif.running);
+    assert_eq!(h.state_mut().doc().text(), "new");
+    assert_eq!(std::fs::read_to_string(&opened).unwrap(), "old", "已開啟的檔案不可被背景寫入");
+    assert_eq!(std::fs::read_to_string(&closed).unwrap(), "new");
+    let _ = std::fs::remove_dir_all(&base);
+}

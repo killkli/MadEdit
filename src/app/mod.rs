@@ -233,6 +233,8 @@ impl App {
             self.activate(i);
             return true;
         }
+        // 先登記再讀檔：執行中的背景取代不會再寫入這個檔案，正在寫入時則等寫完才讀
+        self.fif.mark_opened(&canon);
         match Document::open(&canon, &self.open_options()) {
             Ok(mut doc) => {
                 use crate::core::settings::OpenViewMode;
