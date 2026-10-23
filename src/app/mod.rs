@@ -107,7 +107,7 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext, files: Vec<PathBuf>, screenshot: Option<PathBuf>) -> Self {
-        let settings = Settings::load();
+        let (settings, settings_error) = Settings::load_checked();
         let mut app = Self {
             settings,
             tabs: Vec::new(),
@@ -169,6 +169,13 @@ impl App {
         }
         if app.settings.spell_check {
             app.load_spell();
+        }
+        if let Some(text) = settings_error {
+            if app.confirm.is_none() {
+                app.confirm = Some(Confirm::Message { title: "設定檔損毀".into(), text });
+            } else {
+                app.set_status(text);
+            }
         }
         app
     }
