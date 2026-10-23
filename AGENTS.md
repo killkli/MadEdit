@@ -120,6 +120,10 @@ D:\Git\MadEdit\
   ```bash
   CARGO_ZIGBUILD_ZIG_PATH=$(which python-zig) ./scripts/make_linux_dist.sh
   ```
+- **打包 Windows 發行檔**（輸出至 `dist/`）：
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1
+  ```
 - **啟動應用程式**：
   ```powershell
   cargo run
