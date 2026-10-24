@@ -11,8 +11,7 @@
 #
 # 需要：
 #   cargo install cargo-zigbuild
-#   zig（可用 `uv tool install ziglang` 安裝，再設定
-#        CARGO_ZIGBUILD_ZIG_PATH=$(which python-zig)）
+#   zig（可透過系統套件管理員安裝，或以 `uv tool install ziglang` 安裝）
 #
 # 產物結構：
 #   MadEdit-<版本>-linux-x86_64/
@@ -23,6 +22,11 @@
 #     install.sh               安裝到 ~/.local（或以 PREFIX 指定）
 #     README.txt
 set -euo pipefail
+
+# 若未自訂 CARGO_ZIGBUILD_ZIG_PATH 且 PATH 中無 zig，但有 python-zig（uv 安裝），則自動帶入
+if [[ -z "${CARGO_ZIGBUILD_ZIG_PATH:-}" ]] && ! command -v zig >/dev/null 2>&1 && command -v python-zig >/dev/null 2>&1; then
+    export CARGO_ZIGBUILD_ZIG_PATH="$(command -v python-zig)"
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MadEdit"
@@ -43,7 +47,11 @@ mkdir -p "${STAGE}/dictionaries"
 
 # --- 內容 -----------------------------------------------------------------
 cp "${BIN}" "${STAGE}/${APP_NAME}"
-strip "${STAGE}/${APP_NAME}"
+if command -v llvm-strip >/dev/null 2>&1; then
+    llvm-strip "${STAGE}/${APP_NAME}" || true
+elif command -v strip >/dev/null 2>&1 && [[ "$(uname)" == "Linux" ]]; then
+    strip "${STAGE}/${APP_NAME}" || true
+fi
 cp "${ROOT}"/assets/dictionaries/* "${STAGE}/dictionaries/"
 cp "${ROOT}/assets/madedit.desktop" "${STAGE}/"
 cp "${ROOT}/assets/madedit-icon.png" "${STAGE}/"
@@ -95,5 +103,9 @@ EOF
 
 # --- 壓縮 -----------------------------------------------------------------
 tar -C "${OUT_DIR}" -czf "${OUT_DIR}/${NAME}.tar.gz" "${NAME}"
-(cd "${OUT_DIR}" && sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256")
+if command -v sha256sum >/dev/null 2>&1; then
+    (cd "${OUT_DIR}" && sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256")
+elif command -v shasum >/dev/null 2>&1; then
+    (cd "${OUT_DIR}" && shasum -a 256 "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256")
+fi
 echo "完成：${OUT_DIR}/${NAME}.tar.gz"

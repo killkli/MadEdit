@@ -36,7 +36,7 @@
 ## 3. 專案目錄結構
 
 ```text
-D:\Git\MadEdit\
+MadEdit/
 ├── Cargo.toml              # 專案相依性與套件設定
 ├── Cargo.lock              # 相依性鎖定檔（需納入版控）
 ├── build.rs                # Windows 圖示資源嵌入
@@ -95,7 +95,7 @@ D:\Git\MadEdit\
 
 ## 4. 常用開發指令
 
-請在 `D:\Git\MadEdit` 目錄下執行（Windows 環境使用 PowerShell）；Linux 環境則為 `/home/tenyi/Projects/MadEdit`：
+請在專案根目錄下執行（Windows 環境使用 PowerShell，macOS / Linux 環境使用 bash 或 zsh）：
 
 - **語法與型別檢查**：
   ```powershell
@@ -119,7 +119,7 @@ D:\Git\MadEdit\
   ```
 - **打包 Linux 發行檔**（需 `cargo-zigbuild` 與 zig，輸出至 `dist/`）：
   ```bash
-  CARGO_ZIGBUILD_ZIG_PATH=$(which python-zig) ./scripts/make_linux_dist.sh
+  ./scripts/make_linux_dist.sh
   ```
 - **建置並安裝到本機 Linux**（Arch / Omarchy；安裝到 `~/.local`，啟動器即可找到）：
   ```bash

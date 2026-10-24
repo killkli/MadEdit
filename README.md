@@ -118,8 +118,8 @@ macOS 上的 GUI 程式需放在 `.app` bundle 內，才能正確顯示 Dock 圖
 
 ```bash
 cargo install cargo-zigbuild
-uv tool install ziglang        # 或自行安裝 zig 並略過下一行的環境變數
-CARGO_ZIGBUILD_ZIG_PATH=$(which python-zig) ./scripts/make_linux_dist.sh
+# 安裝 zig（可用 uv tool install ziglang 或系統套件管理員）
+./scripts/make_linux_dist.sh
 ```
 
 產物位於 `dist/MadEdit-<版本>-linux-x86_64.tar.gz`（含執行檔、拼字字典、`.desktop`、圖示與 `install.sh`）。

@@ -1,7 +1,7 @@
 # 原版 MadEdit 功能盤點與 GUI 框架評估
 
 > 建立日期：2026-10-22
-> 比對基準：原版 MadEdit-Mod 原始碼 `~/Projects/madedit-mod`（`src/MadEditFrame.cpp` 的 `CommandTable`、`src/MadOptionsDialog.cpp`），
+> 比對基準：原版 MadEdit-Mod 原始碼（`src/MadEditFrame.cpp` 的 `CommandTable`、`src/MadOptionsDialog.cpp`），
 > 對照本專案 `fix/macos-ime-theme-font` 分支（`src/main.rs` 的 `build_menus` 與 `src/core/`）。
 
 > **2026-10-23 更新**：已依本文建議改寫為 egui 並補齊命令表（165 個命令全部可用），詳見 [ADR 0011](adr/0011-egui-rewrite.md)。

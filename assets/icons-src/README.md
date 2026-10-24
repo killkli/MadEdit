@@ -59,8 +59,9 @@ MadEdit 與 MadEdit-Mod 皆為自由軟體，其圖示同樣受 GNU GPL 授權�
 
 ## 重新產生 PNG
 
+請於專案根目錄執行：
+
 ```bash
-cd /home/tenyi/Projects/MadEdit
 python3 assets/make_toolbar_icons.py            # 產生 assets/icons/*.png（2 倍放大，32×30）
 python3 assets/make_toolbar_icons.py --scale 1  # 產生 1 倍尺寸（16×15）
 ```

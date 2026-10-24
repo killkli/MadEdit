@@ -16,7 +16,7 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MadEdit"
-DEST="/Applications/${APP_NAME}.app"
+DEST="${DEST:-/Applications/${APP_NAME}.app}"
 
 cargo build --release --manifest-path "${ROOT}/Cargo.toml"
 "${ROOT}/scripts/make_appbundle.sh" "${ROOT}/dist"
