@@ -24,6 +24,8 @@
   - 選用理由：可逐字量測字寬，支援使用者任選系統字型（含比例字型）；輸入法事件（`Event::Ime`）直接交給自繪編輯區處理。
   - 編輯區、十六進位檢視、捲軸、尺標皆為自繪（`src/app/view.rs`、`src/app/hexview.rs`）。
 - **系統字型**：`fontique` 列舉並載入系統字型，CJK 字元自動以系統中日韓字型補字。
+- **Markdown 預覽**：`egui_commonmark` 繪製 Markdown；`fermaid`（純 Rust）把 ```mermaid 區塊轉成 SVG，以 `Palette` 直接輸出實際顏色（resvg 不支援 CSS 變數）後由 `egui_extras`（`svg`、`svg_text`）顯示。
+- **版本對齊**：`fontique` 須與 eframe 內部使用的版本一致（目前 0.11.1），否則 Linux 上 fontconfig feature 衝突無法編譯。
 - **系統剪貼簿**：`arboard`；**語法突顯**：`syntect`；**拼字檢查**：`spellbook`（Hunspell 字典）。
 - **檔案對話框**：`rfd` (Rust File Dialog) - 支援跨平台原生系統視窗。
 - **編碼轉換**：`encoding_rs` - 高效能多字元編碼支援。
@@ -69,6 +71,7 @@ MadEdit/
 │   │   ├── macros.rs       # 巨集錄製與播放（JSON 步驟清單）
 │   │   ├── print.rs        # 列印內容模型與 HTML 列印（交給瀏覽器）
 │   │   ├── preview.rs      # App 內預覽列印視窗（A4 分頁、翻頁、縮放）
+│   │   ├── mdpreview.rs    # App 內 Markdown 預覽視窗（egui_commonmark + fermaid 繪製 ```mermaid 圖表；縮放、符合寬度、相對路徑圖片、跟隨編輯區捲動）
 │   │   ├── fonts.rs        # 系統字型列舉與 egui 字型鏈
 │   │   ├── ui_tests.rs     # egui_kittest 鍵盤／輸入法互動測試
 │   │   └── visual_tests.rs # 離屏繪製截圖（預設略過）

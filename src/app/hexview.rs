@@ -61,7 +61,7 @@ fn row_text(hb: &HexBuffer, row: usize, enc: &'static Encoding) -> Vec<Option<ch
 
 /// 十六進位檢視的固定 Id
 pub fn hex_id(doc_id: u64) -> egui::Id {
-    egui::Id::new(("madedit-hex", doc_id))
+    egui::Id::unique(("madedit-hex", doc_id))
 }
 
 #[derive(Default)]
@@ -193,7 +193,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, state: &mut HexViewState, set
             }
         }
         ctx.output_mut(|o| {
-            o.ime = Some(egui::output::IMEOutput { rect: area, cursor_rect: Rect::from_min_size(area.min, Vec2::new(2.0, row_h)), should_interrupt_composition: false })
+            o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal, rect: area, cursor_rect: Rect::from_min_size(area.min, Vec2::new(2.0, row_h)), should_interrupt_composition: false })
         });
     }
 

@@ -13,6 +13,7 @@ fn shot() {
     let files: Vec<std::path::PathBuf> = std::env::var("MADEDIT_SHOT_FILE").ok().into_iter().map(Into::into).collect();
     let cmds = std::env::var("MADEDIT_SHOT_CMDS").unwrap_or_default();
     let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
         .with_size([1100.0, 720.0])
         .wgpu()
         .build_eframe(|cc| App::new(cc, files, None));

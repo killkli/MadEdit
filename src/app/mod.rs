@@ -9,6 +9,7 @@ pub mod fonts;
 pub mod hexview;
 mod macros;
 mod menus;
+mod mdpreview;
 mod preview;
 mod print;
 pub mod view;
@@ -99,6 +100,8 @@ pub struct App {
     clipboard: Option<arboard::Clipboard>,
     /// 測試用：啟動後截圖存檔並結束
     screenshot: Option<(PathBuf, u32)>,
+    /// 截圖回呼寫入的結果（egui 0.37 起截圖改為回呼，不再是事件）
+    shot_slot: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<egui::ColorImage>>>>,
     pending: Vec<C>,
     /// 下一幀將焦點交給編輯區
     focus_editor: bool,
@@ -106,6 +109,8 @@ pub struct App {
     chinese_safe: bool,
     /// 開啟中的預覽列印視窗
     preview: Option<preview::PrintPreview>,
+    /// 開啟中的 Markdown 預覽視窗
+    md_preview: Option<mdpreview::MarkdownPreview>,
 }
 
 impl App {
@@ -139,12 +144,16 @@ impl App {
             // 測試時不連接系統剪貼簿，避免結果受使用者剪貼簿內容影響或覆寫它
             clipboard: if cfg!(test) { None } else { arboard::Clipboard::new().ok() },
             screenshot: screenshot.map(|p| (p, 0)),
+            shot_slot: Default::default(),
             pending: Vec::new(),
             focus_editor: true,
             chinese_safe: true,
             preview: None,
+            md_preview: None,
         };
         app.load_icons(&cc.egui_ctx);
+        // Markdown 預覽中的 Mermaid 圖以 SVG 位元組載入
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         app.rebuild_bindings();
         app.apply_theme(&cc.egui_ctx);
         egui_extras_style(&cc.egui_ctx);
@@ -897,7 +906,7 @@ impl eframe::App for App {
         }
 
         // 拖放開檔
-        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
         for p in dropped {
             self.open_path(&p);
         }
@@ -959,6 +968,7 @@ impl eframe::App for App {
 
         self.show_dialogs(&ctx);
         self.show_print_preview(&ctx);
+        self.show_markdown_preview(&ctx);
         self.show_confirm(&ctx);
         self.fif.poll(&ctx);
 
@@ -967,11 +977,14 @@ impl eframe::App for App {
             *frames += 1;
             // 視窗尚未可見時截圖請求會被丟棄，因此每 30 幀重試一次
             if *frames % 30 == 8 {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+                let slot = self.shot_slot.clone();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |img| {
+                    if let Ok(mut g) = slot.lock() {
+                        *g = Some(img);
+                    }
+                })));
             }
-            let shot = ctx.input(|i| {
-                i.raw.events.iter().find_map(|e| if let Event::Screenshot { image, .. } = e { Some(image.clone()) } else { None })
-            });
+            let shot = self.shot_slot.lock().ok().and_then(|mut g| g.take());
             if let Some(img) = shot {
                 let [w, h] = img.size;
                 let raw: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();

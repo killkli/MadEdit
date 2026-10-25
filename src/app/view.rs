@@ -298,6 +298,15 @@ impl ViewState {
         (line as usize, start as usize, end)
     }
 
+    /// 目前最上方可見的邏輯行（從 0 起算；自動換行時為該視覺列所屬的行）
+    pub fn top_line(&self, ed: &EditorState) -> usize {
+        let rows = self.row_count(ed);
+        if rows == 0 {
+            return 0;
+        }
+        self.row_info(ed, self.top_row.min(rows - 1)).0
+    }
+
     /// 文字位置所在的視覺列
     fn row_of(&self, pos: TextPosition) -> usize {
         if !self.wrapped() {
@@ -701,7 +710,7 @@ fn rgb((r, g, b): (u8, u8, u8)) -> Color32 {
 
 /// 編輯區的固定 Id（App 用來判斷焦點與要求焦點）
 pub fn editor_id(doc_id: u64) -> egui::Id {
-    egui::Id::new(("madedit-editor", doc_id))
+    egui::Id::unique(("madedit-editor", doc_id))
 }
 
 /// 顯示文字編輯區
@@ -1332,7 +1341,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             ctx.request_repaint_after(std::time::Duration::from_millis(300));
             // 輸入法候選窗位置
             ctx.output_mut(|o| {
-                o.ime = Some(egui::output::IMEOutput {
+                o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal,
                     rect: text_rect,
                     cursor_rect: Rect::from_min_size(Pos2::new(caret_x, y), Vec2::new(2.0, lay.row_h)),
                     should_interrupt_composition: false,
@@ -1343,7 +1352,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
     if focused && (head_row < first_row || head_row >= last_row) {
         // 游標不在可見範圍時仍啟用輸入法
         ctx.output_mut(|o| {
-            o.ime = Some(egui::output::IMEOutput { rect: text_rect, cursor_rect: Rect::from_min_size(text_rect.min, Vec2::new(2.0, lay.row_h)), should_interrupt_composition: false })
+            o.ime = Some(egui::output::IMEOutput { purpose: egui::IMEPurpose::Normal, rect: text_rect, cursor_rect: Rect::from_min_size(text_rect.min, Vec2::new(2.0, lay.row_h)), should_interrupt_composition: false })
         });
     }
 

@@ -8,7 +8,7 @@ use super::commands::C;
 use super::{App, Confirm};
 
 fn harness() -> Harness<'static, App> {
-    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
     h.run_steps(3);
     h
 }
@@ -96,7 +96,7 @@ fn test_close_save_with_second_confirm_still_closes() {
     // 關閉時選「儲存」而存檔需要再確認（檔案已被外部修改）：確認覆寫後仍要完成關閉
     let p = std::env::temp_dir().join(format!("madedit_ui_close_{}.txt", std::process::id()));
     std::fs::write(&p, "old").unwrap();
-    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
     h.run_steps(3);
     type_text(&mut h, "x");
     std::fs::write(&p, "changed outside").unwrap();
@@ -157,7 +157,7 @@ fn test_replace_in_files_skips_opened_file_via_symlink_alias() {
     std::fs::write(&opened, "old").unwrap();
     std::fs::write(&closed, "old").unwrap();
 
-    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![opened.clone()], None));
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![opened.clone()], None));
     h.run_steps(3);
     h.state_mut().settings.find_in_files.directory = alias.to_string_lossy().into_owned();
     h.state_mut().start_find_in_files("old".into(), Some("new".into()));
@@ -173,4 +173,29 @@ fn test_replace_in_files_skips_opened_file_via_symlink_alias() {
     assert_eq!(std::fs::read_to_string(&opened).unwrap(), "old", "已開啟的檔案不可被背景寫入");
     assert_eq!(std::fs::read_to_string(&closed).unwrap(), "new");
     let _ = std::fs::remove_dir_all(&base);
+}
+
+/// Markdown 預覽：編輯區捲動後，預覽會記錄同步的行號，且錨點隨內容量得
+#[test]
+fn test_markdown_preview_follows_editor_scroll() {
+    let dir = std::env::temp_dir().join(format!("madedit-mdsync-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("long.md");
+    let body: String = (0..150).map(|i| format!("## 標題 {i}\n\n段落 {i}\n\n")).collect();
+    std::fs::write(&p, body).unwrap();
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    h.run_steps(3);
+    h.state_mut().pending.push(super::C::PreviewMarkdown);
+    h.run_steps(5);
+    {
+        let pv = h.state_mut().md_preview.as_ref().expect("預覽未開啟");
+        assert!(pv.anchors.len() > 100, "錨點數 {}", pv.anchors.len());
+        // 錨點 y 應隨行號遞增
+        assert!(pv.anchors.windows(2).all(|w| w[0].0 <= w[1].0 && w[0].1 <= w[1].1));
+        assert_eq!(pv.synced_line, Some(0));
+    }
+    h.state_mut().tab_mut().view.top_row = 200;
+    h.run_steps(5);
+    assert_eq!(h.state_mut().md_preview.as_ref().unwrap().synced_line, Some(200));
+    let _ = std::fs::remove_dir_all(&dir);
 }
