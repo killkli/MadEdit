@@ -9,6 +9,7 @@ pub mod fonts;
 pub mod hexview;
 mod macros;
 mod menus;
+mod mdpreview;
 mod preview;
 mod print;
 pub mod view;
@@ -108,6 +109,8 @@ pub struct App {
     chinese_safe: bool,
     /// 開啟中的預覽列印視窗
     preview: Option<preview::PrintPreview>,
+    /// 開啟中的 Markdown 預覽視窗
+    md_preview: Option<mdpreview::MarkdownPreview>,
 }
 
 impl App {
@@ -146,8 +149,11 @@ impl App {
             focus_editor: true,
             chinese_safe: true,
             preview: None,
+            md_preview: None,
         };
         app.load_icons(&cc.egui_ctx);
+        // Markdown 預覽中的 Mermaid 圖以 SVG 位元組載入
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         app.rebuild_bindings();
         app.apply_theme(&cc.egui_ctx);
         egui_extras_style(&cc.egui_ctx);
@@ -962,6 +968,7 @@ impl eframe::App for App {
 
         self.show_dialogs(&ctx);
         self.show_print_preview(&ctx);
+        self.show_markdown_preview(&ctx);
         self.show_confirm(&ctx);
         self.fif.poll(&ctx);
 
