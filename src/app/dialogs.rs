@@ -822,7 +822,7 @@ impl App {
     pub fn show_confirm(&mut self, ctx: &egui::Context) {
         let Some(confirm) = self.confirm.take() else { return };
         let mut keep = true;
-        let modal = egui::Modal::new(egui::Id::new("confirm"));
+        let modal = egui::Modal::new(egui::Id::unique("confirm"));
         match &confirm {
             Confirm::Message { title, text } => {
                 modal.show(ctx, |ui| {

@@ -8,7 +8,7 @@ use super::commands::C;
 use super::{App, Confirm};
 
 fn harness() -> Harness<'static, App> {
-    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
     h.run_steps(3);
     h
 }
@@ -96,7 +96,7 @@ fn test_close_save_with_second_confirm_still_closes() {
     // 關閉時選「儲存」而存檔需要再確認（檔案已被外部修改）：確認覆寫後仍要完成關閉
     let p = std::env::temp_dir().join(format!("madedit_ui_close_{}.txt", std::process::id()));
     std::fs::write(&p, "old").unwrap();
-    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
     h.run_steps(3);
     type_text(&mut h, "x");
     std::fs::write(&p, "changed outside").unwrap();
@@ -157,7 +157,7 @@ fn test_replace_in_files_skips_opened_file_via_symlink_alias() {
     std::fs::write(&opened, "old").unwrap();
     std::fs::write(&closed, "old").unwrap();
 
-    let mut h = Harness::builder().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![opened.clone()], None));
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![opened.clone()], None));
     h.run_steps(3);
     h.state_mut().settings.find_in_files.directory = alias.to_string_lossy().into_owned();
     h.state_mut().start_find_in_files("old".into(), Some("new".into()));

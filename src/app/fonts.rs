@@ -147,7 +147,7 @@ mod tests {
         let Some(cjk) = fm.cjk_family.clone() else { return };
         let ctx = egui::Context::default();
         fm.apply(&ctx, &cjk);
-        let _ = ctx.run_ui(Default::default(), |_| {});
+        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
         let ok = ctx.fonts(|f| f.definitions().families[&FontFamily::Proportional].contains(&"editor-main".to_string()));
         assert!(ok, "介面字型鏈缺少 CJK 字型");
     }

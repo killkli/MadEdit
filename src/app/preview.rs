@@ -362,11 +362,13 @@ mod tests {
         let mono = defs.families[&FontFamily::Monospace].clone();
         defs.families.insert(FontFamily::Name(EDITOR_FAMILY.into()), mono);
         ctx.set_fonts(defs);
-        let _ = ctx.run_ui(egui::RawInput::default(), |_| {});
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
             let painter = ui.painter().clone();
             pv.paginate(&painter);
-        });
+        })
+        .textures_delta
+        .clear();
         pv
     }
 
