@@ -24,7 +24,7 @@
   - 選用理由：可逐字量測字寬，支援使用者任選系統字型（含比例字型）；輸入法事件（`Event::Ime`）直接交給自繪編輯區處理。
   - 編輯區、十六進位檢視、捲軸、尺標皆為自繪（`src/app/view.rs`、`src/app/hexview.rs`）。
 - **系統字型**：`fontique` 列舉並載入系統字型，CJK 字元自動以系統中日韓字型補字。
-- **Markdown 預覽**：`egui_commonmark` 繪製 Markdown；`fermaid`（純 Rust）把 ```mermaid 區塊轉成 SVG，替換 SVG 的 CSS 變數後由 `egui_extras`（`svg`、`svg_text`）顯示。
+- **Markdown 預覽**：`egui_commonmark` 繪製 Markdown；`fermaid`（純 Rust）把 ```mermaid 區塊轉成 SVG，以 `Palette` 直接輸出實際顏色（resvg 不支援 CSS 變數）後由 `egui_extras`（`svg`、`svg_text`）顯示。
 - **版本對齊**：`fontique` 須與 eframe 內部使用的版本一致（目前 0.11.1），否則 Linux 上 fontconfig feature 衝突無法編譯。
 - **系統剪貼簿**：`arboard`；**語法突顯**：`syntect`；**拼字檢查**：`spellbook`（Hunspell 字典）。
 - **檔案對話框**：`rfd` (Rust File Dialog) - 支援跨平台原生系統視窗。

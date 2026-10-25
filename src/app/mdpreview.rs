@@ -3,7 +3,6 @@
 //!
 //! 預覽內容會隨文件版本（`Document::version`）自動更新。
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -210,82 +209,6 @@ pub fn rewrite_image_paths(md: &str, base_dir: Option<&Path>) -> String {
     out
 }
 
-/// fermaid 輸出的 SVG 以 CSS 變數（`var(--fermaid-bg,#fff)`）著色，但 SVG 載入器（resvg）不支援 `var()`，
-/// 因此在這裡依主題把變數換成實際顏色：先用主題色或後備值替換，
-/// 再收集根元素宣告的中介變數（`--_fg:...`），最多重複數輪解開巢狀引用。
-pub fn resolve_svg_vars(svg: &str, theme: &HashMap<&str, &str>) -> String {
-    let mut s = svg.to_string();
-    let mut local: HashMap<String, String> = HashMap::new();
-    for _ in 0..6 {
-        let mut out = String::with_capacity(s.len());
-        let mut rest = s.as_str();
-        while let Some(i) = rest.find("var(--") {
-            out.push_str(&rest[..i]);
-            let after = &rest[i + 4..];
-            // 找對應的右括號（支援巢狀括號）
-            let mut depth = 1;
-            let mut end = after.len();
-            for (k, c) in after.char_indices() {
-                match c {
-                    '(' => depth += 1,
-                    ')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            end = k;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            let inner = &after[..end];
-            let (name, fallback) = match inner.split_once(',') {
-                Some((n, f)) => (n.trim(), f.trim()),
-                None => (inner.trim(), ""),
-            };
-            match theme.get(name).map(|v| v.to_string()).or_else(|| local.get(name).cloned()) {
-                Some(v) => out.push_str(&v),
-                // 中介變數尚未收集到值：原樣保留，下一輪再解析
-                None if fallback.is_empty() => {
-                    out.push_str("var(");
-                    out.push_str(inner);
-                    out.push(')');
-                }
-                None => out.push_str(fallback),
-            }
-            rest = after.get(end + 1..).unwrap_or("");
-        }
-        out.push_str(rest);
-        // 收集已不含 var() 的 `--_x:值` 宣告
-        for part in out.split(['"', ';']) {
-            if let Some((k, v)) = part.trim().split_once(':')
-                && k.starts_with("--_")
-                && !v.contains("var(")
-            {
-                local.insert(k.to_string(), v.trim().to_string());
-            }
-        }
-        s = out;
-        if !s.contains("var(--") {
-            break;
-        }
-    }
-    s
-}
-
-/// 深色主題下覆蓋 fermaid 預設（淺色）配色的變數
-fn dark_theme() -> HashMap<&'static str, &'static str> {
-    HashMap::from([
-        ("--fermaid-bg", "#1e1e1e"),
-        ("--fermaid-fg", "#dcddde"),
-        ("--fermaid-muted", "#aaaaaa"),
-        ("--fermaid-line", "#999999"),
-        ("--fermaid-surface", "#2a2a2a"),
-        ("--fermaid-surface-alt", "#333333"),
-        ("--fermaid-border", "#777777"),
-    ])
-}
-
 /// 渲染完成、可顯示的 Mermaid 圖
 struct Diagram {
     /// SVG 載入器的快取識別（含內容雜湊，內容或主題變更即換新）
@@ -407,8 +330,13 @@ impl MarkdownPreview {
                 ctx.forget_image(&d.uri);
             }
         }
-        let theme = if dark { dark_theme() } else { HashMap::new() };
-        let opts = fermaid::RenderOptions { max_width: (key.width > 0).then_some(key.width as f64), ..Default::default() };
+// SVG 載入器（resvg）不支援 CSS 變數，請 fermaid 直接依深淺色調色盤輸出實際顏色
+        let palette = if dark { fermaid::Palette::dark() } else { fermaid::Palette::light() };
+        let opts = fermaid::RenderOptions {
+            max_width: (key.width > 0).then_some(key.width as f64),
+            palette: Some(palette),
+            ..Default::default()
+        };
         let mut items = Vec::new();
         for piece in split_mermaid(text) {
             match piece.seg {
@@ -421,7 +349,7 @@ impl MarkdownPreview {
                 Segment::Mermaid(src) => {
                     let content = match fermaid::render(&src, &opts) {
                         Ok(r) => {
-                            let svg = resolve_svg_vars(&r.svg, &theme);
+                            let svg = r.svg;
                             let mut h = std::collections::hash_map::DefaultHasher::new();
                             svg.hash(&mut h);
                             Content::Diagram(Diagram {
@@ -626,19 +554,11 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_vars_uses_theme_and_fallback() {
-        let svg = r#"<svg style="--_bg:var(--fermaid-bg,#fff);--_fg:var(--fermaid-fg,#111)" fill="var(--_fg)"><rect fill="var(--_bg)"/></svg>"#;
-        let light = resolve_svg_vars(svg, &HashMap::new());
-        assert!(!light.contains("var("), "{light}");
-        assert!(light.contains(r##"fill="#111""##) && light.contains(r##"fill="#fff""##));
-        let dark = resolve_svg_vars(svg, &dark_theme());
-        assert!(dark.contains(r##"fill="#dcddde""##) && dark.contains(r##"fill="#1e1e1e""##));
-    }
-
-    #[test]
-    fn test_render_flowchart_has_no_unresolved_vars() {
-        let r = fermaid::render("flowchart LR\n  A[開始] --> B[結束]", &fermaid::RenderOptions::default()).unwrap();
-        assert!(!resolve_svg_vars(&r.svg, &HashMap::new()).contains("var("));
-        assert!(!resolve_svg_vars(&r.svg, &dark_theme()).contains("var("));
+    fn test_render_with_palette_has_no_css_vars() {
+        for p in [fermaid::Palette::light(), fermaid::Palette::dark()] {
+            let opts = fermaid::RenderOptions { palette: Some(p), ..Default::default() };
+            let r = fermaid::render("flowchart LR\n  A[開始] --> B[結束]", &opts).unwrap();
+            assert!(!r.svg.contains("var(--"), "SVG 仍含 CSS 變數");
+        }
     }
 }
