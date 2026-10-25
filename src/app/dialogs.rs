@@ -865,7 +865,7 @@ impl App {
                         self.activate(idx);
                         self.active = idx;
                         if self.save_tab(idx, false) {
-                            self.close_now(id);
+                            if !*exit { self.close_now(id); }
                             self.continue_close(ids, *exit);
                         } else if self.confirm.is_some() {
                             // 存檔需要再確認：記下關閉流程，確認後存檔成功再接續關閉
@@ -875,7 +875,7 @@ impl App {
                         return;
                     }
                     Some(1) => {
-                        self.close_now(id);
+                        if !*exit { self.close_now(id); }
                         self.continue_close(ids, *exit);
                         return;
                     }
@@ -1000,7 +1000,7 @@ impl App {
             return;
         }
         if let Some((ids, exit)) = self.pending_close.take_if(|(ids, _)| ids[0] == id) {
-            self.close_now(id);
+            if !exit { self.close_now(id); }
             self.continue_close(&ids, exit);
         }
     }

@@ -19,7 +19,7 @@
 
 ## 2. 核心技術選型
 
-- **程式語言**：Rust (Edition 2024，需 Rust 1.85 以上)
+- **程式語言**：Rust (Edition 2024，egui / eframe 0.35 需 Rust 1.92 以上)
 - **GUI 框架**：[eframe / egui](https://github.com/emilk/egui) (v0.35)，2026-10 由 Slint 改寫（見 [ADR 0011](docs/adr/0011-egui-rewrite.md)）
   - 選用理由：可逐字量測字寬，支援使用者任選系統字型（含比例字型）；輸入法事件（`Event::Ime`）直接交給自繪編輯區處理。
   - 編輯區、十六進位檢視、捲軸、尺標皆為自繪（`src/app/view.rs`、`src/app/hexview.rs`）。
@@ -239,6 +239,12 @@ MadEdit/
     - 新增 C#、Java、Go、Shell、TOML 語法辨識；`MadEdit <檔案>` 命令列開檔。
 
 ### 已知問題（優先處理）
+
+- macOS 移植：新增 Finder／Dock 開檔 Apple Event 橋接（`src/macos.rs`），不取代 winit delegate；補齊 ⌘W／⌘Q／⌘⇧S 等平台快捷鍵與行首刪除，保留 ⌘H／⌘M／⌘Tab 系統操作。
+- macOS 打包與安裝會先完成簽章驗證再取代舊 App，支援 Cargo 自訂產物位置；`scripts/test_macos_bundle.sh` 驗證資源、簽章與失敗保護。`MADEDIT_CONFIG_DIR` 可隔離原生測試設定，`--screenshot` 不讀寫使用者工作階段。
+- 原生系統選單／Dock 的結束請求經過 App 未儲存確認；結束時保留分頁直到最後保存工作階段，取消結束不再提前關掉乾淨文件。`python3 scripts/test_macos_runtime.py` 在已登入的桌面驗證正式 App 文字／Hex 繪製與正常退出。
+- Touch Bar Mac 的退出崩潰：`vendor/accesskit_macos` 回補上游 [AccessKit #835](https://github.com/AccessKit/accesskit/pull/835)，修正無障礙轉接器釋放時覆蓋 AppKit KVO 子類別的問題。保留無障礙支援；來源、授權、測試與移除條件見 `vendor/README.md`。另執行 `cargo test -p accesskit_macos --test integration` 驗證八項 KVO／釋放回歸情境。
+- 對外散佈目前使用 ad-hoc 簽章，尚無 Developer ID／Apple 公證；本機建置可執行。Intel 與其他 macOS 版本仍需各自驗證，不能以 Apple Silicon 本機測試推論所有版本皆通過。
 
 1. ~~**非 UTF-8 檔案存檔即損毀**~~（已於 Phase 1 修正：當 `has_decode_error` 為真時拒絕存檔，並支援重新解碼與轉換編碼）。
 2. ~~**UTF-16 存檔會變成 UTF-8**~~（已於 Phase 1 修正：已自行實作 UTF-16LE/BE 位元組編碼與 BOM 保留）。

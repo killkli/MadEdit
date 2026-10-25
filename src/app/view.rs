@@ -379,6 +379,8 @@ pub enum EdAction {
     Backspace,
     Delete,
     DeleteWord { forward: bool },
+    /// macOS 的 ⌘Delete：刪除至行首／行尾，既有選取優先刪除。
+    DeleteLineEdge { forward: bool },
     Left { extend: bool, word: bool },
     Right { extend: bool, word: bool },
     Up { extend: bool },
@@ -386,6 +388,7 @@ pub enum EdAction {
     PageUp { extend: bool },
     PageDown { extend: bool },
     Home { extend: bool },
+    LineStart { extend: bool },
     End { extend: bool },
     DocStart { extend: bool },
     DocEnd { extend: bool },
@@ -426,7 +429,7 @@ fn closing_pair(c: char) -> Option<char> {
 
 /// 執行一個編輯動作
 pub fn apply_action(doc: &mut Document, view: &mut ViewState, act: &EdAction, settings: &Settings, widths: &CharWidths, lay: &Layout) {
-    if doc.read_only && matches!(act, EdAction::Insert(_) | EdAction::Newline { .. } | EdAction::Tab | EdAction::BackTab | EdAction::Backspace | EdAction::Delete | EdAction::DeleteWord { .. }) {
+    if doc.read_only && matches!(act, EdAction::Insert(_) | EdAction::Newline { .. } | EdAction::Tab | EdAction::BackTab | EdAction::Backspace | EdAction::Delete | EdAction::DeleteWord { .. } | EdAction::DeleteLineEdge { .. }) {
         return;
     }
     let sel_mode = doc.selecting_mode;
@@ -484,6 +487,15 @@ pub fn apply_action(doc: &mut Document, view: &mut ViewState, act: &EdAction, se
             let hint = doc.selection_hint();
             doc.edit(EditKind::Other, hint, |ed| ed.delete_word(*forward));
         }
+        EdAction::DeleteLineEdge { forward } => {
+            let hint = doc.selection_hint();
+            doc.edit(EditKind::Other, hint, |ed| {
+                if ed.selection.is_empty() {
+                    if *forward { ed.move_end(true); } else { ed.move_home(true); }
+                }
+                ed.delete_selection();
+            });
+        }
         EdAction::Left { extend, word } => {
             if *word {
                 doc.editor.move_word(false, ext(*extend))
@@ -518,6 +530,7 @@ pub fn apply_action(doc: &mut Document, view: &mut ViewState, act: &EdAction, se
             move_rows(doc, view, n, ext(*extend), widths, lay)
         }
         EdAction::Home { extend } => doc.editor.move_home_smart(ext(*extend)),
+        EdAction::LineStart { extend } => doc.editor.move_home(ext(*extend)),
         EdAction::End { extend } => doc.editor.move_end(ext(*extend)),
         EdAction::DocStart { extend } => doc.editor.move_doc_edge(false, ext(*extend)),
         EdAction::DocEnd { extend } => doc.editor.move_doc_edge(true, ext(*extend)),
@@ -647,15 +660,15 @@ fn key_to_action(key: Key, m: Modifiers) -> Option<EdAction> {
     let mac = cfg!(target_os = "macos");
     // macOS：Option 移動字詞、⌘ 移至行首尾或文件頭尾；其他平台：Ctrl 移動字詞
     let word = if mac { m.alt } else { m.ctrl };
-    let line_edge = mac && m.mac_cmd;
+    let line_edge = mac && m.command;
     let extend = m.shift;
-    let block = m.alt && m.shift && !mac || (mac && m.alt && m.shift && m.mac_cmd);
+    let block = m.alt && m.shift && (!mac || m.command);
     Some(match key {
         Key::ArrowLeft if block => EdAction::Block { dx: -1, dy: 0 },
         Key::ArrowRight if block => EdAction::Block { dx: 1, dy: 0 },
         Key::ArrowUp if block => EdAction::Block { dx: 0, dy: -1 },
         Key::ArrowDown if block => EdAction::Block { dx: 0, dy: 1 },
-        Key::ArrowLeft if line_edge => EdAction::Home { extend },
+        Key::ArrowLeft if line_edge => EdAction::LineStart { extend },
         Key::ArrowRight if line_edge => EdAction::End { extend },
         Key::ArrowUp if line_edge => EdAction::DocStart { extend },
         Key::ArrowDown if line_edge => EdAction::DocEnd { extend },
@@ -667,10 +680,12 @@ fn key_to_action(key: Key, m: Modifiers) -> Option<EdAction> {
         Key::ArrowDown if !m.alt => EdAction::Down { extend },
         Key::PageUp => EdAction::PageUp { extend },
         Key::PageDown => EdAction::PageDown { extend },
-        Key::Home if m.command => EdAction::DocStart { extend },
-        Key::End if m.command => EdAction::DocEnd { extend },
+        Key::Home if mac || m.command => EdAction::DocStart { extend },
+        Key::End if mac || m.command => EdAction::DocEnd { extend },
         Key::Home => EdAction::Home { extend },
         Key::End => EdAction::End { extend },
+        Key::Backspace if line_edge => EdAction::DeleteLineEdge { forward: false },
+        Key::Delete if line_edge => EdAction::DeleteLineEdge { forward: true },
         Key::Backspace if word => EdAction::DeleteWord { forward: false },
         Key::Delete if word => EdAction::DeleteWord { forward: true },
         Key::Backspace if !m.command => EdAction::Backspace,

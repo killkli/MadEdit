@@ -48,6 +48,47 @@ fn test_ime_preedit_then_commit() {
     assert_eq!(text(&mut h), "你");
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn test_macos_navigation_delete_and_undo() {
+    let mut h = harness();
+    h.event(Event::Paste("  hello world\n第二行".into()));
+    h.run_steps(2);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::ArrowUp);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().doc().editor.selection.head, crate::core::editor::TextPosition::new(0, 0));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::ArrowRight);
+    h.run_steps(2);
+    h.key_press_modifiers(Modifiers::ALT, Key::Backspace);
+    h.run_steps(2);
+    assert_eq!(text(&mut h), "  hello \n第二行");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Backspace);
+    h.run_steps(2);
+    assert_eq!(text(&mut h), "\n第二行");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(2);
+    assert_eq!(text(&mut h), "  hello \n第二行");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::ArrowLeft);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().doc().editor.selection.head.col, 0, "⌘← 必須到實際行首");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_macos_close_and_quit_preserve_unsaved_document() {
+    let mut h = harness();
+    type_text(&mut h, "未儲存");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::W);
+    h.run_steps(2);
+    assert!(matches!(h.state_mut().confirm, Some(Confirm::Close { exit: false, .. })));
+    h.state_mut().confirm = None;
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Q);
+    h.run_steps(2);
+    assert!(matches!(h.state_mut().confirm, Some(Confirm::Close { exit: true, .. })));
+    assert_eq!(text(&mut h), "未儲存");
+    assert!(!h.state_mut().allow_close);
+}
+
 #[test]
 fn test_find_bar_selects_match() {
     let mut h = harness();
@@ -89,6 +130,29 @@ fn test_close_modified_document_asks_first() {
     h.run_steps(2);
     assert!(matches!(h.state_mut().confirm, Some(Confirm::Close { .. })));
     assert_eq!(h.state_mut().tabs.len(), 1);
+}
+
+#[test]
+fn test_quit_keeps_tabs_for_session_and_cancel() {
+    let mut h = harness();
+    let first = h.state_mut().doc().id;
+    h.state_mut().pending.push(C::New);
+    h.run_steps(2);
+    type_text(&mut h, "保留修改");
+    h.state_mut().pending.push(C::Exit);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().tabs.len(), 2);
+    assert_eq!(h.state_mut().tabs[0].doc.id, first);
+    h.get_by_label("取消").click();
+    h.run_steps(2);
+    assert!(!h.state_mut().allow_close);
+    assert_eq!(h.state_mut().tabs.len(), 2);
+    h.state_mut().pending.push(C::Exit);
+    h.run_steps(2);
+    h.get_by_label("不儲存").click();
+    h.run_steps(2);
+    assert!(h.state_mut().allow_close);
+    assert_eq!(h.state_mut().tabs.len(), 2, "結束前仍須保留分頁供工作階段記錄");
 }
 
 #[test]

@@ -3,8 +3,9 @@
 # 產生 macOS 應用程式 bundle（MadEdit.app）。
 #
 # 用法：
-#   cargo build --release
 #   ./scripts/make_appbundle.sh [輸出目錄]
+#   MADEDIT_BIN=/path/to/MadEdit ./scripts/make_appbundle.sh [輸出目錄]
+# 預設建置 release；指定 MADEDIT_BIN 時直接打包該執行檔（例如 universal binary）。
 #
 # 產物結構：
 #   dist/MadEdit.app/Contents/MacOS/MadEdit   執行檔
@@ -16,22 +17,95 @@
 # rfd 的原生檔案對話框也會以 bundle 身分與系統互動。
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="MadEdit"
-BUNDLE_ID="io.github.madedit.MadEdit"
-VERSION="$(grep -m1 '^version' "${ROOT}/Cargo.toml" | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')"
-
-BIN="${ROOT}/target/release/${APP_NAME}"
-OUT_DIR="${1:-${ROOT}/dist}"
-BUNDLE="${OUT_DIR}/${APP_NAME}.app"
-
-if [[ ! -f "${BIN}" ]]; then
-    echo "找不到執行檔 ${BIN}" >&2
-    echo "請先執行： cargo build --release" >&2
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "此腳本僅適用於 macOS" >&2
     exit 1
 fi
+for tool in cargo plutil sips iconutil codesign ditto file lipo vtool; do
+    if ! command -v "${tool}" >/dev/null 2>&1; then
+        echo "缺少必要工具：${tool}，請安裝 Rust 與 Xcode Command Line Tools" >&2
+        exit 1
+    fi
+done
 
-rm -rf "${BUNDLE}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+APP_NAME="MadEdit"
+BUNDLE_ID="io.github.madedit.MadEdit"
+METADATA="$(cargo metadata --locked --no-deps --format-version 1 --manifest-path "${ROOT}/Cargo.toml")"
+VERSION="$(printf '%s' "${METADATA}" | plutil -extract packages.0.version raw -o - -)"
+OUT_DIR="${1:-${ROOT}/dist}"
+mkdir -p "${OUT_DIR}"
+OUT_DIR="$(cd "${OUT_DIR}" && pwd)"
+FINAL_BUNDLE="${OUT_DIR}/${APP_NAME}.app"
+
+# 先在同一檔案系統完成建置、資源及簽章；失敗時舊 App 仍可使用。
+STAGE="$(mktemp -d "${OUT_DIR}/.madedit-bundle.XXXXXX")"
+BUNDLE="${STAGE}/${APP_NAME}.app"
+cleanup() {
+    if [[ -e "${STAGE}/previous.app" && ! -e "${FINAL_BUNDLE}" ]]; then
+        mv "${STAGE}/previous.app" "${FINAL_BUNDLE}"
+    fi
+    rm -rf "${STAGE}"
+}
+trap cleanup EXIT
+
+BIN="${MADEDIT_BIN:-}"
+if [[ -z "${BIN}" ]]; then
+    # Cargo 回報的 artifact 才是實際路徑，包含自訂 target-dir 及 build.target。
+    cargo build --release --locked --manifest-path "${ROOT}/Cargo.toml" \
+        --message-format=json-render-diagnostics >"${STAGE}/build.jsonl"
+    while IFS= read -r line; do
+        case "${line}" in
+            *'"executable":"'*)
+                if [[ "$(printf '%s' "${line}" | plutil -extract target.name raw -o - -)" == "${APP_NAME}" ]]; then
+                    BIN="$(printf '%s' "${line}" | plutil -extract executable raw -o - -)"
+                fi
+                ;;
+        esac
+    done <"${STAGE}/build.jsonl"
+fi
+if [[ ! -f "${BIN}" ]]; then
+    echo "找不到 MadEdit 執行檔：${BIN}" >&2
+    exit 1
+fi
+# 避免誤把其他平台的產物打包成無法執行的 macOS App。
+if ! file "${BIN}" | grep -q 'Mach-O.*executable'; then
+    echo "執行檔不是 macOS Mach-O：${BIN}" >&2
+    exit 1
+fi
+# 從每個架構的 Mach-O 載入命令讀取最低 macOS 版本；Intel 舊版可能使用
+# LC_VERSION_MIN_MACOSX，Apple Silicon 與較新版產物使用 LC_BUILD_VERSION。
+# universal App 同時記錄各架構版本，全域值採最高者，避免低估執行需求。
+MIN_OS="0.0"
+ARCH_MINIMUMS=""
+for arch in $(lipo -archs "${BIN}"); do
+    arch_min="$(vtool -arch "${arch}" -show-build "${BIN}" | awk '
+        $1 == "cmd" { macos = ($2 == "LC_VERSION_MIN_MACOSX"); legacy = macos }
+        $1 == "platform" { macos = ($2 == "MACOS") }
+        macos && ($1 == "minos" || (legacy && $1 == "version")) { print $2; found = 1; exit }
+        END { if (!found) exit 1 }
+    ')" || {
+        echo "無法讀取 ${arch} 的 macOS 最低版本：${BIN}" >&2
+        exit 1
+    }
+    MIN_OS="$(printf '%s\n%s\n' "${MIN_OS}" "${arch_min}" | sort -t . -k1,1n -k2,2n -k3,3n | tail -n 1)"
+    ARCH_MINIMUMS+="        <key>${arch}</key><string>${arch_min}</string>
+"
+done
+if [[ "${MIN_OS}" == "0.0" ]]; then
+    echo "執行檔未包含可辨識的 macOS 架構：${BIN}" >&2
+    exit 1
+fi
+if [[ -L "${FINAL_BUNDLE}" ]]; then
+    echo "拒絕取代符號連結：${FINAL_BUNDLE}" >&2
+    exit 1
+fi
+if [[ -e "${FINAL_BUNDLE}" ]] && \
+    [[ "$(plutil -extract CFBundleIdentifier raw -o - "${FINAL_BUNDLE}/Contents/Info.plist" 2>/dev/null || true)" != "${BUNDLE_ID}" ]]; then
+    echo "拒絕取代非 MadEdit 的項目：${FINAL_BUNDLE}" >&2
+    exit 1
+fi
 mkdir -p "${BUNDLE}/Contents/MacOS" "${BUNDLE}/Contents/Resources"
 
 # --- 執行檔 ---------------------------------------------------------------
@@ -43,7 +117,7 @@ chmod +x "${BUNDLE}/Contents/MacOS/${APP_NAME}"
 
 # --- 圖示：PNG -> 圖示集 -> icns -----------------------------------------
 ICON_SRC="${ROOT}/assets/madedit-icon.png"
-ICONSET="${OUT_DIR}/AppIcon.iconset"
+ICONSET="${STAGE}/AppIcon.iconset"
 if [[ -f "${ICON_SRC}" ]]; then
     rm -rf "${ICONSET}"
     mkdir -p "${ICONSET}"
@@ -89,10 +163,29 @@ cat >"${BUNDLE}/Contents/Info.plist" <<PLIST
     <string>6.0</string>
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_TW</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>文字與二進位文件</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.text</string>
+                <string>public.data</string>
+            </array>
+        </dict>
+    </array>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key>
-    <string>11.0</string>
+    <string>${MIN_OS}</string>
+    <key>LSMinimumSystemVersionByArchitecture</key>
+    <dict>
+${ARCH_MINIMUMS}    </dict>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
@@ -106,15 +199,16 @@ PLIST
 printf 'APPL????' >"${BUNDLE}/Contents/PkgInfo"
 
 # --- 簽章 -----------------------------------------------------------------
-# ad-hoc 簽章讓 bundle 在本機可正常啟動，不會被 Gatekeeper 擋下。
-# 先簽內部執行檔再簽 bundle，確保巢狀簽章完整。
-if command -v codesign >/dev/null 2>&1; then
-    codesign --force --sign - "${BUNDLE}/Contents/MacOS/${APP_NAME}" >/dev/null 2>&1 || \
-        echo "警告：執行檔簽章失敗（不影響本機執行）" >&2
-    codesign --force --sign - "${BUNDLE}" >/dev/null 2>&1 || \
-        echo "警告：bundle 簽章失敗（不影響本機執行）" >&2
-    xattr -cr "${BUNDLE}" 2>/dev/null || true
-fi
+# ad-hoc 簽章供本機執行；對外發行仍需 Developer ID 簽章與 Apple 公證。
+# 簽章及驗證任一步失敗都中止，避免把壞掉的 App 當成成功產物。
+plutil -lint "${BUNDLE}/Contents/Info.plist"
+codesign --force --sign - "${BUNDLE}/Contents/MacOS/${APP_NAME}"
+codesign --force --sign - "${BUNDLE}"
+codesign --verify --deep --strict "${BUNDLE}"
 
-echo "已產生：${BUNDLE}"
-echo "啟動方式： open \"${BUNDLE}\""
+if [[ -e "${FINAL_BUNDLE}" ]]; then
+    mv "${FINAL_BUNDLE}" "${STAGE}/previous.app"
+fi
+mv "${BUNDLE}" "${FINAL_BUNDLE}"
+echo "已產生：${FINAL_BUNDLE}"
+echo "啟動方式： open \"${FINAL_BUNDLE}\""

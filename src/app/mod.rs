@@ -110,7 +110,14 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext, files: Vec<PathBuf>, screenshot: Option<PathBuf>) -> Self {
-        let (settings, settings_error) = Settings::load_checked();
+        #[cfg(target_os = "macos")]
+        crate::macos::attach_context(&cc.egui_ctx);
+        // 自動化截圖以預設設定啟動，不還原或覆寫使用者的工作階段。
+        let (settings, settings_error) = if screenshot.is_some() {
+            (Settings::default(), None)
+        } else {
+            Settings::load_checked()
+        };
         let mut app = Self {
             settings,
             tabs: Vec::new(),
@@ -386,8 +393,12 @@ impl App {
                 None => {}
             }
         }
-        for id in clean {
-            self.close_now(id);
+        // 結束時保留分頁直到視窗真的關閉，才能保存完整工作階段；
+        // 若後續取消未存檔確認，乾淨的分頁也仍留在原處。
+        if !exit {
+            for id in clean {
+                self.close_now(id);
+            }
         }
         if dirty.is_empty() {
             if exit {
@@ -444,10 +455,6 @@ impl App {
                 None => c.default_keys().split('|').filter(|k| !k.is_empty()).map(str::to_string).collect(),
             };
             for k in keys {
-                // macOS 的 ⌘Q 為系統結束程式，不指派給「不自動換行」
-                if cfg!(target_os = "macos") && c == C::NoWrap && k == "Ctrl+Q" {
-                    continue;
-                }
                 if let Some(sc) = commands::parse_shortcut(&k) {
                     b.push((sc, c));
                 }
@@ -519,7 +526,7 @@ impl App {
     fn allowed_in_text_field(c: C) -> bool {
         matches!(
             c,
-            C::New | C::Open | C::Save | C::SaveAs | C::SaveAll | C::Close | C::Find | C::FindNext | C::FindPrevious
+            C::New | C::Open | C::Save | C::SaveAs | C::SaveAll | C::Close | C::Exit | C::Find | C::FindNext | C::FindPrevious
                 | C::Replace | C::QuickFind | C::FindInFiles | C::GoToLine | C::GoToPosition | C::NextWindow
                 | C::PreviousWindow | C::ToggleWindow | C::FullScreen | C::Print | C::RecentFilesList | C::SwitchTab1
                 | C::SwitchTab2 | C::SwitchTab3 | C::SwitchTab4 | C::SwitchTab5 | C::SwitchTab6 | C::SwitchTab7
@@ -645,6 +652,9 @@ impl App {
     }
 
     fn save_session(&mut self) {
+        if self.screenshot.is_some() {
+            return;
+        }
         for i in 0..self.tabs.len() {
             self.remember_caret(i);
         }
@@ -888,6 +898,17 @@ fn egui_extras_style(ctx: &egui::Context) {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+
+        #[cfg(target_os = "macos")]
+        for path in crate::macos::take_open_files() {
+            self.open_path(&path);
+        }
+        #[cfg(target_os = "macos")]
+        if crate::macos::take_quit_requested() {
+            // 系統選單與 Dock 的結束請求也必須經過未儲存確認。
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            self.pending.push(C::Exit);
+        }
 
         // 字型：設定改變時重建
         if self.font_applied.as_deref() != Some(self.settings.font_family.as_str()) {
