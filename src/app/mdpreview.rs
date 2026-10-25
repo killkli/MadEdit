@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Color32, RichText};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
@@ -88,6 +89,48 @@ pub fn split_mermaid(text: &str) -> Vec<Segment> {
     }
     if !md.is_empty() {
         out.push(Segment::Markdown(md));
+    }
+    out
+}
+
+/// 是否為相對路徑圖片位址：沒有協定（`xxx://`、`data:`）、不是絕對路徑、不是 Windows 磁碟機路徑
+fn is_relative_image_url(url: &str) -> bool {
+    let b = url.as_bytes();
+    !url.is_empty()
+        && !url.contains("://")
+        && !url.starts_with("data:")
+        && !url.starts_with(['/', '\\', '#'])
+        && !(b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
+}
+
+/// 把 Markdown 圖片的相對路徑改寫成以「文件所在資料夾」為基準的絕對 `file://` 位址。
+/// egui_commonmark 預設以程式工作目錄解析相對路徑，不符合編輯 Markdown 的習慣。
+/// 路徑以 `<...>` 包起來，因此含空白也能正確解析；百分比編碼（`%20`）交給載入器處理。
+/// 文件尚未存檔（沒有 `base_dir`）時不改寫。
+pub fn rewrite_image_paths(md: &str, base_dir: Option<&Path>) -> String {
+    use pulldown_cmark::{Event, Parser, Tag};
+    let Some(base) = base_dir else { return md.to_string() };
+    // 收集（位元組範圍, 新位址）；範圍是圖片語法中位址文字的位置
+    let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    for (ev, range) in Parser::new(md).into_offset_iter() {
+        let Event::Start(Tag::Image { dest_url, .. }) = ev else { continue };
+        if !is_relative_image_url(&dest_url) {
+            continue;
+        }
+        // 位址在圖片語法的尾端（標題文字在其後），取最後一次出現的位置；
+        // 參照式圖片（`![a][ref]`）的位址不在此範圍內，找不到就略過
+        let span = &md[range.clone()];
+        let Some(off) = span.rfind(dest_url.as_ref()) else { continue };
+        let start = range.start + off;
+        let full = base.join(dest_url.as_ref()).to_string_lossy().replace('\\', "/");
+        edits.push((start..start + dest_url.len(), format!("<file://{full}>")));
+    }
+    let mut out = md.to_string();
+    // 由後往前替換，前面的位置才不會位移
+    for (r, new) in edits.into_iter().rev() {
+        // 原位址若已用 `<...>` 包起來，連同角括號一併替換
+        let (s, e) = if out[..r.start].ends_with('<') && out[r.end..].starts_with('>') { (r.start - 1, r.end + 1) } else { (r.start, r.end) };
+        out.replace_range(s..e, &new);
     }
     out
 }
@@ -192,7 +235,7 @@ pub struct MarkdownPreview {
     /// 文件顯示名稱（視窗標題用）
     pub title: String,
     /// 已建立內容時的文件版本與主題；任一變動就重建
-    built: Option<(u64, bool)>,
+    built: Option<(u64, bool, Option<PathBuf>)>,
     items: Vec<Item>,
     cache: CommonMarkCache,
 }
@@ -210,8 +253,10 @@ impl MarkdownPreview {
     }
 
     /// 文件版本或主題改變時才重建內容（Mermaid 渲染只在此發生，平時每幀不重算）
-    pub fn refresh(&mut self, ctx: &egui::Context, text: &str, version: u64, dark: bool) {
-        if self.built == Some((version, dark)) {
+    pub fn refresh(&mut self, ctx: &egui::Context, text: &str, version: u64, dark: bool, base_dir: Option<PathBuf>) {
+        // 另存新檔改變資料夾時，相對路徑圖片也要重新解析，所以資料夾也是重建條件
+        let key = (version, dark, base_dir);
+        if self.built.as_ref() == Some(&key) {
             return;
         }
         // 釋放舊圖的 SVG 快取，避免編輯過程累積
@@ -225,7 +270,7 @@ impl MarkdownPreview {
         self.items = split_mermaid(text)
             .into_iter()
             .map(|seg| match seg {
-                Segment::Markdown(m) => Item::Markdown(m),
+                Segment::Markdown(m) => Item::Markdown(rewrite_image_paths(&m, key.2.as_deref())),
                 Segment::Mermaid(src) => match fermaid::render(&src, &opts) {
                     Ok(r) => {
                         let svg = resolve_svg_vars(&r.svg, &theme);
@@ -242,7 +287,7 @@ impl MarkdownPreview {
                 },
             })
             .collect();
-        self.built = Some((version, dark));
+        self.built = Some(key);
     }
 
     /// 繪製預覽內容
@@ -311,6 +356,28 @@ mod tests {
     fn test_split_requires_mermaid_info_word() {
         let text = "```mermaidx\nfoo\n```\n";
         assert_eq!(split_mermaid(text), vec![Segment::Markdown(text.into())]);
+    }
+
+    #[test]
+    fn test_rewrite_relative_image_uses_document_dir() {
+        let base = Path::new("/home/u/docs");
+        let out = rewrite_image_paths("看圖 ![圖](img/a.png \"標題\") 結束", Some(base));
+        assert_eq!(out, "看圖 ![圖](<file:///home/u/docs/img/a.png> \"標題\") 結束");
+        // 已用角括號包起來的位址不會變成兩層
+        let out = rewrite_image_paths("![x](<pic 1.png>)", Some(base));
+        assert_eq!(out, "![x](<file:///home/u/docs/pic 1.png>)");
+    }
+
+    #[test]
+    fn test_rewrite_keeps_absolute_remote_and_unsaved() {
+        let base = Path::new("/d");
+        for md in ["![a](/abs/a.png)", "![a](https://x.com/a.png)", "![a](file:///x.png)", "![a](data:image/png;base64,AAAA)", "![a](C:\\x.png)"] {
+            assert_eq!(rewrite_image_paths(md, Some(base)), md);
+        }
+        // 尚未存檔：不改寫
+        assert_eq!(rewrite_image_paths("![a](a.png)", None), "![a](a.png)");
+        // 連結（非圖片）不受影響
+        assert_eq!(rewrite_image_paths("[a](a.md)", Some(base)), "[a](a.md)");
     }
 
     #[test]

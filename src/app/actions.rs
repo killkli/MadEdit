@@ -75,7 +75,9 @@ impl App {
         let Some(mut pv) = self.md_preview.take() else { return };
         // 預覽中的文件已被關閉時，一併關閉預覽
         let Some(tab) = self.tabs.iter().find(|t| t.doc.id == pv.doc_id) else { return };
-        pv.refresh(ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(ctx));
+        // 相對路徑圖片以文件所在資料夾為基準
+        let base_dir = tab.doc.path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf());
+        pv.refresh(ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(ctx), base_dir);
         let builder = egui::ViewportBuilder::default()
             .with_title(format!("Markdown 預覽 - {}", pv.title))
             .with_inner_size([820.0, 900.0])
