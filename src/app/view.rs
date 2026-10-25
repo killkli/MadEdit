@@ -298,6 +298,15 @@ impl ViewState {
         (line as usize, start as usize, end)
     }
 
+    /// 目前最上方可見的邏輯行（從 0 起算；自動換行時為該視覺列所屬的行）
+    pub fn top_line(&self, ed: &EditorState) -> usize {
+        let rows = self.row_count(ed);
+        if rows == 0 {
+            return 0;
+        }
+        self.row_info(ed, self.top_row.min(rows - 1)).0
+    }
+
     /// 文字位置所在的視覺列
     fn row_of(&self, pos: TextPosition) -> usize {
         if !self.wrapped() {

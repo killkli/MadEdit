@@ -19,6 +19,13 @@ pub enum Segment {
     Mermaid(String),
 }
 
+/// 片段與其在文件中的起始行（從 0 起算；Mermaid 為開頭圍欄所在行）
+#[derive(Debug, Clone, PartialEq)]
+pub struct Piece {
+    pub line: usize,
+    pub seg: Segment,
+}
+
 /// 判斷一行是否為 mermaid 圍欄開頭，回傳（圍欄字元, 圍欄長度）
 fn mermaid_fence_open(line: &str) -> Option<(char, usize)> {
     let t = line.trim_start();
@@ -42,16 +49,21 @@ fn is_fence_close(line: &str, ch: char, n: usize) -> bool {
     t.chars().count() >= n && t.chars().all(|c| c == ch)
 }
 
-/// 將 Markdown 文字切成一般 Markdown 與 Mermaid 片段。
+/// 將 Markdown 文字切成一般 Markdown 與 Mermaid 片段，並記錄各片段的起始行。
 /// 其他語言的程式碼區塊（例如內容剛好寫了 mermaid 圍欄的 ```text）不受影響，
 /// 因為只有開頭圍欄標示 mermaid 才會被擷取，且開頭圍欄在其他程式碼區塊內不會被辨識。
-pub fn split_mermaid(text: &str) -> Vec<Segment> {
+pub fn split_mermaid(text: &str) -> Vec<Piece> {
     let mut out = Vec::new();
     let mut md = String::new();
+    // 目前片段的起始行、下一個要讀的行號
+    let mut md_line = 0usize;
+    let mut line_no = 0usize;
     // 目前是否位於「非 mermaid」的程式碼區塊內（內部的 mermaid 字樣要忽略）
     let mut other_fence: Option<(char, usize)> = None;
     let mut lines = text.split_inclusive('\n');
     while let Some(line) = lines.next() {
+        let this_line = line_no;
+        line_no += 1;
         let body = line.trim_end_matches(['\r', '\n']);
         if let Some((ch, n)) = other_fence {
             if is_fence_close(body, ch, n) {
@@ -62,17 +74,18 @@ pub fn split_mermaid(text: &str) -> Vec<Segment> {
         }
         if let Some((ch, n)) = mermaid_fence_open(body) {
             if !md.is_empty() {
-                out.push(Segment::Markdown(std::mem::take(&mut md)));
+                out.push(Piece { line: md_line, seg: Segment::Markdown(std::mem::take(&mut md)) });
             }
             let mut src = String::new();
             // 讀到關閉圍欄為止；沒有關閉圍欄時視為到文件結尾
             for l in lines.by_ref() {
+                line_no += 1;
                 if is_fence_close(l.trim_end_matches(['\r', '\n']), ch, n) {
                     break;
                 }
                 src.push_str(l);
             }
-            out.push(Segment::Mermaid(src));
+            out.push(Piece { line: this_line, seg: Segment::Mermaid(src) });
             continue;
         }
         // 一般程式碼區塊開頭：記下來，避免區塊內容被誤判
@@ -85,12 +98,74 @@ pub fn split_mermaid(text: &str) -> Vec<Segment> {
                 other_fence = Some((ch, n));
             }
         }
+        if md.is_empty() {
+            md_line = this_line;
+        }
         md.push_str(line);
     }
     if !md.is_empty() {
-        out.push(Segment::Markdown(md));
+        out.push(Piece { line: md_line, seg: Segment::Markdown(md) });
     }
     out
+}
+
+/// 把一段 Markdown 依頂層區塊（段落、標題、清單、程式碼、表格…）切開，回傳（區塊起始行, 區塊文字）。
+/// 分開繪製後才能量到每個區塊在預覽中的位置，用來和編輯區同步捲動。
+/// 連結參照定義（`[a]: url`）可能在別的區塊，所以附加到每個區塊後面；
+/// 含註腳定義時定義與引用會跨區塊，改為整段不切。
+pub fn split_blocks(md: &str) -> Vec<(usize, String)> {
+    use pulldown_cmark::{Event, Options, Parser, Tag};
+    // 與 egui_commonmark 解析時的選項一致，表格等才不會被切壞
+    let opts = Options::ENABLE_TABLES
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_DEFINITION_LIST;
+    let parser = Parser::new_ext(md, opts);
+    let mut defs = String::new();
+    for (label, d) in parser.reference_definitions().iter() {
+        defs.push_str(&format!("[{label}]: <{}>", d.dest));
+        if let Some(t) = &d.title {
+            defs.push_str(&format!(" \"{}\"", t.replace('"', "\\\"")));
+        }
+        defs.push('\n');
+    }
+    let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    let (mut depth, mut start) = (0usize, 0usize);
+    for (ev, r) in parser.into_offset_iter() {
+        match ev {
+            Event::Start(Tag::FootnoteDefinition(_)) => return vec![(0, md.to_string())],
+            Event::Start(_) => {
+                if depth == 0 {
+                    start = r.start;
+                }
+                depth += 1;
+            }
+            Event::End(_) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    ranges.push(start..r.end);
+                }
+            }
+            _ if depth == 0 => ranges.push(r),
+            _ => {}
+        }
+    }
+    // 起始行用累加方式計算，避免每個區塊都從頭數換行
+    let (mut line, mut pos) = (0usize, 0usize);
+    ranges
+        .into_iter()
+        .map(|r| {
+            line += md[pos..r.start].matches('\n').count();
+            pos = r.start;
+            let mut text = md[r.clone()].trim_end_matches('\n').to_string();
+            if !defs.is_empty() {
+                text.push_str("\n\n");
+                text.push_str(&defs);
+            }
+            (line, text)
+        })
+        .collect()
 }
 
 /// 是否為相對路徑圖片位址：沒有協定（`xxx://`、`data:`）、不是絕對路徑、不是 Windows 磁碟機路徑
@@ -221,11 +296,36 @@ struct Diagram {
 }
 
 /// 單一片段的繪製資料
-enum Item {
+enum Content {
     Markdown(String),
     Diagram(Diagram),
     /// Mermaid 語法錯誤：訊息與原始碼
     Error { message: String, source: String },
+}
+
+/// 一個繪製項目與它在原始文件中的起始行（同步捲動用）
+struct Item {
+    line: usize,
+    content: Content,
+}
+
+/// 縮放範圍與步進
+const ZOOM_MIN: f32 = 0.5;
+const ZOOM_MAX: f32 = 3.0;
+const ZOOM_STEP: f32 = 1.1;
+/// 符合寬度時，重新排版用的寬度以此為單位量化，避免拖曳視窗邊緣時每個像素都重繪
+const WIDTH_BUCKET: f32 = 32.0;
+
+/// 依編輯區第一行，在（起始行, y）錨點之間線性內插出預覽應捲到的 y。
+/// 錨點需依行號遞增排序；沒有錨點時回傳 None。
+pub fn scroll_target(anchors: &[(usize, f32)], line: usize) -> Option<f32> {
+    let i = anchors.partition_point(|a| a.0 <= line).checked_sub(1)?;
+    let (l0, y0) = anchors[i];
+    let Some(&(l1, y1)) = anchors.get(i + 1) else { return Some(y0) };
+    if l1 <= l0 {
+        return Some(y0);
+    }
+    Some(y0 + (y1 - y0) * (line - l0) as f32 / (l1 - l0) as f32)
 }
 
 /// Markdown 預覽視窗狀態
@@ -234,10 +334,32 @@ pub struct MarkdownPreview {
     pub doc_id: u64,
     /// 文件顯示名稱（視窗標題用）
     pub title: String,
-    /// 已建立內容時的文件版本與主題；任一變動就重建
-    built: Option<(u64, bool, Option<PathBuf>)>,
+    /// 已建立內容時的條件；任一變動就重建
+    built: Option<BuildKey>,
     items: Vec<Item>,
     cache: CommonMarkCache,
+    /// 縮放比例（文字與圖表一起縮放）
+    zoom: f32,
+    /// 符合寬度：圖表依視窗寬度重新排版，仍太寬才縮小
+    fit_width: bool,
+    /// 跟隨編輯區捲動
+    sync_scroll: bool,
+    /// 上一幀的內容可用寬度（下一次重建時決定圖表排版寬度）
+    avail_w: f32,
+    /// 上一幀量到的（起始行, y）錨點
+    pub(super) anchors: Vec<(usize, f32)>,
+    /// 上次同步時的編輯區第一行；變動才同步，使用者仍能自由捲動預覽
+    pub(super) synced_line: Option<usize>,
+}
+
+/// 重建預覽內容的條件
+#[derive(Debug, Clone, PartialEq)]
+struct BuildKey {
+    version: u64,
+    dark: bool,
+    base_dir: Option<PathBuf>,
+    /// 圖表排版寬度（量化後；0 表示不限）
+    width: u32,
 }
 
 /// 預覽視窗回報給 App 的動作
@@ -249,74 +371,159 @@ pub enum MdAction {
 
 impl MarkdownPreview {
     pub fn new(doc_id: u64, title: String) -> Self {
-        Self { doc_id, title, built: None, items: Vec::new(), cache: CommonMarkCache::default() }
+        Self {
+            doc_id,
+            title,
+            built: None,
+            items: Vec::new(),
+            cache: CommonMarkCache::default(),
+            zoom: 1.0,
+            fit_width: true,
+            sync_scroll: true,
+            avail_w: 0.0,
+            anchors: Vec::new(),
+            synced_line: None,
+        }
     }
 
-    /// 文件版本或主題改變時才重建內容（Mermaid 渲染只在此發生，平時每幀不重算）
+    /// 符合寬度時給 fermaid 的排版寬度（量化後的像素，已扣除縮放）；不限制則為 0
+    fn layout_width(&self) -> u32 {
+        if !self.fit_width || self.avail_w <= 0.0 {
+            return 0;
+        }
+        (((self.avail_w / self.zoom) / WIDTH_BUCKET).floor().max(1.0) * WIDTH_BUCKET) as u32
+    }
+
+    /// 文件版本、主題、資料夾或圖表排版寬度改變時才重建內容（Mermaid 渲染只在此發生，平時每幀不重算）
     pub fn refresh(&mut self, ctx: &egui::Context, text: &str, version: u64, dark: bool, base_dir: Option<PathBuf>) {
         // 另存新檔改變資料夾時，相對路徑圖片也要重新解析，所以資料夾也是重建條件
-        let key = (version, dark, base_dir);
+        let key = BuildKey { version, dark, base_dir, width: self.layout_width() };
         if self.built.as_ref() == Some(&key) {
             return;
         }
         // 釋放舊圖的 SVG 快取，避免編輯過程累積
         for it in &self.items {
-            if let Item::Diagram(d) = it {
+            if let Content::Diagram(d) = &it.content {
                 ctx.forget_image(&d.uri);
             }
         }
         let theme = if dark { dark_theme() } else { HashMap::new() };
-        let opts = fermaid::RenderOptions::default();
-        self.items = split_mermaid(text)
-            .into_iter()
-            .map(|seg| match seg {
-                Segment::Markdown(m) => Item::Markdown(rewrite_image_paths(&m, key.2.as_deref())),
-                Segment::Mermaid(src) => match fermaid::render(&src, &opts) {
-                    Ok(r) => {
-                        let svg = resolve_svg_vars(&r.svg, &theme);
-                        let mut h = std::collections::hash_map::DefaultHasher::new();
-                        svg.hash(&mut h);
-                        Item::Diagram(Diagram {
-                            uri: format!("bytes://mermaid-{:016x}.svg", h.finish()),
-                            bytes: svg.into_bytes(),
-                            width: r.width as f32,
-                            height: r.height as f32,
-                        })
+        let opts = fermaid::RenderOptions { max_width: (key.width > 0).then_some(key.width as f64), ..Default::default() };
+        let mut items = Vec::new();
+        for piece in split_mermaid(text) {
+            match piece.seg {
+                Segment::Markdown(m) => {
+                    let m = rewrite_image_paths(&m, key.base_dir.as_deref());
+                    for (off, block) in split_blocks(&m) {
+                        items.push(Item { line: piece.line + off, content: Content::Markdown(block) });
                     }
-                    Err(e) => Item::Error { message: format!("第 {} 行第 {} 欄：{}", e.line, e.column, e.message), source: src },
-                },
-            })
-            .collect();
+                }
+                Segment::Mermaid(src) => {
+                    let content = match fermaid::render(&src, &opts) {
+                        Ok(r) => {
+                            let svg = resolve_svg_vars(&r.svg, &theme);
+                            let mut h = std::collections::hash_map::DefaultHasher::new();
+                            svg.hash(&mut h);
+                            Content::Diagram(Diagram {
+                                uri: format!("bytes://mermaid-{:016x}.svg", h.finish()),
+                                bytes: svg.into_bytes(),
+                                width: r.width as f32,
+                                height: r.height as f32,
+                            })
+                        }
+                        Err(e) => Content::Error { message: format!("第 {} 行第 {} 欄：{}", e.line, e.column, e.message), source: src },
+                    };
+                    items.push(Item { line: piece.line, content });
+                }
+            }
+        }
+        self.items = items;
         self.built = Some(key);
     }
 
-    /// 繪製預覽內容
-    pub fn ui(&mut self, ui: &mut egui::Ui) -> MdAction {
+    /// 工具列：縮放、符合寬度、同步捲動
+    fn toolbar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("−").on_hover_text("縮小（Ctrl+滾輪）").clicked() {
+                self.zoom = (self.zoom / ZOOM_STEP).max(ZOOM_MIN);
+            }
+            if ui.button(format!("{:.0}%", self.zoom * 100.0)).on_hover_text("還原 100%").clicked() {
+                self.zoom = 1.0;
+            }
+            if ui.button("+").on_hover_text("放大（Ctrl+滾輪）").clicked() {
+                self.zoom = (self.zoom * ZOOM_STEP).min(ZOOM_MAX);
+            }
+            ui.separator();
+            ui.checkbox(&mut self.fit_width, "符合寬度").on_hover_text("圖表依視窗寬度重新排版");
+            ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("預覽跟隨編輯區捲動");
+        });
+    }
+
+    /// 繪製預覽內容；`top_line` 是編輯區目前第一個可見的行（從 0 起算）
+    pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize) -> MdAction {
         if ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
             return MdAction::Close;
         }
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.set_max_width(ui.available_width().min(900.0));
+        egui::Panel::top("md-preview-toolbar").show(ui, |ui| self.toolbar(ui));
+
+        // Ctrl+滾輪（或觸控板捏合）縮放
+        let delta = ui.input(|i| i.zoom_delta());
+        if delta != 1.0 {
+            self.zoom = (self.zoom * delta).clamp(ZOOM_MIN, ZOOM_MAX);
+        }
+
+        // 編輯區第一行改變時，把預覽捲到對應位置
+        let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
+        if self.sync_scroll && self.synced_line != Some(top_line) {
+            if let Some(y) = scroll_target(&self.anchors, top_line) {
+                area = area.vertical_scroll_offset(y);
+                self.synced_line = Some(top_line);
+            }
+        }
+
+        let zoom = self.zoom;
+        let mut anchors = Vec::with_capacity(self.items.len());
+        let mut avail_w = self.avail_w;
+        area.show(ui, |ui| {
+            // 文字隨縮放放大（圖表另外依尺寸縮放）
+            for ts in ui.style_mut().text_styles.values_mut() {
+                ts.size *= zoom;
+            }
+            avail_w = ui.available_width();
+            let origin = ui.cursor().min.y;
+            let mut prev_markdown = false;
             for item in &self.items {
-                match item {
-                    Item::Markdown(m) => {
+                anchors.push((item.line, ui.cursor().min.y - origin));
+                match &item.content {
+                    Content::Markdown(m) => {
+                        // 區塊分開繪製後要自己補上 egui_commonmark 原本在區塊間插入的空行
+                        if prev_markdown {
+                            ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
+                        }
                         CommonMarkViewer::new().show(ui, &mut self.cache, m);
                     }
-                    Item::Diagram(d) => {
-                        // 只縮小不放大，保持圖表原始尺寸的清晰度
-                        let scale = (ui.available_width() / d.width).min(1.0);
+                    Content::Diagram(d) => {
+                        // 依縮放比例顯示；符合寬度時，仍比視窗寬才縮小
+                        let mut scale = zoom;
+                        if self.fit_width && d.width * scale > avail_w {
+                            scale = avail_w / d.width;
+                        }
                         let img = egui::Image::from_bytes(d.uri.clone(), d.bytes.clone())
                             .fit_to_exact_size(egui::vec2(d.width * scale, d.height * scale));
                         ui.add(img);
                         ui.add_space(8.0);
                     }
-                    Item::Error { message, source } => {
+                    Content::Error { message, source } => {
                         ui.label(RichText::new(format!("Mermaid 語法錯誤：{message}")).color(Color32::LIGHT_RED));
                         ui.code(source);
                     }
                 }
+                prev_markdown = matches!(item.content, Content::Markdown(_));
             }
         });
+        self.anchors = anchors;
+        // 寬度或縮放改變會讓圖表排版寬度跨級，下一幀由 refresh 重建
+        self.avail_w = avail_w;
         MdAction::None
     }
 }
@@ -331,9 +538,9 @@ mod tests {
         assert_eq!(
             segs,
             vec![
-                Segment::Markdown("# 標題\n\n".into()),
-                Segment::Mermaid("graph LR\n  A-->B\n".into()),
-                Segment::Markdown("\n結尾\n".into()),
+                Piece { line: 0, seg: Segment::Markdown("# 標題\n\n".into()) },
+                Piece { line: 2, seg: Segment::Mermaid("graph LR\n  A-->B\n".into()) },
+                Piece { line: 6, seg: Segment::Markdown("\n結尾\n".into()) },
             ]
         );
     }
@@ -342,20 +549,20 @@ mod tests {
     fn test_split_ignores_mermaid_inside_other_code_block() {
         let text = "```text\n```mermaid\nx\n```\n";
         // 第二行落在 text 圍欄內，整份都是一般 Markdown
-        assert_eq!(split_mermaid(text), vec![Segment::Markdown(text.into())]);
+        assert_eq!(split_mermaid(text), vec![Piece { line: 0, seg: Segment::Markdown(text.into()) }]);
     }
 
     #[test]
     fn test_split_unclosed_fence_and_tilde_and_crlf() {
-        assert_eq!(split_mermaid("~~~mermaid\r\npie\r\n  \"a\": 1\r\n"), vec![Segment::Mermaid("pie\r\n  \"a\": 1\r\n".into())]);
-        assert_eq!(split_mermaid("沒有圖\n"), vec![Segment::Markdown("沒有圖\n".into())]);
+        assert_eq!(split_mermaid("~~~mermaid\r\npie\r\n  \"a\": 1\r\n"), vec![Piece { line: 0, seg: Segment::Mermaid("pie\r\n  \"a\": 1\r\n".into()) }]);
+        assert_eq!(split_mermaid("沒有圖\n"), vec![Piece { line: 0, seg: Segment::Markdown("沒有圖\n".into()) }]);
         assert!(split_mermaid("").is_empty());
     }
 
     #[test]
     fn test_split_requires_mermaid_info_word() {
         let text = "```mermaidx\nfoo\n```\n";
-        assert_eq!(split_mermaid(text), vec![Segment::Markdown(text.into())]);
+        assert_eq!(split_mermaid(text), vec![Piece { line: 0, seg: Segment::Markdown(text.into()) }]);
     }
 
     #[test]
@@ -378,6 +585,44 @@ mod tests {
         assert_eq!(rewrite_image_paths("![a](a.png)", None), "![a](a.png)");
         // 連結（非圖片）不受影響
         assert_eq!(rewrite_image_paths("[a](a.md)", Some(base)), "[a](a.md)");
+    }
+
+    #[test]
+    fn test_split_blocks_records_start_lines() {
+        let md = "# 標題\n\n段落一\n續行\n\n- a\n- b\n\n```rust\nfn x() {}\n```\n";
+        let b = split_blocks(md);
+        let lines: Vec<usize> = b.iter().map(|x| x.0).collect();
+        assert_eq!(lines, vec![0, 2, 5, 8]);
+        assert_eq!(b[1].1, "段落一\n續行");
+        assert!(b[3].1.starts_with("```rust"));
+    }
+
+    #[test]
+    fn test_split_blocks_keeps_table_whole_and_appends_ref_defs() {
+        let md = "| a | b |\n|---|---|\n| 1 | 2 |\n\n見 [文件][r]\n\n[r]: https://x.com \"標題\"\n";
+        let b = split_blocks(md);
+        assert_eq!(b.len(), 2, "{b:?}");
+        assert!(b[0].1.starts_with("| a | b |") && b[0].1.contains("| 1 | 2 |"));
+        assert!(b[1].1.contains("[r]: <https://x.com> \"標題\""), "{}", b[1].1);
+    }
+
+    #[test]
+    fn test_split_blocks_footnotes_not_split() {
+        let md = "文字[^1]\n\n[^1]: 註腳\n";
+        assert_eq!(split_blocks(md), vec![(0, md.to_string())]);
+    }
+
+    #[test]
+    fn test_scroll_target_interpolates_between_anchors() {
+        let a = [(0, 0.0), (10, 100.0), (20, 400.0)];
+        assert_eq!(scroll_target(&a, 0), Some(0.0));
+        assert_eq!(scroll_target(&a, 5), Some(50.0));
+        assert_eq!(scroll_target(&a, 15), Some(250.0));
+        // 超過最後一個錨點就停在最後錨點
+        assert_eq!(scroll_target(&a, 99), Some(400.0));
+        assert_eq!(scroll_target(&[], 3), None);
+        // 第一個錨點之前（例如文件開頭是空行）沒有可用位置
+        assert_eq!(scroll_target(&[(2, 30.0)], 0), None);
     }
 
     #[test]

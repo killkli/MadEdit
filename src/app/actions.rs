@@ -78,11 +78,12 @@ impl App {
         // 相對路徑圖片以文件所在資料夾為基準
         let base_dir = tab.doc.path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf());
         pv.refresh(ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(ctx), base_dir);
+        let top_line = tab.view.top_line(&tab.doc.editor);
         let builder = egui::ViewportBuilder::default()
             .with_title(format!("Markdown 預覽 - {}", pv.title))
             .with_inner_size([820.0, 900.0])
             .with_min_inner_size([360.0, 280.0]);
-        let action = ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui));
+        let action = ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line));
         if action == super::mdpreview::MdAction::None {
             self.md_preview = Some(pv);
         }
