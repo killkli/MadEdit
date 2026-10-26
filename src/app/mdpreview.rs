@@ -3,10 +3,14 @@
 //!
 //! 預覽內容會隨文件版本（`Document::version`）自動更新。
 
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use eframe::egui::{self, Color32, RichText, emath::Float as _};
+use egui::load::{BytesPoll, ImageLoadResult, ImageLoader, ImagePoll, LoadError, SizeHint};
+use egui::mutex::Mutex;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 /// 文件被切成的片段：一般 Markdown 或 Mermaid 圖表原始碼
@@ -237,6 +241,8 @@ const ZOOM_MAX: f32 = 3.0;
 const ZOOM_STEP: f32 = 1.1;
 /// 符合寬度時，重新排版用的寬度以此為單位量化，避免拖曳視窗邊緣時每個像素都重繪
 const WIDTH_BUCKET: f32 = 32.0;
+/// Mermaid 圖表的 uri 前綴，只有這類 uri 交給 [`DiagramLoader`]
+const DIAGRAM_URI_PREFIX: &str = "bytes://mermaid-";
 /// 圖表點陣化倍率上限（避免高倍縮放時產生過大的貼圖）
 const RASTER_MAX: f32 = 6.0;
 
@@ -353,7 +359,7 @@ impl MarkdownPreview {
                             let svg = r.svg;
                             let mut h = std::collections::hash_map::DefaultHasher::new();
                             svg.hash(&mut h);
-                            let uri = format!("bytes://mermaid-{:016x}.svg", h.finish());
+                            let uri = format!("{DIAGRAM_URI_PREFIX}{:016x}.svg", h.finish());
                             // 交給 egui 的位元組快取；同一內容的 uri 不變，已點陣化的圖會直接沿用
                             ctx.include_bytes(uri.clone(), svg.into_bytes());
                             Content::Diagram(Diagram {
@@ -509,6 +515,73 @@ impl MarkdownPreview {
     }
 }
 
+/// Mermaid 圖表專用的 SVG 載入器。
+/// egui_extras 的 SVG 載入器要顯示文字就得載入全部系統字型（數百毫秒），
+/// 這裡的字型資料庫只放一個字型，圖表文字都用它繪製。
+pub struct DiagramLoader {
+    options: resvg::usvg::Options<'static>,
+    /// （uri, 尺寸提示）→ 點陣化結果
+    cache: Mutex<HashMap<(String, SizeHint), Result<Arc<egui::ColorImage>, String>>>,
+}
+
+impl DiagramLoader {
+    pub const ID: &'static str = egui::generate_loader_id!(DiagramLoader);
+
+    /// 安裝到 egui（呼叫端先以 `ID` 確認尚未安裝）；`font` 為（家族名稱, 字型檔內容），沒有字型時圖表不顯示文字
+    pub fn install(ctx: &egui::Context, font: Option<(String, fontique::Blob<u8>)>) {
+        let mut options = resvg::usvg::Options::default();
+        if let Some((name, blob)) = font {
+            let db = options.fontdb_mut();
+            // 直接共用 fontique 已載入的字型檔，不另外複製
+            db.load_font_source(resvg::usvg::fontdb::Source::Binary(Arc::new(blob)));
+            // fermaid 的字型清單以 sans-serif／monospace 結尾，兩者都對應到這個字型
+            db.set_sans_serif_family(&name);
+            db.set_monospace_family(&name);
+        }
+        ctx.add_image_loader(Arc::new(Self { options, cache: Mutex::new(HashMap::new()) }));
+    }
+}
+
+impl ImageLoader for DiagramLoader {
+    fn id(&self) -> &str {
+        Self::ID
+    }
+
+    fn load(&self, ctx: &egui::Context, uri: &str, size_hint: SizeHint) -> ImageLoadResult {
+        // 其他圖片（Markdown 內的 png、svg 等）交給 egui_extras 的載入器
+        if !uri.starts_with(DIAGRAM_URI_PREFIX) {
+            return Err(LoadError::NotSupported);
+        }
+        let key = (uri.to_owned(), size_hint);
+        let result = if let Some(r) = self.cache.lock().get(&key) {
+            r.clone()
+        } else {
+            match ctx.try_load_bytes(uri) {
+                Ok(BytesPoll::Ready { bytes, .. }) => {
+                    let r = egui_extras::image::load_svg_bytes_with_size(&bytes, size_hint, &self.options).map(Arc::new);
+                    self.cache.lock().insert(key, r.clone());
+                    r
+                }
+                Ok(BytesPoll::Pending { size }) => return Ok(ImagePoll::Pending { size }),
+                Err(e) => return Err(e),
+            }
+        };
+        result.map(|image| ImagePoll::Ready { image }).map_err(LoadError::Loading)
+    }
+
+    fn forget(&self, uri: &str) {
+        self.cache.lock().retain(|(u, _), _| u != uri);
+    }
+
+    fn forget_all(&self) {
+        self.cache.lock().clear();
+    }
+
+    fn byte_size(&self) -> usize {
+        self.cache.lock().values().filter_map(|r| r.as_ref().ok()).map(|img| img.pixels.len() * 4).sum()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,5 +686,30 @@ mod tests {
             let r = fermaid::render("flowchart LR\n  A[開始] --> B[結束]", &opts).unwrap();
             assert!(!r.svg.contains("var(--"), "SVG 仍含 CSS 變數");
         }
+    }
+
+    /// 圖表載入器只放一個字型也能畫出文字：有字型時的點陣圖要比沒有字型時多出文字筆畫
+    #[test]
+    fn test_diagram_loader_draws_text_with_single_font() {
+        let Some(font) = crate::app::fonts::FontManager::new().diagram_font() else {
+            return; // 測試環境沒有任何候選字型
+        };
+        let opts = fermaid::RenderOptions { palette: Some(fermaid::Palette::light()), ..Default::default() };
+        let svg = fermaid::render("flowchart LR\n  A[開始 Start] --> B[結束]", &opts).unwrap().svg;
+        let raster = |font| {
+            let ctx = egui::Context::default();
+            DiagramLoader::install(&ctx, font);
+            let uri = format!("{DIAGRAM_URI_PREFIX}test.svg");
+            ctx.include_bytes(uri.clone(), svg.clone().into_bytes());
+            match ctx.try_load_image(&uri, SizeHint::default()).unwrap() {
+                ImagePoll::Ready { image } => image,
+                ImagePoll::Pending { .. } => panic!("應同步完成點陣化"),
+            }
+        };
+        let with = raster(Some(font));
+        let without = raster(None);
+        assert_eq!(with.size, without.size);
+        let diff = with.pixels.iter().zip(&without.pixels).filter(|(a, b)| a != b).count();
+        assert!(diff > 100, "文字未繪製（差異像素 {diff}）");
     }
 }

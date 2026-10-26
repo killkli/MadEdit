@@ -572,8 +572,12 @@ impl App {
             }
             C::PreviewMarkdown => {
                 // 於 App 內開啟 Markdown 預覽（含 Mermaid 圖表）。
-                // 圖片載入器（SVG 載入器建立時會載入全部系統字型，約數百毫秒）延到第一次預覽才安裝，不拖慢啟動；重複呼叫無妨
+                // 圖片載入器延到第一次預覽才安裝，不拖慢啟動；重複呼叫無妨。
+                // 圖表載入器要後裝，egui 會先問後裝的載入器
                 egui_extras::install_image_loaders(ctx);
+                if !ctx.is_loader_installed(super::mdpreview::DiagramLoader::ID) {
+                    super::mdpreview::DiagramLoader::install(ctx, self.fonts.diagram_font());
+                }
                 let doc = self.doc();
                 self.md_preview = Some(super::mdpreview::MarkdownPreview::new(doc.id, doc.display_name()));
             }

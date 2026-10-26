@@ -36,6 +36,9 @@ const CJK_FALLBACKS: &[&str] = &[
     "Droid Sans Fallback",
 ];
 
+/// 沒有 CJK 字型時，Mermaid 圖表改用的無襯線字型
+const DIAGRAM_LATIN_FONTS: &[&str] = &["Inter", "Helvetica", "Arial", "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans"];
+
 pub struct FontManager {
     collection: fontique::Collection,
     /// 系統字型家族名稱（已排序）
@@ -77,6 +80,20 @@ impl FontManager {
             .find(|n| self.collection.family_by_name(n).is_some())
             .map(|n| n.to_string())
             .unwrap_or_default()
+    }
+
+    /// Mermaid 圖表用的單一字型：回傳（家族名稱, 字型檔內容）。
+    /// 優先用 CJK 後備字型（同時含英文字母），沒有才找常見無襯線字型；只載入這一個，不掃描全部系統字型
+    pub fn diagram_font(&mut self) -> Option<(String, fontique::Blob<u8>)> {
+        let candidates: Vec<String> = self.cjk_family.iter().cloned().chain(DIAGRAM_LATIN_FONTS.iter().map(|s| s.to_string())).collect();
+        for name in candidates {
+            if let Some(font) = self.collection.family_by_name(&name).and_then(|f| f.default_font().cloned())
+                && let Some(blob) = font.load(None)
+            {
+                return Some((name, blob));
+            }
+        }
+        None
     }
 
     /// 載入字型家族的一般字重字型檔

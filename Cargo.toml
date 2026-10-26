@@ -9,7 +9,9 @@ chrono = "0.4"
 dirs = "7"
 eframe = "0.37.0"
 egui_commonmark = { version = "0.26", default-features = false, features = ["pulldown_cmark", "svg", "load-images"] }
-egui_extras = { version = "0.37", default-features = false, features = ["svg", "svg_text"] }
+egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
+# Mermaid 圖表點陣化用；版本須與 egui_extras 內部的 resvg 一致
+resvg = "0.45"
 encoding_rs = "0.8.42"
 fermaid = "0.5"
 fontique = "0.11.1"
