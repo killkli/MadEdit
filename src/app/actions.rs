@@ -70,9 +70,10 @@ impl App {
         }
     }
 
-    /// 顯示 Markdown 預覽（並排時為編輯區右側面板，否則為獨立原生視窗），內容隨文件版本與深淺色主題自動更新；
+    /// 顯示 Markdown 預覽（並排時為編輯區右側或下方的面板，否則為獨立原生視窗），內容隨文件版本與深淺色主題自動更新；
     /// 並排面板必須在 CentralPanel 之前呼叫
     pub fn show_markdown_preview(&mut self, ui: &mut egui::Ui) {
+        use super::mdpreview::Placement;
         let ctx = ui.ctx().clone();
         let Some(mut pv) = self.md_preview.take() else { return };
         // 預覽中的文件已被關閉時，一併關閉預覽
@@ -81,21 +82,30 @@ impl App {
         let base_dir = tab.doc.path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf());
         pv.refresh(&ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(&ctx), base_dir);
         let top_line = tab.view.top_line(&tab.doc.editor);
-        let action = if pv.split {
-            // 預設佔主視窗一半寬，可拖曳邊界調整
-            let half = ctx.content_rect().width() / 2.0;
-            egui::Panel::right("md-preview-split")
-                .resizable(true)
-                .default_size(half)
-                .min_size(240.0)
-                .show(ui, |ui| pv.ui(ui, top_line))
-                .inner
-        } else {
-            let builder = egui::ViewportBuilder::default()
-                .with_title(format!("Markdown 預覽 - {}", pv.title))
-                .with_inner_size([820.0, 900.0])
-                .with_min_inner_size([360.0, 280.0]);
-            ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line))
+        // 編輯區（扣除選單、工具列、狀態列後）剩下的範圍，並排時各佔一半
+        let area = ui.available_rect_before_wrap();
+        let action = match pv.placement {
+            Placement::Window => {
+                let builder = egui::ViewportBuilder::default()
+                    .with_title(format!("Markdown 預覽 - {}", pv.title))
+                    .with_inner_size([820.0, 900.0])
+                    .with_min_inner_size([360.0, 280.0]);
+                ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line))
+            }
+            placement => {
+                // 左右與上下用不同的面板識別，各自記住使用者拖曳後的大小
+                let (panel, half) = if placement == Placement::Right {
+                    (egui::Panel::right("md-preview-right"), area.width() / 2.0)
+                } else {
+                    (egui::Panel::bottom("md-preview-bottom"), area.height() / 2.0)
+                };
+                let mut panel = panel.resizable(true).default_size(half).min_size(160.0);
+                // 剛切換成並排時強制設為一半，不沿用先前的大小；之後使用者可拖曳邊界調整
+                if std::mem::take(&mut pv.reset_size) {
+                    panel = panel.exact_size(half);
+                }
+                panel.show(ui, |ui| pv.ui(ui, top_line)).inner
+            }
         };
         if action == super::mdpreview::MdAction::None {
             self.md_preview = Some(pv);

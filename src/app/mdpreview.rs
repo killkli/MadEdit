@@ -272,9 +272,11 @@ pub struct MarkdownPreview {
     zoom: f32,
     /// 符合寬度：圖表依視窗寬度重新排版，仍太寬才縮小
     fit_width: bool,
-    /// 並排顯示：預覽放在主視窗編輯區右側；否則開成獨立視窗
-    pub split: bool,
-    /// 跟隨編輯區捲動（只在並排顯示時有意義，切換並排時自動開關）
+    /// 擺放方式：獨立視窗、編輯區右側或下方
+    pub placement: Placement,
+    /// 剛切換成並排，下一幀把面板設回編輯區的一半大小
+    pub(super) reset_size: bool,
+    /// 跟隨編輯區捲動（只在並排顯示時有意義，切換擺放方式時自動開關）
     sync_scroll: bool,
     /// 上一幀的內容可用寬度（下一次重建時決定圖表排版寬度）
     avail_w: f32,
@@ -296,6 +298,17 @@ struct BuildKey {
     width: u32,
 }
 
+/// 預覽的擺放方式（類似 Visual Studio 的分割視窗）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Placement {
+    /// 獨立原生視窗
+    Window,
+    /// 左右並排：預覽在編輯區右側
+    Right,
+    /// 上下並排：預覽在編輯區下方
+    Bottom,
+}
+
 /// 預覽視窗回報給 App 的動作
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MdAction {
@@ -313,7 +326,8 @@ impl MarkdownPreview {
             cache: CommonMarkCache::default(),
             zoom: 1.0,
             fit_width: true,
-            split: false,
+            placement: Placement::Window,
+            reset_size: false,
             sync_scroll: false,
             avail_w: 0.0,
             anchors: Vec::new(),
@@ -390,11 +404,17 @@ impl MarkdownPreview {
         self.built = Some(key);
     }
 
-    /// 切換並排顯示；並排時預設跟隨編輯區捲動，獨立視窗則不跟隨
-    pub fn set_split(&mut self, split: bool) {
-        self.split = split;
-        self.sync_scroll = split;
+    /// 是否與編輯區並排（停靠在主視窗內）
+    pub fn docked(&self) -> bool {
+        self.placement != Placement::Window
+    }
+
+    /// 切換擺放方式；並排時預設跟隨編輯區捲動並設為編輯區的一半大小，獨立視窗則不跟隨
+    pub fn set_placement(&mut self, placement: Placement) {
+        self.placement = placement;
+        self.sync_scroll = self.docked();
         self.synced_line = None;
+        self.reset_size = self.docked();
     }
 
     /// 工具列：縮放、符合寬度、並排顯示、同步捲動；回傳是否按下關閉
@@ -413,13 +433,18 @@ impl MarkdownPreview {
             ui.separator();
             ui.checkbox(&mut self.fit_width, "符合寬度").on_hover_text("圖表依視窗寬度重新排版");
             ui.separator();
-            let label = if self.split { "獨立視窗" } else { "並排顯示" };
-            let tip = if self.split { "改用獨立視窗顯示預覽" } else { "預覽放在編輯區右側，並跟隨編輯區捲動" };
-            if ui.button(label).on_hover_text(tip).clicked() {
-                self.set_split(!self.split);
+            let choices = [
+                (Placement::Window, "獨立視窗", "以獨立視窗顯示預覽"),
+                (Placement::Right, "左右並排", "預覽放在編輯區右側，各佔一半，並跟隨編輯區捲動"),
+                (Placement::Bottom, "上下並排", "預覽放在編輯區下方，各佔一半，並跟隨編輯區捲動"),
+            ];
+            for (p, label, tip) in choices {
+                if ui.selectable_label(self.placement == p, label).on_hover_text(tip).clicked() && self.placement != p {
+                    self.set_placement(p);
+                }
             }
             // 同步捲動只在並排時提供
-            if self.split {
+            if self.docked() {
                 ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("預覽跟隨編輯區捲動");
                 // 並排時沒有視窗標題列可關，另給關閉按鈕
                 close = ui.button("×").on_hover_text("關閉預覽").clicked();
@@ -432,7 +457,7 @@ impl MarkdownPreview {
     pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize) -> MdAction {
         self.rect = ui.max_rect();
         // 獨立視窗才看視窗關閉與 Esc；並排時這些屬於主視窗與編輯區
-        if !self.split && ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
+        if !self.docked() && ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
             return MdAction::Close;
         }
         let close = egui::Panel::top("md-preview-toolbar").show(ui, |ui| self.toolbar(ui)).inner;
@@ -442,7 +467,7 @@ impl MarkdownPreview {
 
         // Ctrl+滾輪（或觸控板捏合）縮放；並排時只在滑鼠位於預覽上才縮放，避免與編輯區字級縮放衝突
         let delta = ui.input(|i| i.zoom_delta());
-        if delta != 1.0 && (!self.split || ui.rect_contains_pointer(ui.max_rect())) {
+        if delta != 1.0 && (!self.docked() || ui.rect_contains_pointer(ui.max_rect())) {
             self.zoom = (self.zoom * delta).clamp(ZOOM_MIN, ZOOM_MAX);
         }
 
@@ -458,7 +483,9 @@ impl MarkdownPreview {
         let zoom = self.zoom;
         let mut anchors = Vec::with_capacity(self.items.len());
         let mut avail_w = self.avail_w;
-        area.show(ui, |ui| {
+        // 內容區自己鋪上面板底色：獨立視窗沒有 CentralPanel，否則淺色模式下會露出深色的視窗底
+        let fill = egui::Frame::new().fill(ui.visuals().panel_fill);
+        egui::CentralPanel::default().frame(fill).show(ui, |ui| area.show(ui, |ui| {
             // 文字隨縮放放大（圖表另外依尺寸縮放）
             for ts in ui.style_mut().text_styles.values_mut() {
                 ts.size *= zoom;
@@ -507,7 +534,7 @@ impl MarkdownPreview {
                 }
                 prev_markdown = matches!(item.content, Content::Markdown(_));
             }
-        });
+        }));
         self.anchors = anchors;
         // 寬度或縮放改變會讓圖表排版寬度跨級，下一幀由 refresh 重建
         self.avail_w = avail_w;

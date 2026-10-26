@@ -189,7 +189,7 @@ fn test_markdown_preview_follows_editor_scroll() {
     h.run_steps(2);
     // 獨立視窗預設不跟隨捲動，切成並排顯示後才同步
     assert_eq!(h.state_mut().md_preview.as_ref().unwrap().synced_line, None);
-    h.state_mut().md_preview.as_mut().unwrap().set_split(true);
+    h.state_mut().md_preview.as_mut().unwrap().set_placement(super::mdpreview::Placement::Right);
     h.run_steps(5);
     {
         let pv = h.state_mut().md_preview.as_ref().expect("預覽未開啟");
@@ -201,5 +201,32 @@ fn test_markdown_preview_follows_editor_scroll() {
     h.state_mut().tab_mut().view.top_row = 200;
     h.run_steps(5);
     assert_eq!(h.state_mut().md_preview.as_ref().unwrap().synced_line, Some(200));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Markdown 預覽：切成左右／上下並排時，面板固定為編輯區的一半，之後幾幀也不會彈回其他大小
+#[test]
+fn test_markdown_preview_docks_at_half_size() {
+    use super::mdpreview::Placement;
+    let dir = std::env::temp_dir().join(format!("madedit-mddock-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("dock.md");
+    // 內含寬圖表，確認內容不會把面板撐大
+    std::fs::write(&p, "# 標題\n\n```mermaid\nflowchart LR\n  A[很長很長的節點一] --> B[很長很長的節點二] --> C[很長很長的節點三] --> D[很長很長的節點四]\n```\n").unwrap();
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    h.run_steps(3);
+    h.state_mut().pending.push(super::C::PreviewMarkdown);
+    h.run_steps(3);
+    for placement in [Placement::Right, Placement::Bottom, Placement::Right] {
+        h.state_mut().md_preview.as_mut().unwrap().set_placement(placement);
+        h.run_steps(8);
+        let pv = h.state_mut().md_preview.as_ref().unwrap();
+        let (w, hgt) = (pv.rect.width(), pv.rect.height());
+        if placement == Placement::Right {
+            assert!((w - 500.0).abs() < 20.0, "左右並排寬度 {w}");
+        } else {
+            assert!(hgt > 200.0 && hgt < 400.0 && w > 900.0, "上下並排 {w}x{hgt}");
+        }
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

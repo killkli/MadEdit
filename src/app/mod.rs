@@ -930,7 +930,7 @@ impl eframe::App for App {
         // Ctrl/⌘ + 滾輪縮放字型
         let zoom = ctx.input(|i| if i.modifiers.command { i.smooth_scroll_delta().y } else { 0.0 });
         // 滑鼠在並排的 Markdown 預覽上時，Ctrl+滾輪交給預覽自己縮放
-        let over_preview = self.md_preview.as_ref().is_some_and(|p| p.split && ui.rect_contains_pointer(p.rect));
+        let over_preview = self.md_preview.as_ref().is_some_and(|p| p.docked() && ui.rect_contains_pointer(p.rect));
         if zoom != 0.0 && ui.rect_contains_pointer(ui.max_rect()) && !over_preview {
             self.settings.font_size = (self.settings.font_size + zoom.signum()).clamp(6.0, 72.0);
         }
