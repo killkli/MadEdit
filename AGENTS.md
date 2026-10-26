@@ -152,6 +152,8 @@ MadEdit/
 > **2026-10-23 起介面已改寫為 egui**（[ADR 0011](docs/adr/0011-egui-rewrite.md)）。以下 Phase 1–10 為 Slint 時期的歷程紀錄，
 > 其中提到的 `.slint` 檔、`buffer.rs`、`hex.rs`、`memmap2` 已移除；功能皆已在 egui 版重新實作。
 
+- [x] **Markdown 預覽重用未修改的 Mermaid 圖表**：修改內文、移動圖表或另存到其他資料夾時，沿用上一版原始碼相同的圖表；修改圖表、切換主題或跨越排版寬度級距時重新轉換，移除的圖表仍會釋放。維持現有完整排版，分段繪製留待下一階段評估。
+  - 可設定 `MADEDIT_MD_BENCH_FILE`，執行 `cargo test --release benchmark_ -- --ignored --nocapture --test-threads=1` 比較內容重建與含開檔、字型、圖表點陣化的預覽排版耗時；後者不含原生視窗與 GPU 呈現，量測時以 `MADEDIT_CONFIG_DIR` 隔離設定。
 - [x] **egui 全面改寫與原版功能補齊**（feat/egui-rewrite）：
   - 多文件分頁、復原／重做、系統剪貼簿、設定檔與工作階段保存（最近檔案、游標位置、視窗尺寸）。
   - 使用者可選系統字型與字級（含比例字型）、CJK 自動補字、行距、深淺色主題與語法主題選擇。

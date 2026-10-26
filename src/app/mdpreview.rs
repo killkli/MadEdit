@@ -215,6 +215,8 @@ pub fn rewrite_image_paths(md: &str, base_dir: Option<&Path>) -> String {
 
 /// 渲染完成、可顯示的 Mermaid 圖
 struct Diagram {
+    /// 原始碼相同且主題、排版寬度未變時，可直接沿用轉換結果。
+    source: String,
     /// SVG 載入器的快取識別（含內容雜湊，內容或主題變更即換新）
     uri: String,
     width: f32,
@@ -224,7 +226,7 @@ struct Diagram {
 /// 單一片段的繪製資料
 enum Content {
     Markdown(String),
-    Diagram(Diagram),
+    Diagram(Arc<Diagram>),
     /// Mermaid 語法錯誤：訊息與原始碼
     Error { message: String, source: String },
 }
@@ -345,7 +347,17 @@ impl MarkdownPreview {
         if self.built.as_ref() == Some(&key) {
             return;
         }
-// SVG 載入器（resvg）不支援 CSS 變數，請 fermaid 直接依深淺色調色盤輸出實際顏色
+        // 只索引上一版仍在文件中的圖表，不累積編輯歷史；內文、行號或資料夾變動不影響圖表。
+        // 主題或排版寬度改變則全部重算，避免沿用不合目前顯示條件的 SVG。
+        let diagrams: HashMap<&str, &Arc<Diagram>> = if self.built.as_ref().is_some_and(|old| old.dark == key.dark && old.width == key.width) {
+            self.items.iter().filter_map(|item| match &item.content {
+                Content::Diagram(d) => Some((d.source.as_str(), d)),
+                _ => None,
+            }).collect()
+        } else {
+            HashMap::new()
+        };
+        // SVG 載入器（resvg）不支援 CSS 變數，請 fermaid 直接依深淺色調色盤輸出實際顏色
         let palette = if dark { fermaid::Palette::dark() } else { fermaid::Palette::light() };
         let opts = fermaid::RenderOptions {
             max_width: (key.width > 0).then_some(key.width as f64),
@@ -362,6 +374,10 @@ impl MarkdownPreview {
                     }
                 }
                 Segment::Mermaid(src) => {
+                    if let Some(d) = diagrams.get(src.as_str()) {
+                        items.push(Item { line: piece.line, content: Content::Diagram(Arc::clone(d)) });
+                        continue;
+                    }
                     let content = match fermaid::render(&src, &opts) {
                         Ok(r) => {
                             let svg = r.svg;
@@ -370,11 +386,12 @@ impl MarkdownPreview {
                             let uri = format!("{DIAGRAM_URI_PREFIX}{:016x}.svg", h.finish());
                             // 交給 egui 的位元組快取；同一內容的 uri 不變，已點陣化的圖會直接沿用
                             ctx.include_bytes(uri.clone(), svg.into_bytes());
-                            Content::Diagram(Diagram {
+                            Content::Diagram(Arc::new(Diagram {
+                                source: src,
                                 uri,
                                 width: r.width as f32,
                                 height: r.height as f32,
-                            })
+                            }))
                         }
                         Err(e) => Content::Error { message: format!("第 {} 行第 {} 欄：{}", e.line, e.column, e.message), source: src },
                     };
@@ -630,6 +647,137 @@ impl ImageLoader for DiagramLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DIAGRAM_A: &str = "```mermaid\nflowchart LR\nA[開始] --> B[結束]\n```\n";
+    const DIAGRAM_B: &str = "```mermaid\nflowchart LR\nX[另一張] --> Y[結束]\n```\n";
+
+    fn diagrams(preview: &MarkdownPreview) -> Vec<Arc<Diagram>> {
+        preview.items.iter().filter_map(|item| match &item.content {
+            Content::Diagram(d) => Some(Arc::clone(d)),
+            _ => None,
+        }).collect()
+    }
+
+    /// 以物件身分確認未重新轉換，而非只比對重新轉換後也可能相同的 SVG。
+    #[test]
+    fn test_refresh_reuses_diagrams_after_text_move_and_save_as() {
+        let ctx = egui::Context::default();
+        let mut preview = MarkdownPreview::new();
+        let text = format!("# 原標題\n\n![圖](images/a.png)\n\n{DIAGRAM_A}\n{DIAGRAM_B}");
+        preview.refresh(&ctx, &text, 0, false, Some(PathBuf::from("/old")));
+        let before = diagrams(&preview);
+        assert_eq!(before.len(), 2);
+        let changed = format!("# 新標題\n\n新增段落\n\n![圖](images/a.png)\n\n{DIAGRAM_B}\n{DIAGRAM_A}");
+        preview.refresh(&ctx, &changed, 1, false, Some(PathBuf::from("/new")));
+        let after = diagrams(&preview);
+        assert_eq!(after.len(), 2);
+        assert!(Arc::ptr_eq(&before[0], &after[1]));
+        assert!(Arc::ptr_eq(&before[1], &after[0]));
+        let lines: Vec<_> = preview.items.iter().filter(|item| matches!(item.content, Content::Diagram(_))).map(|item| item.line).collect();
+        assert_eq!(lines, vec![6, 11], "重用圖表仍須更新同步捲動使用的來源行號");
+        assert!(preview.items.iter().any(|item| matches!(&item.content, Content::Markdown(m) if m.contains("file:///new/images/a.png"))));
+    }
+
+    #[test]
+    fn test_refresh_only_rebuilds_changed_diagram_and_releases_old_svg() {
+        let ctx = egui::Context::default();
+        let mut preview = MarkdownPreview::new();
+        let text = format!("{DIAGRAM_A}\n{DIAGRAM_B}");
+        preview.refresh(&ctx, &text, 0, false, None);
+        let before = diagrams(&preview);
+        assert_eq!(before.len(), 2);
+        preview.refresh(&ctx, &text.replace("開始", "修改後"), 1, false, None);
+        let after = diagrams(&preview);
+        assert_eq!(after.len(), 2);
+        assert!(!Arc::ptr_eq(&before[0], &after[0]));
+        assert_ne!(before[0].uri, after[0].uri);
+        assert!(Arc::ptr_eq(&before[1], &after[1]));
+        assert!(!matches!(ctx.try_load_bytes(&before[0].uri), Ok(BytesPoll::Ready { .. })), "舊圖應釋放");
+        for d in after {
+            assert!(matches!(ctx.try_load_bytes(&d.uri), Ok(BytesPoll::Ready { .. })), "新圖與未修改的圖都應保留");
+        }
+    }
+
+    #[test]
+    fn test_refresh_rebuilds_diagram_for_theme_and_layout_width() {
+        let ctx = egui::Context::default();
+        let mut preview = MarkdownPreview::new();
+        preview.avail_w = 768.0;
+        preview.refresh(&ctx, DIAGRAM_A, 0, false, None);
+        let light = diagrams(&preview).remove(0);
+        preview.refresh(&ctx, DIAGRAM_A, 0, true, None);
+        let dark = diagrams(&preview).remove(0);
+        assert!(!Arc::ptr_eq(&light, &dark));
+        assert_ne!(light.uri, dark.uri);
+        preview.avail_w = 800.0;
+        preview.refresh(&ctx, DIAGRAM_A, 0, true, None);
+        let resized = diagrams(&preview).remove(0);
+        assert!(!Arc::ptr_eq(&dark, &resized));
+        preview.avail_w = 801.0;
+        preview.refresh(&ctx, DIAGRAM_A, 0, true, None);
+        assert!(Arc::ptr_eq(&resized, &diagrams(&preview)[0]), "同一寬度級距不重算");
+    }
+
+    #[test]
+    fn test_refresh_diagram_error_recovery_and_removal() {
+        let ctx = egui::Context::default();
+        let mut preview = MarkdownPreview::new();
+        preview.refresh(&ctx, DIAGRAM_A, 0, false, None);
+        let before = diagrams(&preview).remove(0);
+        preview.refresh(&ctx, "```mermaid\nnot-a-diagram\n```\n", 1, false, None);
+        assert!(matches!(preview.items[0].content, Content::Error { .. }));
+        assert!(!matches!(ctx.try_load_bytes(&before.uri), Ok(BytesPoll::Ready { .. })));
+        preview.refresh(&ctx, DIAGRAM_A, 2, false, None);
+        let recovered = diagrams(&preview).remove(0);
+        assert!(!Arc::ptr_eq(&before, &recovered), "已移除的圖表不保留歷史快取");
+        preview.refresh(&ctx, "只剩一般內文\n", 3, false, None);
+        assert!(diagrams(&preview).is_empty());
+        assert!(!matches!(ctx.try_load_bytes(&recovered.uri), Ok(BytesPoll::Ready { .. })));
+    }
+
+    /// 以本機文件比較首次建立與連續修改內文的耗時，不把使用者文件納入版控。
+    /// 執行：MADEDIT_MD_BENCH_FILE=文件 cargo test --release benchmark_preview_refresh -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn benchmark_preview_refresh() {
+        use std::time::{Duration, Instant};
+        let path = PathBuf::from(std::env::var_os("MADEDIT_MD_BENCH_FILE").expect("請設定 MADEDIT_MD_BENCH_FILE"));
+        let text = std::fs::read_to_string(&path).unwrap();
+        let base_dir = path.parent().map(Path::to_path_buf);
+        let diagrams = split_mermaid(&text).iter().filter(|p| matches!(p.seg, Segment::Mermaid(_))).count();
+        let mut first = Vec::new();
+        let mut edit = Vec::new();
+        // 先暖機，再取多次樣本，降低檔案快取與首次初始化造成的偏差。
+        for sample in 0..24 {
+            let ctx = egui::Context::default();
+            let mut preview = MarkdownPreview::new();
+            let start = Instant::now();
+            preview.refresh(&ctx, &text, 0, false, base_dir.clone());
+            let elapsed = start.elapsed();
+            std::hint::black_box(&preview.items);
+            if sample >= 3 {
+                first.push(elapsed);
+            }
+            // 模擬首次排版完成，取得預覽寬度之後的連續編輯。
+            preview.avail_w = 768.0;
+            preview.refresh(&ctx, &text, 0, false, base_dir.clone());
+            let changed = format!("測試內文 {sample}\n\n{text}");
+            let start = Instant::now();
+            preview.refresh(&ctx, &changed, 1, false, base_dir.clone());
+            let elapsed = start.elapsed();
+            std::hint::black_box(&preview.items);
+            if sample >= 3 {
+                edit.push(elapsed);
+            }
+        }
+        let report = |name: &str, mut samples: Vec<Duration>| {
+            samples.sort();
+            println!("{name}: median={:.3} ms p90={:.3} ms", samples[samples.len() / 2].as_secs_f64() * 1000.0, samples[samples.len() * 9 / 10].as_secs_f64() * 1000.0);
+        };
+        println!("文件：{} bytes，{diagrams} 張 Mermaid；每項 21 次有效樣本", text.len());
+        report("首次建立預覽內容", first);
+        report("修改一般內文", edit);
+    }
 
     #[test]
     fn test_split_extracts_mermaid_block() {

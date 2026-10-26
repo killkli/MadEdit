@@ -22,6 +22,49 @@ fn text(h: &mut Harness<'static, App>) -> String {
     h.state_mut().doc().editor.lines.join("\n")
 }
 
+/// 以指定文件量測開檔到並排預覽排版完成，以及輸入文字後的更新；不含原生視窗與 GPU 呈現。
+/// 執行：MADEDIT_MD_BENCH_FILE=文件 cargo test --release benchmark_markdown_preview_ui -- --ignored --nocapture
+#[test]
+#[ignore]
+fn benchmark_markdown_preview_ui() {
+    use std::time::{Duration, Instant};
+    use super::mdpreview::Placement;
+    let path = std::path::PathBuf::from(std::env::var_os("MADEDIT_MD_BENCH_FILE").expect("請設定 MADEDIT_MD_BENCH_FILE"));
+    let mut first = Vec::new();
+    let mut edit = Vec::new();
+    for sample in 0..12 {
+        let start = Instant::now();
+        let mut h = Harness::builder().allow_missing_glyphs().with_size([1400.0, 900.0]).build_eframe(|cc| {
+            let mut app = App::new(cc, vec![path.clone()], None);
+            app.run(&cc.egui_ctx, C::PreviewMarkdown);
+            app.tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Right);
+            app
+        });
+        h.run_steps(5);
+        let elapsed = start.elapsed();
+        assert!(!h.state_mut().tab_mut().md_preview.as_ref().unwrap().anchors.is_empty());
+        if sample >= 3 {
+            first.push(elapsed);
+        }
+        let version = h.state_mut().doc().version;
+        h.event(Event::Text("測試內文".into()));
+        let start = Instant::now();
+        h.run_steps(3);
+        let elapsed = start.elapsed();
+        assert!(h.state_mut().doc().version > version, "量測的輸入事件必須實際修改文件");
+        if sample >= 3 {
+            edit.push(elapsed);
+        }
+    }
+    let report = |name: &str, mut samples: Vec<Duration>| {
+        samples.sort();
+        println!("{name}: median={:.3} ms p90={:.3} ms", samples[samples.len() / 2].as_secs_f64() * 1000.0, samples[samples.len() * 9 / 10].as_secs_f64() * 1000.0);
+    };
+    println!("包含開檔、字型、圖表點陣化與預覽排版；每項 9 次有效樣本");
+    report("首次開檔與預覽", first);
+    report("輸入內文與更新預覽", edit);
+}
+
 #[test]
 fn test_typing_enter_backspace_and_undo() {
     let mut h = harness();
