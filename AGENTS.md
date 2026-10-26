@@ -90,8 +90,7 @@ MadEdit/
 │       ├── spell.rs        # 拼字檢查
 │       └── model.rs        # EditMode、NewLineFormat
 ├── docs\
-│   ├── adr\                # 架構決策紀錄 (ADR)
-│   └── agents\             # Agent skills 設定（issue tracker、triage labels、domain docs）
+│   └── adr\                # 架構決策紀錄 (ADR)
 └── AGENTS.md               # 專案交接與開發指引文件（本檔案）
 ```
 
@@ -317,19 +316,3 @@ MadEdit/
    - 主分支為 `main`；新功能請開 `feat/<名稱>` 分支開發。
    - Commit 遵循 Conventional Commits (例如 `feat: ...`, `fix: ...`, `refactor: ...`)。
 5. **文件同步**：完成功能或發現新限制時，同步更新本檔第 5 節進度與已知問題。
-
----
-
-## Agent skills
-
-### Issue tracker
-
-Issues 與 Specs 以本地 Markdown 檔案形式存放於 `.scratch/` 目錄下。請參閱 `docs/agents/issue-tracker.md`。
-
-### Triage labels
-
-使用預設的五種標準分類狀態標籤（`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`）。請參閱 `docs/agents/triage-labels.md`。
-
-### Domain docs
-
-採用單一語境（single-context）結構（根目錄 `GLOSSARY.md` 與 `docs/adr/`）。請參閱 `docs/agents/domain.md`。
