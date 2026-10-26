@@ -1,0 +1,171 @@
+# 推上 v* 標籤時建置發行檔，並以 ChangeLog.md 對應章節建立 GitHub Release。
+# 手動執行（workflow_dispatch）只上傳 workflow artifact，不建立 Release。
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: 確認版本與變更紀錄
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+      - name: 標籤、Cargo.toml 與 ChangeLog.md 必須一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION="$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
+          if [[ "${TAG_VERSION}" != "${CARGO_VERSION}" ]]; then
+            echo "標籤 v${TAG_VERSION} 與 Cargo.toml 的 ${CARGO_VERSION} 不一致" >&2
+            exit 1
+          fi
+          ./scripts/changelog_notes.sh "${TAG_VERSION}" > "${RUNNER_TEMP}/release-notes.md"
+          echo "將使用 ChangeLog.md 的 [${TAG_VERSION}] 作為發行說明："
+          cat "${RUNNER_TEMP}/release-notes.md"
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 安裝 Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: "0.16.0"
+      - name: 安裝 cargo-zigbuild
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: 安裝系統相依
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config curl ca-certificates file \
+            libwayland-dev libxkbcommon-dev libssl-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libfontconfig1-dev libvulkan-dev
+      - name: 打包 tar.gz 與 AppImage
+        run: make dist-appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+            dist/*.AppImage
+            dist/*.AppImage.sha256
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x86_64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 打包 DMG
+        run: make dist-macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: windows-latest
+          - arch: aarch64
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 打包 zip
+        shell: pwsh
+        run: ./scripts/make_windows_dist.ps1 -Arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+
+  release:
+    name: 建立 GitHub Release
+    needs: [prepare, linux, macos, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: 以 ChangeLog.md 建立發行
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./scripts/changelog_notes.sh "${VERSION}" > release-notes.md
+          mkdir -p flat
+          find release-assets -type f -exec cp {} flat/ \;
+          echo "發行檔："
+          ls -l flat
+          title="MadEdit ${VERSION}"
+          prerelease=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            prerelease+=(--prerelease)
+          fi
+          # 同一個標籤重跑時改更新說明與檔案，避免 release create 因已存在而失敗。
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" --title "${title}" --notes-file release-notes.md "${prerelease[@]}"
+            gh release upload "${GITHUB_REF_NAME}" flat/* --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" --title "${title}" --notes-file release-notes.md "${prerelease[@]}" flat/*
+          fi
