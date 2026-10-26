@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# 產生 Linux x86_64 發行壓縮檔（MadEdit-<版本>-linux-x86_64.tar.gz）。
+# 產生 Linux 發行壓縮檔（MadEdit-<版本>-linux-<架構>.tar.gz）。
 #
 # 用法：
-#   ./scripts/make_linux_dist.sh [輸出目錄]
+#   ./scripts/make_linux_dist.sh [輸出目錄] [架構]
+#
+# 架構為 x86_64 或 aarch64。省略時使用本機架構（可用環境變數 MADEDIT_ARCH 覆寫）。
 #
 # 為什麼用 cargo-zigbuild：直接在新版發行版（如 Arch）建置的執行檔會連結到
 # 當地的新版 glibc，在 Ubuntu 22.04 等較舊系統上無法執行。zigbuild 可指定
@@ -14,7 +16,7 @@
 #   zig（可透過系統套件管理員安裝，或以 `uv tool install ziglang` 安裝）
 #
 # 產物結構：
-#   MadEdit-<版本>-linux-x86_64/
+#   MadEdit-<版本>-linux-<架構>/
 #     MadEdit                  執行檔（已 strip）
 #     dictionaries/            拼字字典（en_US 已內嵌，其餘執行時載入）
 #     madedit.desktop          桌面整合項目
@@ -31,15 +33,27 @@ fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MadEdit"
 GLIBC="2.28"
-TARGET="x86_64-unknown-linux-gnu"
 VERSION="$(grep -m1 '^version' "${ROOT}/Cargo.toml" | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')"
 
+# 本機架構：Linux 為 x86_64 / aarch64，其餘平台的 arm64 也正規化成 aarch64。
+HOST_ARCH="$(uname -m | sed -e 's/amd64/x86_64/' -e 's/arm64/aarch64/' -e 's/x64/x86_64/')"
+ARCH_RAW="${2:-${MADEDIT_ARCH:-${HOST_ARCH}}}"
+case "${ARCH_RAW}" in
+    x86_64|amd64|x64) ARCH="x86_64" ;;
+    aarch64|arm64) ARCH="aarch64" ;;
+    *)
+        echo "不支援的架構：${ARCH_RAW}（請用 x86_64 或 aarch64）" >&2
+        exit 1
+        ;;
+esac
+TARGET="${ARCH}-unknown-linux-gnu"
+
 OUT_DIR="${1:-${ROOT}/dist}"
-NAME="${APP_NAME}-${VERSION}-linux-x86_64"
+NAME="${APP_NAME}-${VERSION}-linux-${ARCH}"
 STAGE="${OUT_DIR}/${NAME}"
 
 # --- 建置 -----------------------------------------------------------------
-(cd "${ROOT}" && cargo zigbuild --release --target "${TARGET}.${GLIBC}")
+(cd "${ROOT}" && cargo zigbuild --release --locked --target "${TARGET}.${GLIBC}")
 BIN="${ROOT}/target/${TARGET}/release/${APP_NAME}"
 
 rm -rf "${STAGE}"
@@ -87,7 +101,7 @@ EOF
 chmod +x "${STAGE}/install.sh"
 
 cat > "${STAGE}/README.txt" <<EOF
-MadEdit ${VERSION} — Linux x86_64
+MadEdit ${VERSION} — Linux ${ARCH}
 
 直接執行：
   ./MadEdit [檔案...]

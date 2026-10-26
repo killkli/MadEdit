@@ -34,6 +34,67 @@ pub enum ThemeChoice {
     Dark,
 }
 
+/// 介面語言。`System` 跟隨作業系統；其餘為固定語言。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum UiLanguage {
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "en")]
+    En,
+    #[serde(rename = "zh-TW")]
+    ZhTw,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "ja")]
+    Ja,
+    #[serde(rename = "ko")]
+    Ko,
+    #[serde(rename = "de")]
+    De,
+    #[serde(rename = "es")]
+    Es,
+    #[serde(rename = "fr")]
+    Fr,
+    #[serde(rename = "it")]
+    It,
+    #[serde(rename = "pt")]
+    Pt,
+}
+
+impl UiLanguage {
+    pub const ALL: [UiLanguage; 11] = [
+        UiLanguage::System,
+        UiLanguage::En,
+        UiLanguage::ZhTw,
+        UiLanguage::ZhCn,
+        UiLanguage::Ja,
+        UiLanguage::Ko,
+        UiLanguage::De,
+        UiLanguage::Es,
+        UiLanguage::Fr,
+        UiLanguage::It,
+        UiLanguage::Pt,
+    ];
+
+    /// 語言在選單中的名稱。除「跟隨系統」外一律用該語言自己的寫法，方便在看不懂目前介面時切換。
+    pub fn native_name(self) -> &'static str {
+        match self {
+            UiLanguage::System => "System",
+            UiLanguage::En => "English",
+            UiLanguage::ZhTw => "繁體中文",
+            UiLanguage::ZhCn => "简体中文",
+            UiLanguage::Ja => "日本語",
+            UiLanguage::Ko => "한국어",
+            UiLanguage::De => "Deutsch",
+            UiLanguage::Es => "Español",
+            UiLanguage::Fr => "Français",
+            UiLanguage::It => "Italiano",
+            UiLanguage::Pt => "Português",
+        }
+    }
+}
+
 /// 工作階段中的一個檔案（啟動時重新開啟）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionFile {
@@ -208,6 +269,8 @@ pub struct Settings {
     pub spell_check: bool,
     pub spell_language: String,
     pub theme: ThemeChoice,
+    /// 介面語言；預設跟隨作業系統
+    pub ui_language: UiLanguage,
     pub syntax_theme_light: String,
     pub syntax_theme_dark: String,
     pub show_toolbar: bool,
@@ -302,6 +365,7 @@ impl Default for Settings {
             spell_check: false,
             spell_language: "en_US".into(),
             theme: ThemeChoice::System,
+            ui_language: UiLanguage::System,
             syntax_theme_light: "InspiredGitHub".into(),
             syntax_theme_dark: "base16-ocean.dark".into(),
             show_toolbar: true,
@@ -365,6 +429,13 @@ impl Default for Settings {
 /// 歷史清單上限
 const MAX_RECENT: usize = 20;
 
+/// 設定檔讀不到時的資料。介面再用目前語言組成完整句子
+pub struct SettingsLoadError {
+    /// 備份成功時為備份路徑，失敗時為備份錯誤
+    pub backup: Result<PathBuf, String>,
+    pub detail: String,
+}
+
 impl Settings {
     /// 設定檔路徑（例如 macOS 的 ~/Library/Application Support/MadEdit/settings.json）
     pub fn path() -> Option<PathBuf> {
@@ -385,7 +456,7 @@ impl Settings {
     }
 
     /// 載入設定，並回傳需要告知使用者的錯誤（設定檔損毀時已另存備份）
-    pub fn load_checked() -> (Self, Option<String>) {
+    pub fn load_checked() -> (Self, Option<SettingsLoadError>) {
         match Self::path() {
             Some(p) => Self::load_from(&p),
             None => (Self::default(), None),
@@ -394,7 +465,7 @@ impl Settings {
 
     /// 自指定路徑載入；檔案不存在時靜默使用預設值，讀取或解析失敗時先把原檔複製為 `.bak`
     /// 再使用預設值，避免之後存回設定時永久覆蓋使用者的原始設定
-    fn load_from(path: &Path) -> (Self, Option<String>) {
+    fn load_from(path: &Path) -> (Self, Option<SettingsLoadError>) {
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
@@ -406,14 +477,17 @@ impl Settings {
         }
     }
 
-    /// 備份無法使用的設定檔並產生提示訊息
-    fn corrupt_message(path: &Path, err: &str) -> String {
+    /// 備份無法使用的設定檔。介面再依目前語言組成提示
+    fn corrupt_message(path: &Path, err: &str) -> SettingsLoadError {
         let mut bak = path.as_os_str().to_owned();
         bak.push(".bak");
         let bak = PathBuf::from(bak);
-        match std::fs::copy(path, &bak) {
-            Ok(_) => format!("設定檔無法讀取，已改用預設設定。\n原設定檔已備份為 {}\n\n錯誤：{err}", bak.display()),
-            Err(e) => format!("設定檔無法讀取，已改用預設設定（備份失敗：{e}）。\n\n錯誤：{err}"),
+        SettingsLoadError {
+            backup: match std::fs::copy(path, &bak) {
+                Ok(_) => Ok(bak),
+                Err(e) => Err(e.to_string()),
+            },
+            detail: err.to_string(),
         }
     }
 

@@ -85,7 +85,7 @@ impl App {
             match step {
                 MacroStep::Command(id) => match C::from_id(&id) {
                     Some(c) => self.run(ctx, c),
-                    None => self.set_status(format!("巨集中有未知命令：{id}")),
+                    None => self.set_status(self.tf("msg.unknown_cmd", "巨集中有未知命令：{q}", None, Some(&id))),
                 },
                 MacroStep::Edit(a) => {
                     let lay = Layout::new(&self.settings, self.doc().mode);
@@ -117,7 +117,7 @@ impl App {
 
     pub fn play_macro(&mut self, steps: Vec<MacroStep>) {
         if steps.is_empty() {
-            self.set_status("沒有可播放的巨集");
+            self.set_status(self.t("msg.no_macro", "沒有可播放的巨集"));
         } else {
             self.macros.queued = Some(steps);
         }
@@ -132,10 +132,12 @@ impl App {
 
     pub fn save_recorded_macro(&mut self) {
         if self.macros.steps.is_empty() {
-            self.set_status("尚未錄製任何巨集");
+            self.set_status(self.t("msg.no_recorded", "尚未錄製任何巨集"));
             return;
         }
-        let mut dlg = rfd::FileDialog::new().set_title("儲存巨集").add_filter("MadEdit 巨集", &["json"]).set_file_name("macro.json");
+        let title = self.t("msg.save_macro", "儲存巨集").to_string();
+        let filter = self.t("msg.macro_filter", "MadEdit 巨集").to_string();
+        let mut dlg = rfd::FileDialog::new().set_title(title).add_filter(filter, &["json"]).set_file_name("macro.json");
         if let Some(dir) = macro_dir() {
             let _ = std::fs::create_dir_all(&dir);
             dlg = dlg.set_directory(dir);
@@ -144,7 +146,8 @@ impl App {
             if let Err(e) = std::fs::write(&p, to_json(&self.macros.steps)) {
                 self.message("儲存巨集失敗", e.to_string());
             } else {
-                self.set_status(format!("巨集已儲存：{}", p.display()));
+                let shown = p.display().to_string();
+                self.set_status(self.tf("msg.macro_saved", "巨集已儲存：{q}", None, Some(&shown)));
             }
         }
     }

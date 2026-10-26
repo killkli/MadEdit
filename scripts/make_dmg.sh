@@ -88,4 +88,6 @@ fi
 hdiutil detach "${MOUNT_DIR}" >/dev/null
 rm -rf "${MOUNT_DIR}"
 
+(cd "${OUT_DIR}" && shasum -a 256 "${DMG_NAME}" > "${DMG_NAME}.sha256")
+
 echo "DMG 建立完成：${DMG_PATH}"

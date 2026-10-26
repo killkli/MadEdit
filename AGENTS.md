@@ -41,7 +41,10 @@
 MadEdit/
 ├── Cargo.toml              # 專案相依性與套件設定
 ├── Cargo.lock              # 相依性鎖定檔（需納入版控）
+├── Makefile                # 開發、打包與從 ChangeLog.md 取出發行說明
+├── ChangeLog.md            # 變更紀錄；GitHub Release 說明取自對應版本章節
 ├── build.rs                # Windows 圖示資源嵌入
+├── .github/workflows/release.yml # 標籤發行（Linux、AppImage、macOS DMG、Windows）
 ├── .gitignore
 ├── assets\                 # 圖示資產與桌面整合檔
 │   ├── madedit-icon.png    # 視窗與 macOS 圖示（沿用原版 madedit-mod.png，include_bytes 內嵌）
@@ -51,17 +54,23 @@ MadEdit/
 │   │   └── README.md       # 圖示來源與 GNU GPL 授權說明
 │   ├── icons\              # 由 icons-src 轉換而來的 PNG（勿手動修改）
 │   ├── make_toolbar_icons.py # XPM → PNG 轉換腳本（純標準函式庫）
-│   └── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
+│   ├── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
+│   └── i18n\              # 介面譯文（messages.tsv；繁體中文以程式原文為準）
 ├── scripts\
 │   ├── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
 │   ├── make_dmg.sh         # 產生 macOS 磁碟映像檔（.dmg，含 Applications 軟連結與簽章）
 │   ├── install_macos.sh    # 一鍵建置 MadEdit.app 並取代 /Applications 內的舊版
-│   └── make_linux_dist.sh  # 產生 Linux x86_64 發行壓縮檔（cargo-zigbuild，glibc 2.28）
+│   ├── make_linux_dist.sh  # 產生 Linux 發行壓縮檔（x86_64 / aarch64，glibc 2.28）
+│   ├── make_appimage.sh    # 產生 Linux AppImage（x86_64 / aarch64）
+│   ├── install_linux.sh    # 一鍵建置並安裝到 ~/.local
+│   ├── make_windows_dist.ps1 # 產生 Windows 發行壓縮檔（x86_64 / aarch64）
+│   └── changelog_notes.sh  # 從 ChangeLog.md 取出指定版本的發行說明
 ├── src\
 │   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
 │   ├── app\                # egui 介面層
 │   │   ├── mod.rs          # App 狀態、分頁、存檔／關閉流程、狀態列、主迴圈
 │   │   ├── commands.rs     # 命令表（依原版 CommandTable，165 個命令，另加 Ctrl/⌘+1～9 切換分頁）與快捷鍵解析
+│   │   ├── i18n.rs         # 介面語言：跟隨系統或手動選擇，查 messages.tsv
 │   │   ├── actions.rs      # 所有命令的實作（App::run）
 │   │   ├── menus.rs        # 選單列與工具列
 │   │   ├── dialogs.rs      # 選項、字型、排序、遞增數字、在檔案中尋找等對話框與確認視窗
@@ -102,39 +111,39 @@ MadEdit/
 
 - **語法與型別檢查**：
   ```powershell
-  cargo check
+  make check
   ```
 - **執行單元測試**（含 egui_kittest 互動測試）：
   ```powershell
-  cargo test
+  make test
   ```
 - **離屏截圖**（無法開視窗時檢查畫面）：
   ```bash
   MADEDIT_SHOT_OUT=out.png MADEDIT_SHOT_FILE=檔案 MADEDIT_SHOT_CMDS=menuHexMode cargo test shot -- --ignored
   ```
-- **打包 macOS App**：
+- **打包 macOS App 與 DMG**：
   ```bash
-  cargo build --release && ./scripts/make_appbundle.sh
+  make dist-macos
   ```
-- **打包 macOS DMG**：
+- **打包 Linux 發行檔與 AppImage**（需 `cargo-zigbuild` 與 zig；`ARCH=x86_64` 或 `aarch64`）：
   ```bash
-  ./scripts/make_dmg.sh
+  make dist-appimage
   ```
 - **建置並安裝到 /Applications**（自動刪除舊版）：
   ```bash
   ./scripts/install_macos.sh
   ```
-- **打包 Linux 發行檔**（需 `cargo-zigbuild` 與 zig，輸出至 `dist/`）：
-  ```bash
-  ./scripts/make_linux_dist.sh
-  ```
 - **建置並安裝到本機 Linux**（Arch / Omarchy；安裝到 `~/.local`，啟動器即可找到）：
   ```bash
   ./scripts/install_linux.sh
   ```
-- **打包 Windows 發行檔**（輸出至 `dist/`）：
+- **打包 Windows 發行檔**（輸出至 `dist/`；`-Arch aarch64` 可指定 ARM）：
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1
+  ```
+- **取出 ChangeLog 發行說明**（GitHub Release 使用同一腳本）：
+  ```bash
+  make release-notes VERSION=0.5.24
   ```
 - **啟動應用程式**：
   ```powershell
@@ -160,6 +169,9 @@ MadEdit/
   - 預覽內容不再把自身所需寬度回寫成面板尺寸；原生視窗關閉後主視窗尺寸延後更新時，仍維持各半。快速拖曳的移動與放開同幀時也保存最後尺寸，並驗證手動調整後縮放主視窗不會強制改回一半。
   - 一般及參照式圖片皆依文件資料夾解析，參照定義可跨 Mermaid 區塊；保留替代文字格式與共用定義的文字連結。支援中文、空白與百分比編碼檔名，提供載入失敗原因及「重新載入圖片」，用於缺圖補回或外部更新後重讀。
   - 未儲存文件的相對路徑圖片會提示先存檔，不再誤用程式工作目錄。HTTP 圖片仍未啟用網路載入；本機圖片外部變更由使用者按鈕重新載入，不逐幀檢查磁碟。
+- [x] **發行打包**：`Makefile`、`ChangeLog.md` 與 `.github/workflows/release.yml`。
+  Linux（tar.gz 與 AppImage）和 Windows 各建 x86_64 與 aarch64；macOS 各建 Apple Silicon 與 Intel DMG。
+  推上 `v*` 標籤時，Release 說明取自 ChangeLog 的對應章節。
 - [x] **egui 全面改寫與原版功能補齊**（feat/egui-rewrite）：
   - 多文件分頁、復原／重做、系統剪貼簿、設定檔與工作階段保存（最近檔案、游標位置、視窗尺寸）。
   - 使用者可選系統字型與字級（含比例字型）、CJK 自動補字、行距、深淺色主題與語法主題選擇。
@@ -174,6 +186,7 @@ MadEdit/
     存檔失敗清空內容、狀態訊息不顯示、外部變更橫幅、取代不更新書籤、存檔前檢查外部修改、mmap SIGBUS、暫存檔名、emoji 寬度、
     視窗尺寸未傳入可視範圍）。
   - 改寫期間另修：主題目前行底色與註解同色導致文字看不見、程式字型把 `->` `=>` 連字、第一幀字型家族未註冊造成 panic。
+  - 介面語言：跟隨系統，或 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。譯文在 `assets/i18n/messages.tsv`，繁體中文仍以程式裡的原文為準。
 - [x] 專案基礎骨架與 Git 版本控制初始化。
 - [x] 專案正式更名為 MadEdit（移除 `-Rust` 套件後綴）：
   - `Cargo.toml` 套件名 `MadEdit-Rust` → `MadEdit`，建置產出的執行檔命名為 `MadEdit`（Windows 為 `MadEdit.exe`）。
@@ -303,7 +316,7 @@ MadEdit/
 - 已完成檔案時間戳記 (`mtime`) 比對、Windows 記憶體對映解鎖、Slint 定時器、頂部內嵌黃色通知橫幅與游標/書籤智慧保留重新載入。
 
 ### Phase 11: egui 全面改寫與原版功能補齊 - [已完成]
-- 見第 5 節與 [ADR 0011](docs/adr/0011-egui-rewrite.md)。未實作項目：單一執行個體、介面語言切換、檔案關聯、真正的 bidi、
+- 見第 5 節與 [ADR 0011](docs/adr/0011-egui-rewrite.md)。未實作項目：單一執行個體、檔案關聯、真正的 bidi、
   語法配色逐項自訂、跨行 Regex、Python 巨集（改為 JSON 步驟清單）。
 
 ### Phase 10: 經典 MadEdit 風格介面重塑 (Classic UI Redesign) - [已完成]

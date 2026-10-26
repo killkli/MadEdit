@@ -234,13 +234,6 @@ commands! {
     About => "menuAbout", "關於 MadEdit(&A)...", "";
 }
 
-impl C {
-    /// 選單顯示文字：去掉 Windows 風格的 & 加速鍵標記
-    pub fn menu_text(self) -> String {
-        self.label().replace("(&", "(").replace('&', "")
-    }
-}
-
 /// 解析單一快捷鍵字串（如 "Ctrl+Shift+K"、"Alt+ArrowUp"、"F3"）
 pub fn parse_shortcut(s: &str) -> Option<KeyboardShortcut> {
     let mut mods = Modifiers::NONE;
@@ -346,6 +339,6 @@ mod tests {
         let sc = parse_shortcut("Ctrl+Shift+K").unwrap();
         assert_eq!(shortcut_to_string(&sc), "Ctrl+Shift+K");
         assert_eq!(C::from_id("menuFind"), Some(C::Find));
-        assert_eq!(C::Find.menu_text(), "尋找(F)...");
+        assert_eq!(crate::app::i18n::strip_mnemonic(C::Find.label()), "尋找(F)...");
     }
 }

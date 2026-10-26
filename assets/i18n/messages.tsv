@@ -1,0 +1,481 @@
+# key	en	zh-CN	ja	ko	de	es	fr	it	pt
+menuNew	New (&N)	新建文件(&N)	新規作成(&N)	새 파일(&N)	Neu (&N)	Nuevo (&N)	Nouveau (&N)	Nuovo (&N)	Novo (&N)
+menuOpen	Open (&O)...	打开(&O)...	開く(&O)...	열기(&O)...	Öffnen (&O)...	Abrir (&O)...	Ouvrir (&O)...	Apri (&O)...	Abrir (&O)...
+menuSave	Save (&S)	保存(&S)	保存(&S)	저장(&S)	Speichern (&S)	Guardar (&S)	Enregistrer (&S)	Salva (&S)	Salvar (&S)
+menuSaveAs	Save As (&A)...	另存为(&A)...	名前を付けて保存(&A)...	다른 이름으로 저장(&A)...	Speichern unter (&A)...	Guardar como (&A)...	Enregistrer sous (&A)...	Salva con nome (&A)...	Salvar como (&A)...
+menuSaveACopy	Save a Copy...	保存副本...	コピーを保存...	복사본 저장...	Kopie speichern...	Guardar una copia...	Enregistrer une copie...	Salva una copia...	Salvar uma cópia...
+menuSaveAll	Save All (&V)	全部保存(&V)	すべて保存(&V)	모두 저장(&V)	Alle speichern (&V)	Guardar todo (&V)	Tout enregistrer (&V)	Salva tutto (&V)	Salvar tudo (&V)
+menuReload	Reload (&R)	重新加载(&R)	再読み込み(&R)	다시 로드(&R)	Neu laden (&R)	Recargar (&R)	Recharger (&R)	Ricarica (&R)	Recarregar (&R)
+menuClose	Close (&C)	关闭(&C)	閉じる(&C)	닫기(&C)	Schließen (&C)	Cerrar (&C)	Fermer (&C)	Chiudi (&C)	Fechar (&C)
+menuCloseAll	Close All (&L)	全部关闭(&L)	すべて閉じる(&L)	모두 닫기(&L)	Alle schließen (&L)	Cerrar todo (&L)	Tout fermer (&L)	Chiudi tutto (&L)	Fechar tudo (&L)
+menuCloseAllButThis	Close Others	关闭其他文件	他を閉じる	다른 파일 닫기	Andere schließen	Cerrar los demás	Fermer les autres	Chiudi gli altri	Fechar os outros
+menuCloseAllToTheLeft	Close All to the Left	关闭左侧所有文件	左側をすべて閉じる	왼쪽 파일 모두 닫기	Alle links schließen	Cerrar todo a la izquierda	Fermer tout à gauche	Chiudi tutto a sinistra	Fechar tudo à esquerda
+menuCloseAllToTheRight	Close All to the Right	关闭右侧所有文件	右側をすべて閉じる	오른쪽 파일 모두 닫기	Alle rechts schließen	Cerrar todo a la derecha	Fermer tout à droite	Chiudi tutto a destra	Fechar tudo à direita
+menuToggleReadOnly	Toggle Read-only	设置/清除只读	読み取り専用の切り替え	읽기 전용 설정/해제	Schreibschutz umschalten	Alternar solo lectura	Basculer en lecture seule	Attiva/disattiva sola lettura	Alternar somente leitura
+menuPageSetup	Page Setup (&U)...	页面设置(&U)...	ページ設定(&U)...	페이지 설정(&U)...	Seite einrichten (&U)...	Configurar página (&U)...	Mise en page (&U)...	Imposta pagina (&U)...	Configurar página (&U)...
+menuPrintPreview	Print Preview (&W)...	打印预览(&W)...	印刷プレビュー(&W)...	인쇄 미리 보기(&W)...	Druckvorschau (&W)...	Vista previa (&W)...	Aperçu avant impression (&W)...	Anteprima di stampa (&W)...	Visualizar impressão (&W)...
+menuPrint	Print (&P)...	打印(&P)...	印刷(&P)...	인쇄(&P)...	Drucken (&P)...	Imprimir (&P)...	Imprimer (&P)...	Stampa (&P)...	Imprimir (&P)...
+menuRecentFilesList	Recent Files...	最近使用的文件...	最近使ったファイル...	최근 파일 목록...	Zuletzt verwendet...	Archivos recientes...	Fichiers récents...	File recenti...	Arquivos recentes...
+menuExit	Exit (&X)	退出(&X)	終了(&X)	종료(&X)	Beenden (&X)	Salir (&X)	Quitter (&X)	Esci (&X)	Sair (&X)
+menuUndo	Undo (&U)	撤销(&U)	元に戻す(&U)	실행 취소(&U)	Rückgängig (&U)	Deshacer (&U)	Annuler (&U)	Annulla (&U)	Desfazer (&U)
+menuRedo	Redo (&R)	重做(&R)	やり直し(&R)	다시 실행(&R)	Wiederholen (&R)	Rehacer (&R)	Rétablir (&R)	Ripristina (&R)	Refazer (&R)
+menuCut	Cut (&T)	剪切(&T)	切り取り(&T)	잘라내기(&T)	Ausschneiden (&T)	Cortar (&T)	Couper (&T)	Taglia (&T)	Recortar (&T)
+menuCopy	Copy (&C)	复制(&C)	コピー(&C)	복사(&C)	Kopieren (&C)	Copiar (&C)	Copier (&C)	Copia (&C)	Copiar (&C)
+menuPaste	Paste (&P)	粘贴(&P)	貼り付け(&P)	붙여넣기(&P)	Einfügen (&P)	Pegar (&P)	Coller (&P)	Incolla (&P)	Colar (&P)
+menuDelete	Delete (&D)	删除(&D)	削除(&D)	삭제(&D)	Löschen (&D)	Eliminar (&D)	Supprimer (&D)	Elimina (&D)	Excluir (&D)
+menuCutLine	Cut Line (&I)	剪切整行(&I)	行を切り取り(&I)	줄 잘라내기(&I)	Zeile ausschneiden (&I)	Cortar línea (&I)	Couper la ligne (&I)	Taglia riga (&I)	Recortar linha (&I)
+menuDeleteLine	Delete Line (&L)	删除整行(&L)	行を削除(&L)	줄 삭제(&L)	Zeile löschen (&L)	Eliminar línea (&L)	Supprimer la ligne (&L)	Elimina riga (&L)	Excluir linha (&L)
+menuDuplicateLine	Duplicate Line	复制整行	行を複製	줄 복제	Zeile duplizieren	Duplicar línea	Dupliquer la ligne	Duplica riga	Duplicar linha
+menuMoveLinesUp	Move Lines Up	整行上移	行を上へ移動	줄을 위로 이동	Zeilen nach oben	Mover líneas arriba	Déplacer les lignes vers le haut	Sposta righe su	Mover linhas para cima
+menuMoveLinesDown	Move Lines Down	整行下移	行を下へ移動	줄을 아래로 이동	Zeilen nach unten	Mover líneas abajo	Déplacer les lignes vers le bas	Sposta righe giù	Mover linhas para baixo
+menuJoinLines	Join Lines	合并行	行を結合	줄 합치기	Zeilen verbinden	Unir líneas	Joindre les lignes	Unisci righe	Unir linhas
+menuDeleteEmptyLines	Delete Empty Lines	删除空行	空行を削除	빈 줄 삭제	Leere Zeilen löschen	Eliminar líneas vacías	Supprimer les lignes vides	Elimina righe vuote	Excluir linhas vazias
+menuDeleteEmptyLinesWithSpaces	Delete Empty Lines (including whitespace)	删除空行（含只有空白的行）	空行を削除（空白のみの行を含む）	빈 줄 삭제(공백만 있는 줄 포함)	Leere Zeilen löschen (auch nur Leerzeichen)	Eliminar líneas vacías (incluidas las de espacios)	Supprimer les lignes vides (y compris les espaces)	Elimina righe vuote (anche solo spazi)	Excluir linhas vazias (incluindo só espaços)
+menuTrimTrailingSpaces	Trim Trailing Spaces (&M)	删除行尾空白(&M)	行末の空白を削除(&M)	줄 끝 공백 삭제(&M)	Nachfolgende Leerzeichen entfernen (&M)	Quitar espacios finales (&M)	Supprimer les espaces de fin (&M)	Rimuovi spazi finali (&M)	Remover espaços no fim (&M)
+menuTrimLeadingSpaces	Trim Leading Spaces	删除行首空白	行頭の空白を削除	줄 앞 공백 삭제	Führende Leerzeichen entfernen	Quitar espacios iniciales	Supprimer les espaces de début	Rimuovi spazi iniziali	Remover espaços no início
+menuSelectAll	Select All (&A)	全选(&A)	すべて選択(&A)	모두 선택(&A)	Alles auswählen (&A)	Seleccionar todo (&A)	Tout sélectionner (&A)	Seleziona tutto (&A)	Selecionar tudo (&A)
+menuStartEndSelction	Start/End Selecting	开始/结束选择	選択の開始/終了	선택 시작/끝내기	Auswahl beginnen/beenden	Iniciar/finalizar selección	Commencer/terminer la sélection	Inizia/termina selezione	Iniciar/encerrar seleção
+menuInsertTabChar	Insert Tab (&B)	插入 Tab 字符(&B)	Tab 文字を挿入(&B)	Tab 문자 삽입(&B)	Tabulator einfügen (&B)	Insertar tabulador (&B)	Insérer une tabulation (&B)	Inserisci tabulazione (&B)	Inserir tabulação (&B)
+menuInsertDateTime	Insert Date and Time (&E)	插入日期和时间(&E)	日付と時刻を挿入(&E)	날짜와 시간 삽입(&E)	Datum und Uhrzeit einfügen (&E)	Insertar fecha y hora (&E)	Insérer la date et l'heure (&E)	Inserisci data e ora (&E)	Inserir data e hora (&E)
+menuBookmarkCopy	Copy Bookmarked Lines	复制有书签的行	ブックマーク行をコピー	책갈피 행 복사	Markierte Zeilen kopieren	Copiar líneas con marcador	Copier les lignes marquées	Copia righe con segnalibro	Copiar linhas com marcador
+menuBookmarkCut	Cut Bookmarked Lines	剪切有书签的行	ブックマーク行を切り取り	책갈피 행 잘라내기	Markierte Zeilen ausschneiden	Cortar líneas con marcador	Couper les lignes marquées	Taglia righe con segnalibro	Recortar linhas com marcador
+menuBookmarkDel	Delete Bookmarked Lines	删除有书签的行	ブックマーク行を削除	책갈피 행 삭제	Markierte Zeilen löschen	Eliminar líneas con marcador	Supprimer les lignes marquées	Elimina righe con segnalibro	Excluir linhas com marcador
+menuBookmarkCopyUnmarked	Copy Unmarked Lines	复制没有书签的行	ブックマークのない行をコピー	책갈피 없는 행 복사	Nicht markierte Zeilen kopieren	Copiar líneas sin marcador	Copier les lignes non marquées	Copia righe senza segnalibro	Copiar linhas sem marcador
+menuBookmarkCutUnmarked	Cut Unmarked Lines	剪切没有书签的行	ブックマークのない行を切り取り	책갈피 없는 행 잘라내기	Nicht markierte Zeilen ausschneiden	Cortar líneas sin marcador	Couper les lignes non marquées	Taglia righe senza segnalibro	Recortar linhas sem marcador
+menuBookmarkDelUnmarked	Delete Unmarked Lines	删除没有书签的行	ブックマークのない行を削除	책갈피 없는 행 삭제	Nicht markierte Zeilen löschen	Eliminar líneas sin marcador	Supprimer les lignes non marquées	Elimina righe senza segnalibro	Excluir linhas sem marcador
+menuBookmarkReplace	Replace Bookmarked Lines with Clipboard	用剪贴板替换有书签的行	ブックマーク行をクリップボードで置換	책갈피 행을 클립보드로 바꾸기	Markierte Zeilen durch Zwischenablage ersetzen	Reemplazar líneas con marcador por el portapapeles	Remplacer les lignes marquées par le presse-papiers	Sostituisci righe con segnalibro dagli appunti	Substituir linhas com marcador pela área de transferência
+menuCopyAsHexString	Copy as Hex String (&H)	复制为十六进制字符串(&H)	16進文字列としてコピー(&H)	16진수 문자열로 복사(&H)	Als Hex-Zeichenfolge kopieren (&H)	Copiar como cadena hexadecimal (&H)	Copier comme chaîne hexadécimale (&H)	Copia come stringa esadecimale (&H)	Copiar como texto hexadecimal (&H)
+menuCopyAsHexStringWithSpace	Copy as Hex String with Spaces (&X)	复制为十六进制字符串（含空格）(&X)	空白付き16進文字列としてコピー(&X)	공백 포함 16진수 문자열로 복사(&X)	Als Hex-Zeichenfolge mit Leerzeichen kopieren (&X)	Copiar como hexadecimal con espacios (&X)	Copier en hexadécimal avec espaces (&X)	Copia come esadecimale con spazi (&X)	Copiar como hexadecimal com espaços (&X)
+menuCopyRevertHex	Copy Decoded Hex String (&R)	复制由十六进制字符串还原的内容(&R)	16進文字列を復元してコピー(&R)	16진수 문자열을 복원하여 복사(&R)	Dekodierte Hex-Zeichenfolge kopieren (&R)	Copiar el contenido restaurado del hexadecimal (&R)	Copier le contenu décodé de l'hexadécimal (&R)	Copia il contenuto decodificato dall'esadecimale (&R)	Copiar o conteúdo restaurado do hexadecimal (&R)
+menuIncreaseIndent	Increase Indent (&I)	增加缩进(&I)	インデントを増やす(&I)	들여쓰기 늘리기(&I)	Einzug vergrößern (&I)	Aumentar sangría (&I)	Augmenter le retrait (&I)	Aumenta rientro (&I)	Aumentar recuo (&I)
+menuDecreaseIndent	Decrease Indent (&D)	减少缩进(&D)	インデントを減らす(&D)	들여쓰기 줄이기(&D)	Einzug verkleinern (&D)	Reducir sangría (&D)	Diminuer le retrait (&D)	Riduci rientro (&D)	Diminuir recuo (&D)
+menuComment	Comment (&C)	注释(&C)	コメント(&C)	주석(&C)	Auskommentieren (&C)	Comentar (&C)	Commenter (&C)	Commenta (&C)	Comentar (&C)
+menuUncomment	Uncomment (&U)	取消注释(&U)	コメント解除(&U)	주석 해제(&U)	Auskommentierung aufheben (&U)	Quitar comentario (&U)	Retirer le commentaire (&U)	Rimuovi commento (&U)	Remover comentário (&U)
+menuWordWrapToNewLine	Word Wrap to New Lines	自动换行转为换行符	折り返しを改行に変換	자동 줄 바꿈을 줄 바꿈으로	Umbruch in Zeilenumbrüche umwandeln	Convertir ajuste en saltos de línea	Convertir le retour à la ligne en sauts	Converti a capo automatico in a capo	Converter quebra automática em novas linhas
+menuNewLineToWordWrap	New Lines to Word Wrap	换行符转为自动换行	改行を折り返しに変換	줄 바꿈을 자동 줄 바꿈으로	Zeilenumbrüche in Umbruch umwandeln	Convertir saltos en ajuste de línea	Convertir les sauts en retour automatique	Converti a capo in a capo automatico	Converter novas linhas em quebra automática
+menuToUpperCase	UPPERCASE (&P)	转为大写(&P)	大文字に変換(&P)	대문자로(&P)	GROSSBUCHSTABEN (&P)	MAYÚSCULAS (&P)	MAJUSCULES (&P)	MAIUSCOLE (&P)	MAIÚSCULAS (&P)
+menuToLowerCase	lowercase (&O)	转为小写(&O)	小文字に変換(&O)	소문자로(&O)	kleinbuchstaben (&O)	minúsculas (&O)	minuscules (&O)	minuscole (&O)	minúsculas (&O)
+menuInvertCase	iNVERT cASE (&T)	反转大小写(&T)	大文字/小文字を反転(&T)	대/소문자 뒤집기(&T)	Groß-/Kleinschreibung umkehren (&T)	Invertir mayúsculas (&T)	Inverser la casse (&T)	Inverti maiuscole/minuscole (&T)	Inverter maiúsculas (&T)
+menuCapitalize	Capitalize	首字母大写	先頭を大文字に	첫 글자 대문자	Ersten Buchstaben groß	Poner mayúscula inicial	Mettre une majuscule	Iniziale maiuscola	Capitalizar
+menuToHalfWidth	To Halfwidth (&A)	转为半角(&A)	半角に変換(&A)	반각으로(&A)	In halbe Breite (&A)	A ancho medio (&A)	En demi-chasse (&A)	A mezza larghezza (&A)	Para meia largura (&A)
+menuToHalfWidthByOptions	To Halfwidth by Options...	按选项转为半角...	オプションに従って半角に...	옵션대로 반각으로...	Halbe Breite nach Optionen...	A ancho medio según opciones...	En demi-chasse selon les options...	A mezza larghezza in base alle opzioni...	Para meia largura conforme opções...
+menuToFullWidth	To Fullwidth (&F)	转为全角(&F)	全角に変換(&F)	전각으로(&F)	In volle Breite (&F)	A ancho completo (&F)	En pleine chasse (&F)	A larghezza intera (&F)	Para largura inteira (&F)
+menuToFullWidthByOptions	To Fullwidth by Options...	按选项转为全角...	オプションに従って全角に...	옵션대로 전각으로...	Volle Breite nach Optionen...	A ancho completo según opciones...	En pleine chasse selon les options...	A larghezza intera in base alle opzioni...	Para largura inteira conforme opções...
+menuTabToSpace	Tabs to Spaces	Tab 字符转为空格	タブを空白に変換	탭을 공백으로	Tabulatoren in Leerzeichen	Tabuladores a espacios	Tabulations en espaces	Tabulazioni in spazi	Tabulações em espaços
+menuSpaceToTab	Spaces to Tabs	空格转为 Tab 字符	空白をタブに変換	공백을 탭으로	Leerzeichen in Tabulatoren	Espacios a tabuladores	Espaces en tabulations	Spazi in tabulazioni	Espaços em tabulações
+menuInsertNumbers	Insert Incremental Numbers...	插入递增数字...	連番を挿入...	증가 숫자 삽입...	Fortlaufende Zahlen einfügen...	Insertar números incrementales...	Insérer des nombres croissants...	Inserisci numeri progressivi...	Inserir números incrementais...
+menuColumnAlignLeft	Align Block Left	列块靠左对齐	矩形選択を左揃え	열 블록 왼쪽 맞춤	Block linksbündig	Alinear bloque a la izquierda	Aligner le bloc à gauche	Allinea blocco a sinistra	Alinhar bloco à esquerda
+menuColumnAlignRight	Align Block Right	列块靠右对齐	矩形選択を右揃え	열 블록 오른쪽 맞춤	Block rechtsbündig	Alinear bloque a la derecha	Aligner le bloc à droite	Allinea blocco a destra	Alinhar bloco à direita
+menuSortAscending	Sort Ascending (&A)	排序（递增）(&A)	昇順で並べ替え(&A)	오름차순 정렬(&A)	Aufsteigend sortieren (&A)	Ordenar ascendente (&A)	Trier croissant (&A)	Ordina crescente (&A)	Ordenar crescente (&A)
+menuSortDescending	Sort Descending (&D)	排序（递减）(&D)	降順で並べ替え(&D)	내림차순 정렬(&D)	Absteigend sortieren (&D)	Ordenar descendente (&D)	Trier décroissant (&D)	Ordina decrescente (&D)	Ordenar decrescente (&D)
+menuSortAscendingCase	Sort Ascending, Case-sensitive (&S)	排序（递增，区分大小写）(&S)	昇順（大文字小文字を区別）(&S)	오름차순 정렬(대소문자 구분)(&S)	Aufsteigend, Groß/Klein (&S)	Ascendente, distingue mayúsculas (&S)	Croissant, sensible à la casse (&S)	Crescente, distingue maiuscole (&S)	Crescente, diferencia maiúsculas (&S)
+menuSortDescendingCase	Sort Descending, Case-sensitive (&E)	排序（递减，区分大小写）(&E)	降順（大文字小文字を区別）(&E)	내림차순 정렬(대소문자 구분)(&E)	Absteigend, Groß/Klein (&E)	Descendente, distingue mayúsculas (&E)	Décroissant, sensible à la casse (&E)	Decrescente, distingue maiuscole (&E)	Decrescente, diferencia maiúsculas (&E)
+menuSortByOptions	Sort with Current Options (&C)	按当前选项排序(&C)	現在の設定で並べ替え(&C)	현재 옵션으로 정렬(&C)	Mit aktuellen Optionen sortieren (&C)	Ordenar con las opciones actuales (&C)	Trier avec les options actuelles (&C)	Ordina con le opzioni attuali (&C)	Ordenar com as opções atuais (&C)
+menuSortOptions	Sort Options (&O)...	排序选项(&O)...	並べ替えオプション(&O)...	정렬 옵션(&O)...	Sortieroptionen (&O)...	Opciones de ordenación (&O)...	Options de tri (&O)...	Opzioni di ordinamento (&O)...	Opções de ordenação (&O)...
+menuFind	Find (&F)...	查找(&F)...	検索(&F)...	찾기(&F)...	Suchen (&F)...	Buscar (&F)...	Rechercher (&F)...	Trova (&F)...	Localizar (&F)...
+menuFindNext	Find Next (&N)	查找下一个(&N)	次を検索(&N)	다음 찾기(&N)	Weitersuchen (&N)	Buscar siguiente (&N)	Occurrence suivante (&N)	Trova successivo (&N)	Localizar próxima (&N)
+menuFindPrevious	Find Previous (&P)	查找上一个(&P)	前を検索(&P)	이전 찾기(&P)	Rückwärts suchen (&P)	Buscar anterior (&P)	Occurrence précédente (&P)	Trova precedente (&P)	Localizar anterior (&P)
+menuShowQuickSearchBar	Quick Find (&Q)	快速查找(&Q)	クイック検索(&Q)	빠른 찾기(&Q)	Schnellsuche (&Q)	Búsqueda rápida (&Q)	Recherche rapide (&Q)	Ricerca rapida (&Q)	Localização rápida (&Q)
+menuReplace	Replace (&R)...	替换(&R)...	置換(&R)...	바꾸기(&R)...	Ersetzen (&R)...	Reemplazar (&R)...	Remplacer (&R)...	Sostituisci (&R)...	Substituir (&R)...
+menuFindInFiles	Find/Replace in Files (&D)...	在文件中查找/替换(&D)...	ファイル内を検索/置換(&D)...	파일에서 찾기/바꾸기(&D)...	In Dateien suchen/ersetzen (&D)...	Buscar/reemplazar en archivos (&D)...	Rechercher/remplacer dans les fichiers (&D)...	Trova/sostituisci nei file (&D)...	Localizar/substituir em arquivos (&D)...
+menuShowFindInFilesResults	Show/Hide Find in Files Results (&S)	显示/隐藏文件搜索结果(&S)	ファイル検索結果の表示/非表示(&S)	파일 검색 결과 표시/숨기기(&S)	Suchergebnisse ein-/ausblenden (&S)	Mostrar/ocultar resultados (&S)	Afficher/masquer les résultats (&S)	Mostra/nascondi risultati (&S)	Mostrar/ocultar resultados (&S)
+menuCollapseAllResults	Collapse All Results (&A)	折叠所有结果(&A)	結果をすべて折りたたむ(&A)	모든 결과 접기(&A)	Alle Ergebnisse einklappen (&A)	Contraer todos los resultados (&A)	Réduire tous les résultats (&A)	Comprimi tutti i risultati (&A)	Recolher todos os resultados (&A)
+menuGoToLine	Go to Line (&G)...	转到行(&G)...	行へ移動(&G)...	줄로 이동(&G)...	Gehe zu Zeile (&G)...	Ir a la línea (&G)...	Aller à la ligne (&G)...	Vai alla riga (&G)...	Ir para a linha (&G)...
+menuGoToPosition	Go to Position (&O)...	转到位置(&O)...	位置へ移動(&O)...	위치로 이동(&O)...	Gehe zu Position (&O)...	Ir a la posición (&O)...	Aller à la position (&O)...	Vai alla posizione (&O)...	Ir para a posição (&O)...
+menuGoBack	Previous Location	上一个光标位置	前の位置	이전 커서 위치	Vorherige Position	Posición anterior	Emplacement précédent	Posizione precedente	Posição anterior
+menuGoForward	Next Location	下一个光标位置	次の位置	다음 커서 위치	Nächste Position	Posición siguiente	Emplacement suivant	Posizione successiva	Próxima posição
+menuLeftBrace	Go to Opening Bracket (&E)	移至左括号(&E)	対応する開き括弧へ(&E)	여는 괄호로 이동(&E)	Zur öffnenden Klammer (&E)	Ir al paréntesis de apertura (&E)	Aller à la parenthèse ouvrante (&E)	Vai alla parentesi aperta (&E)	Ir para o parêntese de abertura (&E)
+menuRightBrace	Go to Closing Bracket (&I)	移至右括号(&I)	対応する閉じ括弧へ(&I)	닫는 괄호로 이동(&I)	Zur schließenden Klammer (&I)	Ir al paréntesis de cierre (&I)	Aller à la parenthèse fermante (&I)	Vai alla parentesi chiusa (&I)	Ir para o parêntese de fecho (&I)
+menuToggleBookmark	Toggle Bookmark	设置/移除书签	ブックマークの切り替え	책갈피 설정/제거	Lesezeichen umschalten	Alternar marcador	Basculer le signet	Attiva/disattiva segnalibro	Alternar marcador
+menuGotoNextBookmark	Next Bookmark	转到下一个书签	次のブックマーク	다음 책갈피	Nächstes Lesezeichen	Marcador siguiente	Signet suivant	Segnalibro successivo	Próximo marcador
+menuGotoPreviousBookmark	Previous Bookmark	转到上一个书签	前のブックマーク	이전 책갈피	Vorheriges Lesezeichen	Marcador anterior	Signet précédent	Segnalibro precedente	Marcador anterior
+menuClearAllBookmarks	Clear All Bookmarks	清除所有书签	すべてのブックマークを消去	모든 책갈피 지우기	Alle Lesezeichen löschen	Borrar todos los marcadores	Effacer tous les signets	Cancella tutti i segnalibri	Limpar todos os marcadores
+menuAlwaysOnTop	Always on Top	总在最前	常に手前に表示	항상 위에 표시	Immer im Vordergrund	Siempre visible	Toujours au premier plan	Sempre in primo piano	Sempre visível
+menuFullScreen	Full Screen	全屏	全画面	전체 화면	Vollbild	Pantalla completa	Plein écran	Schermo intero	Ecrã inteiro
+menuPostIt	Post-it Mode	便利贴模式	付箋モード	스티커 메모 모드	Notizmodus	Modo nota adhesiva	Mode pense-bête	Modalità foglietto	Modo nota
+menuSetFont	Font...	设置字体...	フォント...	글꼴...	Schriftart...	Fuente...	Police...	Carattere...	Tipo de letra...
+menuZoomIn	Zoom In	放大字体	拡大	확대	Vergrößern	Acercar	Zoom avant	Ingrandisci	Ampliar
+menuZoomOut	Zoom Out	缩小字体	縮小	축소	Verkleinern	Alejar	Zoom arrière	Riduci	Reduzir
+menuFixedWidthMode	Fixed-width Mode (&F)	等宽模式(&F)	等幅モード(&F)	고정폭 모드(&F)	Feste Breite (&F)	Ancho fijo (&F)	Largeur fixe (&F)	Larghezza fissa (&F)	Largura fixa (&F)
+menuNoWrap	No Wrap (&N)	不自动换行(&N)	折り返さない(&N)	자동 줄 바꿈 없음(&N)	Kein Umbruch (&N)	Sin ajuste (&N)	Pas de retour à la ligne (&N)	Nessun a capo automatico (&N)	Sem quebra automática (&N)
+menuWrapByWindow	Wrap by Window (&W)	按窗口宽度换行(&W)	ウィンドウ幅で折り返す(&W)	창 너비에 맞추기(&W)	Am Fenster umbrechen (&W)	Ajustar a la ventana (&W)	Selon la fenêtre (&W)	A capo in base alla finestra (&W)	Quebrar pela janela (&W)
+menuWrapByColumn	Wrap by Column (&C)	按栏数换行(&C)	桁数で折り返す(&C)	열 수에 맞추기(&C)	Nach Spalte umbrechen (&C)	Ajustar por columnas (&C)	Selon la colonne (&C)	A capo in base alla colonna (&C)	Quebrar pela coluna (&C)
+menuDisplayLineNumber	Line Numbers (&L)	显示行号(&L)	行番号(&L)	줄 번호(&L)	Zeilennummern (&L)	Números de línea (&L)	Numéros de ligne (&L)	Numeri di riga (&L)	Números de linha (&L)
+menuDisplayBookmark	Bookmarks (&B)	显示书签(&B)	ブックマーク(&B)	책갈피(&B)	Lesezeichen (&B)	Marcadores (&B)	Signets (&B)	Segnalibri (&B)	Marcadores (&B)
+menuDisplay80ColHint	Column Guide	显示栏位提示线	桁ガイド	열 안내선	Spaltenhilfslinie	Guía de columna	Guide de colonne	Guida colonna	Guia de coluna
+menuShowRuler	Ruler (&R)	显示标尺(&R)	ルーラー(&R)	눈금자(&R)	Lineal (&R)	Regla (&R)	Règle (&R)	Righello (&R)	Régua (&R)
+menuShowEndOfLine	Show End of Line	显示行尾字符	行末文字を表示	줄 끝 문자 표시	Zeilenende anzeigen	Mostrar fin de línea	Afficher la fin de ligne	Mostra fine riga	Mostrar fim de linha
+menuShowTabChar	Show Tab Characters	显示 Tab 字符	タブ文字を表示	탭 문자 표시	Tabulatoren anzeigen	Mostrar tabuladores	Afficher les tabulations	Mostra tabulazioni	Mostrar tabulações
+menuShowSpaceChar	Show Space Characters	显示空格字符	空白文字を表示	공백 문자 표시	Leerzeichen anzeigen	Mostrar espacios	Afficher les espaces	Mostra spazi	Mostrar espaços
+menuShowAllChar	Show All Characters	显示所有字符	すべての文字を表示	모든 문자 표시	Alle Zeichen anzeigen	Mostrar todos los caracteres	Afficher tous les caractères	Mostra tutti i caratteri	Mostrar todos os caracteres
+menuViewRightToLeft	Right to Left	从右到左	右から左へ	오른쪽에서 왼쪽	Rechts nach links	De derecha a izquierda	De droite à gauche	Da destra a sinistra	Da direita para a esquerda
+menuMarkActiveLine	Highlight Current Line	标示当前行	現在行を強調	현재 줄 강조	Aktuelle Zeile hervorheben	Resaltar la línea actual	Surligner la ligne actuelle	Evidenzia la riga corrente	Realçar a linha atual
+menuMarkBracePair	Highlight Matching Bracket	标示对应括号	対応する括弧を強調	짝 괄호 강조	Passende Klammer hervorheben	Resaltar el paréntesis correspondiente	Surligner la parenthèse correspondante	Evidenzia la parentesi corrispondente	Realçar o parêntese correspondente
+menuSpellChecker	Spell Check	拼写检查	スペルチェック	맞춤법 검사	Rechtschreibung	Corrector ortográfico	Vérification orthographique	Controllo ortografico	Verificação ortográfica
+menuTypewriterMode	Typewriter Mode	打字机模式	タイプライターモード	타자기 모드	Schreibmaschinenmodus	Modo máquina de escribir	Mode machine à écrire	Modalità macchina da scrivere	Modo máquina de escrever
+menuToolBarsToggleAll	Show/Hide Toolbar	显示/隐藏工具栏	ツールバーの表示/非表示	도구 모음 표시/숨기기	Symbolleiste ein-/ausblenden	Mostrar/ocultar barra de herramientas	Afficher/masquer la barre d'outils	Mostra/nascondi barra degli strumenti	Mostrar/ocultar a barra de ferramentas
+menuMenuBarToggle	Show/Hide Menu Bar	显示/隐藏菜单栏	メニューバーの表示/非表示	메뉴 모음 표시/숨기기	Menüleiste ein-/ausblenden	Mostrar/ocultar barra de menús	Afficher/masquer la barre de menus	Mostra/nascondi barra dei menu	Mostrar/ocultar a barra de menus
+menuStatusBarToggle	Show/Hide Status Bar	显示/隐藏状态栏	ステータスバーの表示/非表示	상태 표시줄 표시/숨기기	Statusleiste ein-/ausblenden	Mostrar/ocultar barra de estado	Afficher/masquer la barre d'état	Mostra/nascondi barra di stato	Mostrar/ocultar a barra de estado
+menuToggleTheme	Toggle Dark/Light Theme	切换深色/浅色主题	ダーク/ライトの切り替え	어두운/밝은 테마 전환	Dunkles/helles Design umschalten	Alternar tema oscuro/claro	Basculer le thème sombre/clair	Attiva tema scuro/chiaro	Alternar tema escuro/claro
+menuTextMode	Text Mode (&T)	文本模式(&T)	テキストモード(&T)	텍스트 모드(&T)	Textmodus (&T)	Modo texto (&T)	Mode texte (&T)	Modalità testo (&T)	Modo de texto (&T)
+menuColumnMode	Column Mode (&C)	列块模式(&C)	矩形モード(&C)	열 블록 모드(&C)	Spaltenmodus (&C)	Modo columna (&C)	Mode colonne (&C)	Modalità colonna (&C)	Modo de coluna (&C)
+menuHexMode	Hex Mode (&H)	十六进制模式(&H)	16進モード(&H)	16진수 모드(&H)	Hex-Modus (&H)	Modo hexadecimal (&H)	Mode hexadécimal (&H)	Modalità esadecimale (&H)	Modo hexadecimal (&H)
+menuPreviewMarkdown	Preview as Markdown	以 Markdown 预览	Markdown でプレビュー	Markdown으로 미리 보기	Als Markdown anzeigen	Vista previa Markdown	Aperçu Markdown	Anteprima Markdown	Pré-visualizar como Markdown
+menuPreviewHtml	Preview as HTML	以 HTML 预览	HTML でプレビュー	HTML로 미리 보기	Als HTML anzeigen	Vista previa HTML	Aperçu HTML	Anteprima HTML	Pré-visualizar como HTML
+menuRunTempMacro	Run Temporary Macro...	运行临时宏...	一時マクロを実行...	임시 매크로 실행...	Temporäres Makro ausführen...	Ejecutar macro temporal...	Exécuter la macro temporaire...	Esegui macro temporanea...	Executar macro temporária...
+menuRunMacroFile	Load and Run Saved Macro...	加载并运行已保存的宏...	保存したマクロを読み込んで実行...	저장된 매크로 불러와 실행...	Gespeichertes Makro laden und ausführen...	Cargar y ejecutar una macro guardada...	Charger et exécuter une macro enregistrée...	Carica ed esegui una macro salvata...	Carregar e executar macro salva...
+menuStartRecMacro	Start Recording	开始录制	記録を開始	기록 시작	Aufzeichnung starten	Iniciar grabación	Démarrer l'enregistrement	Avvia registrazione	Iniciar gravação
+menuStopRecMacro	Stop Recording	停止录制	記録を停止	기록 중지	Aufzeichnung stoppen	Detener grabación	Arrêter l'enregistrement	Interrompi registrazione	Parar gravação
+menuPlayRecMacro	Play	播放	再生	재생	Wiedergeben	Reproducir	Lire	Riproduci	Reproduzir
+menuSaveRecMacro	Save Recorded Macro...	保存当前录制的宏...	記録したマクロを保存...	기록한 매크로 저장...	Aufgezeichnetes Makro speichern...	Guardar la macro grabada...	Enregistrer la macro enregistrée...	Salva la macro registrata...	Salvar a macro gravada...
+menuEditMacroFile	Edit Saved Macro...	编辑已保存的宏...	保存したマクロを編集...	저장된 매크로 편집...	Gespeichertes Makro bearbeiten...	Editar macro guardada...	Modifier une macro enregistrée...	Modifica macro salvata...	Editar macro salva...
+menuOptions	Options (&O)...	选项(&O)...	オプション(&O)...	옵션(&O)...	Optionen (&O)...	Opciones (&O)...	Options (&O)...	Opzioni (&O)...	Opções (&O)...
+menuHighlighting	Syntax Highlighting (&S)...	语法高亮设置(&S)...	構文強調設定(&S)...	구문 강조 설정(&S)...	Syntaxhervorhebung (&S)...	Resaltado de sintaxis (&S)...	Coloration syntaxique (&S)...	Evidenziazione sintassi (&S)...	Realce de sintaxe (&S)...
+menuFileAssociation	File Associations (&F)...	文件类型关联(&F)...	ファイルの関連付け(&F)...	파일 형식 연결(&F)...	Dateitypen (&F)...	Asociaciones de archivos (&F)...	Associations de fichiers (&F)...	Associazioni file (&F)...	Associações de ficheiros (&F)...
+menuSourceFormatter	Source Formatter (&S)...	源代码格式化设置(&S)...	ソース整形の設定(&S)...	소스 서식 설정(&S)...	Quelltextformatierung (&S)...	Formato del código (&S)...	Mise en forme du code (&S)...	Formattazione sorgente (&S)...	Formatação de código (&S)...
+menuPurgeHistories	Clear History (&P)...	清除历史记录(&P)...	履歴を消去(&P)...	기록 지우기(&P)...	Verlauf löschen (&P)...	Borrar el historial (&P)...	Effacer l'historique (&P)...	Cancella cronologia (&P)...	Limpar histórico (&P)...
+menuToggleBOM	Add/Remove BOM	添加/移除 BOM	BOM の追加/削除	BOM 추가/제거	BOM hinzufügen/entfernen	Añadir/quitar BOM	Ajouter/retirer le BOM	Aggiungi/rimuovi BOM	Adicionar/remover BOM
+menuConvertToDOS	Convert to CRLF/0D0A (&DOS)	转为 CRLF/0D0A (&DOS)	CRLF/0D0A に変換 (&DOS)	CRLF/0D0A로 변환 (&DOS)	In CRLF/0D0A umwandeln (&DOS)	Convertir a CRLF/0D0A (&DOS)	Convertir en CRLF/0D0A (&DOS)	Converti in CRLF/0D0A (&DOS)	Converter para CRLF/0D0A (&DOS)
+menuConvertToMAC	Convert to CR/0D (classic &Mac)	转为 CR/0D（旧版 &Mac）	CR/0D に変換（旧 &Mac）	CR/0D로 변환(구형 &Mac)	In CR/0D umwandeln (klassisches &Mac)	Convertir a CR/0D (&Mac clásico)	Convertir en CR/0D (ancien &Mac)	Converti in CR/0D (&Mac classico)	Converter para CR/0D (&Mac clássico)
+menuConvertToUNIX	Convert to LF/0A (&Unix/macOS)	转为 LF/0A (&Unix/macOS)	LF/0A に変換 (&Unix/macOS)	LF/0A로 변환 (&Unix/macOS)	In LF/0A umwandeln (&Unix/macOS)	Convertir a LF/0A (&Unix/macOS)	Convertir en LF/0A (&Unix/macOS)	Converti in LF/0A (&Unix/macOS)	Converter para LF/0A (&Unix/macOS)
+menuInsertDOS	Insert CRLF/0D0A (&DOS)	插入 CRLF/0D0A (&DOS)	CRLF/0D0A を挿入 (&DOS)	CRLF/0D0A 삽입 (&DOS)	CRLF/0D0A einfügen (&DOS)	Insertar CRLF/0D0A (&DOS)	Insérer CRLF/0D0A (&DOS)	Inserisci CRLF/0D0A (&DOS)	Inserir CRLF/0D0A (&DOS)
+menuInsertMAC	Insert CR/0D (classic &Mac)	插入 CR/0D（旧版 &Mac）	CR/0D を挿入（旧 &Mac）	CR/0D 삽입(구형 &Mac)	CR/0D einfügen (klassisches &Mac)	Insertar CR/0D (&Mac clásico)	Insérer CR/0D (ancien &Mac)	Inserisci CR/0D (&Mac classico)	Inserir CR/0D (&Mac clássico)
+menuInsertUNIX	Insert LF/0A (&Unix/macOS)	插入 LF/0A (&Unix/macOS)	LF/0A を挿入 (&Unix/macOS)	LF/0A 삽입 (&Unix/macOS)	LF/0A einfügen (&Unix/macOS)	Insertar LF/0A (&Unix/macOS)	Insérer LF/0A (&Unix/macOS)	Inserisci LF/0A (&Unix/macOS)	Inserir LF/0A (&Unix/macOS)
+menuConvertEncoding	Convert Encoding (&E)...	转换文件编码(&E)...	文字コードを変換(&E)...	인코딩 변환(&E)...	Kodierung umwandeln (&E)...	Convertir codificación (&E)...	Convertir l'encodage (&E)...	Converti codifica (&E)...	Converter codificação (&E)...
+menuConvertChineseSafe	Safe Mode	安全模式	安全モード	안전 모드	Sicherer Modus	Modo seguro	Mode sécurisé	Modalità sicura	Modo seguro
+menuSimp2TradChinese	File: Simplified to Traditional (&T)	文件：简体中文转繁体中文(&T)	ファイル：簡体字中国語を繁体字に(&T)	파일: 간체를 번체로(&T)	Datei: Vereinfacht zu Traditionell (&T)	Archivo: simplificado a tradicional (&T)	Fichier : simplifié vers traditionnel (&T)	File: semplificato in tradizionale (&T)	Ficheiro: simplificado para tradicional (&T)
+menuTrad2SimpChinese	File: Traditional to Simplified (&S)	文件：繁体中文转简体中文(&S)	ファイル：繁体字中国語を簡体字に(&S)	파일: 번체를 간체로(&S)	Datei: Traditionell zu Vereinfacht (&S)	Archivo: tradicional a simplificado (&S)	Fichier : traditionnel vers simplifié (&S)	File: tradizionale in semplificato (&S)	Ficheiro: tradicional para simplificado (&S)
+menuKanji2TradChinese	File: Japanese Kanji to Traditional (&A)	文件：日文汉字转繁体中文(&A)	ファイル：日本の漢字を繁体字に(&A)	파일: 일본 한자를 번체로(&A)	Datei: Japanische Kanji zu Traditionell (&A)	Archivo: kanji a tradicional (&A)	Fichier : kanji vers traditionnel (&A)	File: kanji in tradizionale (&A)	Ficheiro: kanji para tradicional (&A)
+menuKanji2SimpChinese	File: Japanese Kanji to Simplified (&M)	文件：日文汉字转简体中文(&M)	ファイル：日本の漢字を簡体字に(&M)	파일: 일본 한자를 간체로(&M)	Datei: Japanische Kanji zu Vereinfacht (&M)	Archivo: kanji a simplificado (&M)	Fichier : kanji vers simplifié (&M)	File: kanji in semplificato (&M)	Ficheiro: kanji para simplificado (&M)
+menuChinese2Kanji	File: Chinese to Japanese Kanji (&J)	文件：中文转日文汉字(&J)	ファイル：中国語を日本の漢字に(&J)	파일: 중국어를 일본 한자로(&J)	Datei: Chinesisch zu Kanji (&J)	Archivo: chino a kanji (&J)	Fichier : chinois vers kanji (&J)	File: cinese in kanji (&J)	Ficheiro: chinês para kanji (&J)
+menuSimp2TradClipboard	Clipboard: Simplified to Traditional (&R)	剪贴板：简体中文转繁体中文(&R)	クリップボード：簡体字を繁体字に(&R)	클립보드: 간체를 번체로(&R)	Zwischenablage: Vereinfacht zu Traditionell (&R)	Portapapeles: simplificado a tradicional (&R)	Presse-papiers : simplifié vers traditionnel (&R)	Appunti: semplificato in tradizionale (&R)	Área de transferência: simplificado para tradicional (&R)
+menuTrad2SimpClipboard	Clipboard: Traditional to Simplified (&I)	剪贴板：繁体中文转简体中文(&I)	クリップボード：繁体字を簡体字に(&I)	클립보드: 번체를 간체로(&I)	Zwischenablage: Traditionell zu Vereinfacht (&I)	Portapapeles: tradicional a simplificado (&I)	Presse-papiers : traditionnel vers simplifié (&I)	Appunti: tradizionale in semplificato (&I)	Área de transferência: tradicional para simplificado (&I)
+menuKanji2TradClipboard	Clipboard: Japanese Kanji to Traditional (&D)	剪贴板：日文汉字转繁体中文(&D)	クリップボード：日本の漢字を繁体字に(&D)	클립보드: 일본 한자를 번체로(&D)	Zwischenablage: Kanji zu Traditionell (&D)	Portapapeles: kanji a tradicional (&D)	Presse-papiers : kanji vers traditionnel (&D)	Appunti: kanji in tradizionale (&D)	Área de transferência: kanji para tradicional (&D)
+menuKanji2SimpClipboard	Clipboard: Japanese Kanji to Simplified (&P)	剪贴板：日文汉字转简体中文(&P)	クリップボード：日本の漢字を簡体字に(&P)	클립보드: 일본 한자를 간체로(&P)	Zwischenablage: Kanji zu Vereinfacht (&P)	Portapapeles: kanji a simplificado (&P)	Presse-papiers : kanji vers simplifié (&P)	Appunti: kanji in semplificato (&P)	Área de transferência: kanji para simplificado (&P)
+menuChinese2KanjiClipboard	Clipboard: Chinese to Japanese Kanji (&K)	剪贴板：中文转日文汉字(&K)	クリップボード：中国語を日本の漢字に(&K)	클립보드: 중국어를 일본 한자로(&K)	Zwischenablage: Chinesisch zu Kanji (&K)	Portapapeles: chino a kanji (&K)	Presse-papiers : chinois vers kanji (&K)	Appunti: cinese in kanji (&K)	Área de transferência: chinês para kanji (&K)
+menuMarkdown2Html	Markdown to HTML (&M)	Markdown 转 HTML(&M)	Markdown を HTML に(&M)	Markdown을 HTML로(&M)	Markdown zu HTML (&M)	Markdown a HTML (&M)	Markdown vers HTML (&M)	Markdown in HTML (&M)	Markdown para HTML (&M)
+menuHtml2PlainText	HTML to Plain Text (&H)	HTML 转纯文本(&H)	HTML をプレーンテキストに(&H)	HTML을 일반 텍스트로(&H)	HTML zu reinem Text (&H)	HTML a texto sin formato (&H)	HTML vers texte brut (&H)	HTML in testo semplice (&H)	HTML para texto simples (&H)
+menuAstyleFormat	AStyle Format (C++/C#/Java/ObjC) (&A)	AStyle 格式化（C++/C#/Java/ObjC）(&A)	AStyle 整形（C++/C#/Java/ObjC）(&A)	AStyle 서식(C++/C#/Java/ObjC)(&A)	AStyle-Formatierung (C++/C#/Java/ObjC) (&A)	Formato AStyle (C++/C#/Java/ObjC) (&A)	Mise en forme AStyle (C++/C#/Java/ObjC) (&A)	Formato AStyle (C++/C#/Java/ObjC) (&A)	Formatação AStyle (C++/C#/Java/ObjC) (&A)
+menuXMLFormat	Format XML (&X)	XML 格式化(&X)	XML を整形(&X)	XML 서식(&X)	XML formatieren (&X)	Formatear XML (&X)	Mettre en forme le XML (&X)	Formatta XML (&X)	Formatar XML (&X)
+menuJSONFormat	Format JSON (&J)	JSON 格式化(&J)	JSON を整形(&J)	JSON 서식(&J)	JSON formatieren (&J)	Formatear JSON (&J)	Mettre en forme le JSON (&J)	Formatta JSON (&J)	Formatar JSON (&J)
+menuWordCount	Word Count (&W)...	字数统计(&W)...	文字数(&W)...	단어 수(&W)...	Wörter zählen (&W)...	Contar palabras (&W)...	Statistiques (&W)...	Conteggio parole (&W)...	Contagem de palavras (&W)...
+menuToggleWindow	Switch Window (&T)	切换窗口(&T)	ウィンドウを切り替え(&T)	창 전환(&T)	Fenster wechseln (&T)	Cambiar de ventana (&T)	Changer de fenêtre (&T)	Cambia finestra (&T)	Mudar de janela (&T)
+menuPreviousWindow	Previous Window (&P)	上一个窗口(&P)	前のウィンドウ(&P)	이전 창(&P)	Vorheriges Fenster (&P)	Ventana anterior (&P)	Fenêtre précédente (&P)	Finestra precedente (&P)	Janela anterior (&P)
+menuNextWindow	Next Window (&N)	下一个窗口(&N)	次のウィンドウ(&N)	다음 창(&N)	Nächstes Fenster (&N)	Ventana siguiente (&N)	Fenêtre suivante (&N)	Finestra successiva (&N)	Janela seguinte (&N)
+menuWindowList	Window List (&W)...	窗口列表(&W)...	ウィンドウ一覧(&W)...	창 목록(&W)...	Fensterliste (&W)...	Lista de ventanas (&W)...	Liste des fenêtres (&W)...	Elenco finestre (&W)...	Lista de janelas (&W)...
+menuAbout	About MadEdit (&A)...	关于 MadEdit(&A)...	MadEdit について(&A)...	MadEdit 정보(&A)...	Über MadEdit (&A)...	Acerca de MadEdit (&A)...	À propos de MadEdit (&A)...	Informazioni su MadEdit (&A)...	Sobre o MadEdit (&A)...
+menuSwitchTab1	Switch to Tab 1	切换到第 1 个标签页	1 番目のタブへ	1번째 탭으로	Zu Registerkarte 1	Ir a la pestaña 1	Aller à l'onglet 1	Vai alla scheda 1	Ir para o separador 1
+menuSwitchTab2	Switch to Tab 2	切换到第 2 个标签页	2 番目のタブへ	2번째 탭으로	Zu Registerkarte 2	Ir a la pestaña 2	Aller à l'onglet 2	Vai alla scheda 2	Ir para o separador 2
+menuSwitchTab3	Switch to Tab 3	切换到第 3 个标签页	3 番目のタブへ	3번째 탭으로	Zu Registerkarte 3	Ir a la pestaña 3	Aller à l'onglet 3	Vai alla scheda 3	Ir para o separador 3
+menuSwitchTab4	Switch to Tab 4	切换到第 4 个标签页	4 番目のタブへ	4번째 탭으로	Zu Registerkarte 4	Ir a la pestaña 4	Aller à l'onglet 4	Vai alla scheda 4	Ir para o separador 4
+menuSwitchTab5	Switch to Tab 5	切换到第 5 个标签页	5 番目のタブへ	5번째 탭으로	Zu Registerkarte 5	Ir a la pestaña 5	Aller à l'onglet 5	Vai alla scheda 5	Ir para o separador 5
+menuSwitchTab6	Switch to Tab 6	切换到第 6 个标签页	6 番目のタブへ	6번째 탭으로	Zu Registerkarte 6	Ir a la pestaña 6	Aller à l'onglet 6	Vai alla scheda 6	Ir para o separador 6
+menuSwitchTab7	Switch to Tab 7	切换到第 7 个标签页	7 番目のタブへ	7번째 탭으로	Zu Registerkarte 7	Ir a la pestaña 7	Aller à l'onglet 7	Vai alla scheda 7	Ir para o separador 7
+menuSwitchTab8	Switch to Tab 8	切换到第 8 个标签页	8 番目のタブへ	8번째 탭으로	Zu Registerkarte 8	Ir a la pestaña 8	Aller à l'onglet 8	Vai alla scheda 8	Ir para o separador 8
+menuSwitchLastTab	Switch to Last Tab	切换到最后一个标签页	最後のタブへ	마지막 탭으로	Zur letzten Registerkarte	Ir a la última pestaña	Aller au dernier onglet	Vai all'ultima scheda	Ir para o último separador
+lang.system	System	跟随系统	システムに合わせる	시스템 언어	Systemsprache	Idioma del sistema	Langue du système	Lingua di sistema	Idioma do sistema
+menu.file	File (F)	文件(F)	ファイル(F)	파일(F)	Datei (F)	Archivo (F)	Fichier (F)	File (F)	Ficheiro (F)
+menu.edit	Edit (E)	编辑(E)	編集(E)	편집(E)	Bearbeiten (E)	Editar (E)	Édition (E)	Modifica (E)	Editar (E)
+menu.search	Search (S)	搜索(S)	検索(S)	검색(S)	Suchen (S)	Buscar (S)	Recherche (S)	Cerca (S)	Localizar (S)
+menu.view	View (V)	查看(V)	表示(V)	보기(V)	Ansicht (V)	Ver (V)	Affichage (V)	Visualizza (V)	Ver (V)
+menu.macro	Macro (M)	宏(M)	マクロ(M)	매크로(M)	Makro (M)	Macro (M)	Macro (M)	Macro (M)	Macro (M)
+menu.tools	Tools (T)	工具(T)	ツール(T)	도구(T)	Extras (T)	Herramientas (T)	Outils (T)	Strumenti (T)	Ferramentas (T)
+menu.window	Window (W)	窗口(W)	ウィンドウ(W)	창(W)	Fenster (W)	Ventana (W)	Fenêtre (W)	Finestra (W)	Janela (W)
+menu.help	Help (H)	帮助(H)	ヘルプ(H)	도움말(H)	Hilfe (H)	Ayuda (H)	Aide (H)	Guida (H)	Ajuda (H)
+menu.recent	Recent Files	最近使用的文件	最近使ったファイル	최근 파일	Zuletzt verwendet	Archivos recientes	Fichiers récents	File recenti	Ficheiros recentes
+menu.none	(None)	（无）	（なし）	(없음)	(Keine)	(Ninguno)	(Aucun)	(Nessuno)	(Nenhum)
+menu.bookmarks	Bookmarks	书签	ブックマーク	책갈피	Lesezeichen	Marcadores	Signets	Segnalibri	Marcadores
+menu.advanced	Advanced	高级	詳細	고급	Erweitert	Avanzado	Avancé	Avanzate	Avançado
+menu.sort	Sort	排序	並べ替え	정렬	Sortieren	Ordenar	Trier	Ordina	Ordenar
+menu.encoding	Encoding: {q}	编码：{q}	エンコーディング：{q}	인코딩: {q}	Kodierung: {q}	Codificación: {q}	Encodage : {q}	Codifica: {q}	Codificação: {q}
+menu.all_encodings	All Encodings	所有编码	すべてのエンコーディング	모든 인코딩	Alle Kodierungen	Todas las codificaciones	Tous les encodages	Tutte le codifiche	Todas as codificações
+menu.syntax	Syntax: {q}	语法类型：{q}	構文：{q}	구문: {q}	Syntax: {q}	Sintaxis: {q}	Syntaxe : {q}	Sintassi: {q}	Sintaxe: {q}
+menu.font_name	Font: {q}	字体名称：{q}	フォント：{q}	글꼴: {q}	Schriftart: {q}	Fuente: {q}	Police : {q}	Carattere: {q}	Tipo de letra: {q}
+menu.font_size	Font Size: {q}	字体大小：{q}	フォントサイズ：{q}	글꼴 크기: {q}	Schriftgröße: {q}	Tamaño de fuente: {q}	Taille de police : {q}	Dimensione carattere: {q}	Tamanho: {q}
+menu.other	[Other]	[其他]	[その他]	[기타]	[Andere]	[Otros]	[Autres]	[Altri]	[Outros]
+menu.tab_width	Tab Width: {q}	Tab 栏数：{q}	タブ幅：{q}	탭 너비: {q}	Tabulatorbreite: {q}	Ancho de tabulación: {q}	Largeur de tabulation : {q}	Larghezza tabulazione: {q}	Largura da tabulação: {q}
+menu.line_spacing	Line Spacing: {q}%	行距：{q}%	行間：{q}%	줄 간격: {q}%	Zeilenabstand: {q}%	Interlineado: {q}%	Interligne : {q} %	Interlinea: {q}%	Espaçamento: {q}%
+menu.toolbars	Toolbars	工具栏	ツールバー	도구 모음	Symbolleisten	Barras de herramientas	Barres d'outils	Barre degli strumenti	Barras de ferramentas
+menu.preview_as	Preview As	预览为	プレビュー	미리 보기	Vorschau als	Vista previa como	Aperçu en tant que	Anteprima come	Pré-visualizar como
+menu.local_macros	Local Macros	本机宏列表	ローカルマクロ	로컬 매크로	Lokale Makros	Macros locales	Macros locales	Macro locali	Macros locais
+menu.no_macros	(No saved macros)	（尚无已保存的宏）	（保存されたマクロはありません）	(저장된 매크로 없음)	(Keine gespeicherten Makros)	(No hay macros guardadas)	(Aucune macro enregistrée)	(Nessuna macro salvata)	(Não há macros salvas)
+menu.bom	Unicode BOM: {q}	Unicode BOM：{q}	Unicode BOM：{q}	유니코드 BOM: {q}	Unicode-BOM: {q}	BOM Unicode: {q}	BOM Unicode : {q}	BOM Unicode: {q}	BOM Unicode: {q}
+menu.bom_yes	Yes	有	あり	있음	Ja	Sí	Oui	Sì	Sim
+menu.bom_no	No	无	なし	없음	Nein	No	Non	No	Não
+menu.newline	Line Ending: {q}	换行符（文件格式）：{q}	改行（ファイル形式）：{q}	줄 바꿈(파일 형식): {q}	Zeilenende: {q}	Fin de línea: {q}	Fin de ligne : {q}	Fine riga: {q}	Fim de linha: {q}
+menu.newline_enter	Line Ending Inserted by Enter: {q}	按 Enter 插入的换行符：{q}	Enter で挿入する改行：{q}	Enter로 삽입할 줄 바꿈: {q}	Mit Enter eingefügtes Zeilenende: {q}	Fin de línea al pulsar Intro: {q}	Fin de ligne insérée par Entrée : {q}	Fine riga inserita da Invio: {q}	Fim de linha inserido pelo Enter: {q}
+menu.newline_same	The whole document uses one line ending. This matches the file format above.	整份文件使用同一种换行符，此设置与上方的文件格式相同。	文書全体で改行は1種類です。上のファイル形式と同じです。	문서 전체가 한 가지 줄 바꿈을 사용합니다. 위의 파일 형식과 같습니다.	Das ganze Dokument verwendet ein Zeilenende, wie im Dateiformat oben.	Todo el documento usa un solo fin de línea, igual que el formato de arriba.	Tout le document utilise une seule fin de ligne, identique au format ci-dessus.	L'intero documento usa un solo fine riga, uguale al formato sopra.	O documento inteiro usa um só fim de linha, igual ao formato acima.
+menu.chinese	Chinese Conversion	简繁转换	中国語変換	중국어 변환	Chinesische Umwandlung	Conversión chino	Conversion chinoise	Conversione cinese	Conversão de chinês
+menu.convert	Text Conversion / Format	文字转换／格式化	文字変換／整形	텍스트 변환/서식	Textumwandlung / Format	Conversión / formato de texto	Conversion / mise en forme	Conversione / formato testo	Conversão / formatação de texto
+menu.language	Language	界面语言	表示言語	언어	Sprache	Idioma	Langue	Lingua	Idioma
+st.line	Line {n}/{q}	行 {n}/{q}	行 {n}/{q}	줄 {n}/{q}	Zeile {n}/{q}	Línea {n}/{q}	Ligne {n}/{q}	Riga {n}/{q}	Linha {n}/{q}
+st.col	Col {n}	栏 {n}	列 {n}	열 {n}	Spalte {n}	Col {n}	Col {n}	Col {n}	Col {n}
+st.offset	Offset {n} / {q}	位移 {n} / {q}	位置 {n} / {q}	오프셋 {n} / {q}	Offset {n} / {q}	Desplazamiento {n} / {q}	Décalage {n} / {q}	Offset {n} / {q}	Deslocamento {n} / {q}
+st.sel	Sel {n}	选取 {n}	選択 {n}	선택 {n}	Auswahl {n}	Sel {n}	Sél. {n}	Sel {n}	Sel {n}
+st.char	Char {n}	字符 {n}	文字 {n}	문자 {n}	Zeichen {n}	Car. {n}	Car. {n}	Car. {n}	Car. {n}
+st.block	Block {n}×{q}	列块 {n}×{q}	矩形 {n}×{q}	블록 {n}×{q}	Block {n}×{q}	Bloque {n}×{q}	Bloc {n}×{q}	Blocco {n}×{q}	Bloco {n}×{q}
+st.mixed	(mixed)	(混合)	（混在）	(혼합)	(gemischt)	(mixto)	(mixte)	(misto)	(misto)
+st.text	Text	文本	テキスト	텍스트	Text	Texto	Texte	Testo	Texto
+st.column	Column	列块	矩形	열 블록	Spalte	Columna	Colonne	Colonna	Coluna
+st.hex	Hex	十六进制	16進	16진수	Hex	Hex	Hex	Hex	Hex
+st.readonly	Read-only	只读	読み取り専用	읽기 전용	Schreibgeschützt	Solo lectura	Lecture seule	Sola lettura	Somente leitura
+st.writable	Writable	可写	書き込み可	쓰기 가능	Beschreibbar	Editable	Modifiable	Modificabile	Gravável
+st.selecting	Selecting	选取中	選択中	선택 중	Auswahl	Seleccionando	Sélection	Selezione	Selecionando
+st.recording	● Recording	● 录制宏	● 記録中	● 기록 중	● Aufnahme	● Grabando	● Enregistrement	● Registrazione	● Gravando
+st.unsaved	Unsaved	尚未保存	未保存	저장되지 않음	Nicht gespeichert	Sin guardar	Non enregistré	Non salvato	Não salvo
+find.find	Find:	查找：	検索：	찾기:	Suchen:	Buscar:	Rechercher :	Trova:	Localizar:
+find.hex_hint	Hex, e.g. 4D 61 64	十六进制，例如 4D 61 64	16進、例 4D 61 64	16진수, 예: 4D 61 64	Hex, z. B. 4D 61 64	Hexadecimal, p. ej. 4D 61 64	Hexadécimal, p. ex. 4D 61 64	Esadecimale, es. 4D 61 64	Hexadecimal, p. ex. 4D 61 64
+find.prev	◀ Previous	◀ 上一个	◀ 前へ	◀ 이전	◀ Zurück	◀ Anterior	◀ Précédent	◀ Precedente	◀ Anterior
+find.next	Next ▶	下一个 ▶	次へ ▶	다음 ▶	Weiter ▶	Siguiente ▶	Suivant ▶	Successivo ▶	Próxima ▶
+find.count	Count	计数	件数	개수	Zählen	Contar	Compter	Conta	Contar
+find.case	Match Case	大小写	大文字小文字	대소문자	Groß/Klein	Mayúsculas	Casse	Maiuscole	Maiúsculas
+find.word	Whole Word	全字	単語単位	단어 단위	Ganzes Wort	Palabra completa	Mot entier	Parola intera	Palavra inteira
+find.regex	Regex	正则	正規表現	정규식	Regex	Regex	Regex	Regex	Regex
+find.hex	Hex	十六进制	16進	16진수	Hex	Hex	Hex	Hex	Hex
+find.wrap	Wrap Around	循环	折り返す	순환	Umlaufend	Circular	Boucler	Ciclico	Circular
+find.replace_toggle	Replace…	替换…	置換…	바꾸기…	Ersetzen…	Reemplazar…	Remplacer…	Sostituisci…	Substituir…
+find.close	Close (Esc)	关闭 (Esc)	閉じる (Esc)	닫기 (Esc)	Schließen (Esc)	Cerrar (Esc)	Fermer (Échap)	Chiudi (Esc)	Fechar (Esc)
+find.replace	Replace:	替换为：	置換：	바꿀 내용:	Ersetzen:	Reemplazar:	Remplacer :	Sostituisci:	Substituir:
+find.replace_btn	Replace	替换	置換	바꾸기	Ersetzen	Reemplazar	Remplacer	Sostituisci	Substituir
+find.replace_all	Replace All	全部替换	すべて置換	모두 바꾸기	Alle ersetzen	Reemplazar todo	Tout remplacer	Sostituisci tutto	Substituir tudo
+find.in_selection	In Selection	只在选取范围内	選択範囲内のみ	선택 영역만	Nur in Auswahl	Solo en la selección	Dans la sélection	Solo nella selezione	Só na seleção
+find.quick	Quick find	快速搜索	クイック検索	빠른 검색	Schnellsuche	Búsqueda rápida	Recherche rapide	Ricerca rapida	Localização rápida
+find.goto_pos	Go to offset (bytes, 0x allowed):	转到位置（字节，可用 0x 十六进制）：	位置へ移動（バイト、0x 可）：	위치로 이동(바이트, 0x 가능):	Gehe zu Offset (Bytes, 0x erlaubt):	Ir al desplazamiento (bytes, se admite 0x):	Aller au décalage (octets, 0x accepté) :	Vai all'offset (byte, 0x ammesso):	Ir para o deslocamento (bytes, 0x permitido):
+find.goto_line	Go to line (line or line:column):	转到行（行号 或 行:栏）：	行へ移動（行 または 行:列）：	줄로 이동(줄 또는 줄:열):	Gehe zu Zeile (Zeile oder Zeile:Spalte):	Ir a la línea (línea o línea:columna):	Aller à la ligne (ligne ou ligne:colonne) :	Vai alla riga (riga o riga:colonna):	Ir para a linha (linha ou linha:coluna):
+find.go	Go	前往	移動	이동	Gehe	Ir	Aller	Vai	Ir
+find.by_bytes	By byte offset	按字节位置	バイト位置	바이트 위치	Nach Byte-Offset	Por posición en bytes	Par position en octets	Per posizione in byte	Por posição em bytes
+find.not_found	Not found	找不到符合的文字	見つかりません	찾을 수 없습니다	Nicht gefunden	No se encontró	Introuvable	Non trovato	Não encontrado
+find.not_found_q	Not found: {q}	找不到「{q}」	見つかりません：{q}	찾을 수 없음: {q}	Nicht gefunden: {q}	No se encontró: {q}	Introuvable : {q}	Non trovato: {q}	Não encontrado: {q}
+find.wrapped	Continued from the other end	已从另一端继续搜索	端から続けて検索しました	다른 끝에서 계속 검색했습니다	Am anderen Ende fortgesetzt	Continuado desde el otro extremo	Repris depuis l'autre extrémité	Continuato dall'altra estremità	Continuado a partir da outra extremidade
+find.bad_encoding	Current encoding cannot represent the search text	目前编码无法表示搜索文字	現在の文字コードでは検索文字列を表せません	현재 인코딩으로 검색 텍스트를 표현할 수 없습니다	Die Kodierung kann den Suchtext nicht darstellen	La codificación no puede representar el texto	L'encodage ne peut pas représenter le texte	La codifica non può rappresentare il testo	A codificação não pode representar o texto
+find.no_bytes	No matching bytes	找不到符合的数据	一致するデータがありません	일치하는 데이터 없음	Keine passenden Bytes	No hay datos coincidentes	Aucune donnée correspondante	Nessun dato corrispondente	Nenhum dado correspondente
+find.count_n	{n} matches	共 {n} 个符合	{n} 件一致	{n}개 일치	{n} Treffer	{n} coincidencias	{n} correspondances	{n} corrispondenze	{n} correspondências
+find.offset	Offset {q}	位移 {q}	位置 {q}	오프셋 {q}	Offset {q}	Desplazamiento {q}	Décalage {q}	Offset {q}	Deslocamento {q}
+find.replaced	Replaced {n}	已替换 {n} 处	{n} 件置換しました	{n}곳을 바꿨습니다	{n} ersetzt	{n} reemplazos	{n} remplacements	{n} sostituzioni	{n} substituições
+find.bad_number	Invalid number: {q}	无效的数字：{q}	無効な数値：{q}	잘못된 숫자: {q}	Ungültige Zahl: {q}	Número no válido: {q}	Nombre invalide : {q}	Numero non valido: {q}	Número inválido: {q}
+btn.ok	OK	确定	OK	확인	OK	Aceptar	OK	OK	OK
+btn.cancel	Cancel	取消	キャンセル	취소	Abbrechen	Cancelar	Annuler	Annulla	Cancelar
+btn.apply	Apply	应用	適用	적용	Übernehmen	Aplicar	Appliquer	Applica	Aplicar
+btn.close	Close	关闭	閉じる	닫기	Schließen	Cerrar	Fermer	Chiudi	Fechar
+btn.save	Save	保存	保存	저장	Speichern	Guardar	Enregistrer	Salva	Salvar
+btn.dont_save	Don't Save	不保存	保存しない	저장 안 함	Nicht speichern	No guardar	Ne pas enregistrer	Non salvare	Não salvar
+btn.reload	Reload	重新加载	再読み込み	다시 로드	Neu laden	Recargar	Recharger	Ricarica	Recarregar
+btn.ignore	Ignore	忽略	無視	무시	Ignorieren	Ignorar	Ignorer	Ignora	Ignorar
+btn.overwrite	Overwrite	覆盖	上書き	덮어쓰기	Überschreiben	Sobrescribir	Écraser	Sovrascrivi	Substituir
+btn.remove	Remove	移除	削除	제거	Entfernen	Quitar	Retirer	Rimuovi	Remover
+btn.restore	Restore Defaults	还原默认	既定に戻す	기본값 복원	Standard wiederherstellen	Restaurar predeterminados	Rétablir les valeurs par défaut	Ripristina predefiniti	Restaurar padrão
+btn.add_shortcut	Add Shortcut…	新增快捷键…	ショートカットを追加…	단축키 추가…	Tastenkürzel hinzufügen…	Añadir atajo…	Ajouter un raccourci…	Aggiungi scorciatoia…	Adicionar atalho…
+btn.save_anyway	Save Anyway	仍要保存	それでも保存	그래도 저장	Trotzdem speichern	Guardar de todos modos	Enregistrer quand même	Salva comunque	Salvar mesmo assim
+btn.save_utf8	Save as UTF-8	改用 UTF-8 保存	UTF-8 で保存	UTF-8로 저장	Als UTF-8 speichern	Guardar como UTF-8	Enregistrer en UTF-8	Salva come UTF-8	Salvar como UTF-8
+btn.reload_discard	Reload (discard my changes)	重新加载（放弃我的修改）	再読み込み（自分の変更を破棄）	다시 로드(내 변경 버리기)	Neu laden (meine Änderungen verwerfen)	Recargar (descartar mis cambios)	Recharger (abandonner mes modifications)	Ricarica (annulla le mie modifiche)	Recarregar (descartar as minhas alterações)
+btn.close_list	Close List	关闭列表	一覧を閉じる	목록 닫기	Liste schließen	Cerrar lista	Fermer la liste	Chiudi elenco	Fechar lista
+banner.modified	The file was modified by another program.	文件已被其他程序修改。	他のプログラムがファイルを変更しました。	다른 프로그램이 파일을 수정했습니다.	Die Datei wurde von einem anderen Programm geändert.	Otro programa ha modificado el archivo.	Un autre programme a modifié le fichier.	Un altro programma ha modificato il file.	Outro programa modificou o ficheiro.
+banner.deleted	The file was deleted or moved by another program.	文件已被其他程序删除或移动。	他のプログラムがファイルを削除または移動しました。	다른 프로그램이 파일을 삭제하거나 옮겼습니다.	Die Datei wurde gelöscht oder verschoben.	El archivo fue eliminado o movido.	Le fichier a été supprimé ou déplacé.	Il file è stato eliminato o spostato.	O ficheiro foi apagado ou movido.
+banner.lose	Reloading will discard unsaved changes.	重新加载会丢失目前未保存的修改。	再読み込みすると未保存の変更が失われます。	다시 로드하면 저장하지 않은 변경이 사라집니다.	Neu laden verwirft ungespeicherte Änderungen.	Recargar descartará los cambios sin guardar.	Recharger annulera les modifications non enregistrées.	Ricaricare annullerà le modifiche non salvate.	Recarregar descarta as alterações não salvas.
+confirm.unsaved	Unsaved Changes	尚未保存	未保存	저장되지 않음	Nicht gespeichert	Cambios sin guardar	Modifications non enregistrées	Modifiche non salvate	Alterações não salvas
+confirm.save_ask	“{q}” has been modified. Save it?	「{q}」已修改，要保存吗？	「{q}」は変更されています。保存しますか？	"{q}"이(가) 수정되었습니다. 저장할까요?	„{q}“ wurde geändert. Speichern?	«{q}» se ha modificado. ¿Guardarlo?	« {q} » a été modifié. L'enregistrer ?	«{q}» è stato modificato. Salvarlo?	“{q}” foi modificado. Salvar?
+confirm.lossy_title	Saving may lose data	保存可能丢失数据	保存するとデータが失われる可能性があります	저장하면 데이터가 손실될 수 있습니다	Speichern kann Daten verlieren	Guardar puede perder datos	L'enregistrement peut perdre des données	Il salvataggio può perdere dati	Salvar pode perder dados
+confirm.lossy_body	This document has bytes that cannot be decoded with the current encoding (shown as �). Saving replaces them with U+FFFD and the original bytes are lost.	这份文件含有无法以目前编码解码的字节（显示为 �）。直接保存会以 U+FFFD 取代，原始字节将永久丢失。	現在の文字コードで復号できないバイトがあります（� と表示）。保存すると U+FFFD に置き換わり、元のバイトは失われます。	현재 인코딩으로 디코딩할 수 없는 바이트가 있습니다(�로 표시). 저장하면 U+FFFD로 바뀌고 원래 바이트는 사라집니다.	Diese Datei enthält Bytes, die sich mit der Kodierung nicht dekodieren lassen (angezeigt als �). Beim Speichern werden sie zu U+FFFD und die Originalbytes gehen verloren.	Este documento tiene bytes que no se pueden decodificar (se muestran como �). Al guardar se sustituyen por U+FFFD y se pierden los bytes originales.	Ce document contient des octets indécodables (affichés comme �). Les enregistrer les remplace par U+FFFD et les octets d'origine sont perdus.	Questo documento ha byte non decodificabili (mostrati come �). Salvare li sostituisce con U+FFFD e i byte originali vanno persi.	Este documento tem bytes que não podem ser descodificados (mostrados como �). Salvar substitui-os por U+FFFD e os bytes originais perdem-se.
+confirm.lossy_hint	Choose the correct encoding under View → Encoding and reinterpret first.	建议先以「查看 → 编码」选择正确的编码重新解码。	先に「表示 → エンコーディング」で正しい文字コードを選び、再解釈してください。	먼저 보기 → 인코딩에서 올바른 인코딩으로 다시 해석하세요.	Wählen Sie zuerst unter Ansicht → Kodierung die richtige Kodierung.	Elija primero la codificación correcta en Ver → Codificación.	Choisissez d'abord le bon encodage dans Affichage → Encodage.	Scegli prima la codifica corretta in Visualizza → Codifica.	Escolha primeiro a codificação correta em Ver → Codificação.
+confirm.unmappable_title	Cannot save with the current encoding	无法以目前编码保存	現在の文字コードでは保存できません	현재 인코딩으로 저장할 수 없습니다	Speichern mit dieser Kodierung nicht möglich	No se puede guardar con la codificación actual	Impossible d'enregistrer avec cet encodage	Impossibile salvare con la codifica attuale	Não é possível salvar com a codificação atual
+confirm.unmappable_hint	You can save as UTF-8, or cancel and edit the text.	可改用 UTF-8 保存，或取消后修改内容。	UTF-8 で保存するか、キャンセルして内容を修正できます。	UTF-8로 저장하거나 취소한 뒤 내용을 고칠 수 있습니다.	Sie können als UTF-8 speichern oder abbrechen und den Text ändern.	Puede guardar como UTF-8 o cancelar y editar el texto.	Vous pouvez enregistrer en UTF-8, ou annuler et modifier le texte.	Puoi salvare come UTF-8 oppure annullare e modificare il testo.	Pode salvar como UTF-8 ou cancelar e editar o texto.
+confirm.external_title	File changed on disk	文件已被其他程序修改	ディスク上のファイルが変更されました	디스크의 파일이 변경됨	Datei auf dem Datenträger geändert	El archivo cambió en el disco	Le fichier a changé sur le disque	Il file è cambiato sul disco	O ficheiro mudou no disco
+confirm.external_body	The file on disk changed after it was opened. Overwriting will discard those changes.	磁盘上的文件在打开后已被修改。覆盖会丢失其他程序所做的变更。	開いた後にディスク上のファイルが変更されています。上書きするとその変更は失われます。	연 뒤에 디스크의 파일이 바뀌었습니다. 덮어쓰면 그 변경이 사라집니다.	Die Datei wurde nach dem Öffnen geändert. Überschreiben verwirft diese Änderungen.	El archivo cambió después de abrirlo. Sobrescribir descarta esos cambios.	Le fichier a changé après l'ouverture. L'écraser annule ces changements.	Il file è cambiato dopo l'apertura. Sovrascriverlo annulla quelle modifiche.	O ficheiro mudou depois de aberto. Substituí-lo descarta essas alterações.
+confirm.reload_title	Reload	重新加载	再読み込み	다시 로드	Neu laden	Recargar	Recharger	Ricarica	Recarregar
+confirm.reload_body	Reload and discard unsaved changes?	重新加载会放弃目前未保存的修改，确定吗？	未保存の変更を破棄して再読み込みしますか？	저장하지 않은 변경을 버리고 다시 로드할까요?	Neu laden und ungespeicherte Änderungen verwerfen?	¿Recargar y descartar los cambios sin guardar?	Recharger et abandonner les modifications non enregistrées ?	Ricaricare e annullare le modifiche non salvate?	Recarregar e descartar as alterações não salvas?
+spell.none	(No suggestions)	（没有建议）	（候補なし）	(제안 없음)	(Keine Vorschläge)	(Sin sugerencias)	(Aucune suggestion)	(Nessun suggerimento)	(Sem sugestões)
+spell.add	Add “{q}” to dictionary	将「{q}」加入字典	「{q}」を辞書に追加	"{q}"을(를) 사전에 추가	„{q}“ zum Wörterbuch hinzufügen	Añadir «{q}» al diccionario	Ajouter « {q} » au dictionnaire	Aggiungi «{q}» al dizionario	Adicionar “{q}” ao dicionário
+about.title	About MadEdit	关于 MadEdit	MadEdit について	MadEdit 정보	Über MadEdit	Acerca de MadEdit	À propos de MadEdit	Informazioni su MadEdit	Sobre o MadEdit
+about.tagline	A text and hex editor rewritten in Rust and egui.	用 Rust 与 egui 重制的文本／十六进制编辑器。	Rust と egui で作り直したテキスト／16進エディタです。	Rust와 egui로 다시 만든 텍스트/16진 편집기입니다.	Ein in Rust und egui neu geschriebener Text- und Hex-Editor.	Un editor de texto y hexadecimal reescrito en Rust y egui.	Un éditeur texte et hexadécimal réécrit en Rust et egui.	Un editor di testo ed esadecimale riscritto in Rust ed egui.	Um editor de texto e hexadecimal reescrito em Rust e egui.
+about.credit	The original MadEdit was created by Alston Chen. MadEdit-Mod is maintained by Minggang Li (GPL).	原版 MadEdit 由 Alston Chen 开发，MadEdit-Mod 由 Minggang Li 维护（GPL）。	原版 MadEdit は Alston Chen が開発し、MadEdit-Mod は Minggang Li が保守しています（GPL）。	원본 MadEdit은 Alston Chen이 만들었고, MadEdit-Mod는 Minggang Li가 유지합니다(GPL).	Das ursprüngliche MadEdit stammt von Alston Chen. MadEdit-Mod wird von Minggang Li gepflegt (GPL).	El MadEdit original es de Alston Chen. MadEdit-Mod lo mantiene Minggang Li (GPL).	Le MadEdit d'origine est d'Alston Chen. MadEdit-Mod est maintenu par Minggang Li (GPL).	Il MadEdit originale è di Alston Chen. MadEdit-Mod è mantenuto da Minggang Li (GPL).	O MadEdit original é de Alston Chen. O MadEdit-Mod é mantido por Minggang Li (GPL).
+about.assets	Toolbar icons, Chinese conversion tables, and spelling dictionaries come from the original project.	工具栏图标、简繁对照表与拼写字典取自原版。	ツールバーアイコン、簡繁対照表、スペル辞書は原版のものです。	도구 모음 아이콘, 간체/번체 표, 맞춤법 사전은 원본에서 가져왔습니다.	Symbole, Umwandlungstabellen und Wörterbücher stammen aus dem Original.	Los iconos, las tablas de conversión y los diccionarios proceden del original.	Les icônes, tables de conversion et dictionnaires viennent du projet d'origine.	Icone, tabelle di conversione e dizionari provengono dall'originale.	Ícones, tabelas de conversão e dicionários vêm do projeto original.
+dlg.options	Options	选项	オプション	옵션	Optionen	Opciones	Options	Opzioni	Opções
+dlg.font	Font	字体	フォント	글꼴	Schriftart	Fuente	Police	Carattere	Tipo de letra
+dlg.page	Page Setup	页面设置	ページ設定	페이지 설정	Seite einrichten	Configurar página	Mise en page	Imposta pagina	Configurar página
+dlg.recent	Recent Files	最近使用的文件	最近使ったファイル	최근 파일	Zuletzt verwendet	Archivos recientes	Fichiers récents	File recenti	Ficheiros recentes
+dlg.fullwidth	To Fullwidth by Options	按选项转为全角	オプションに従って全角に	옵션대로 전각으로	Volle Breite nach Optionen	A ancho completo según opciones	Pleine chasse selon les options	Larghezza intera in base alle opzioni	Largura inteira conforme opções
+dlg.halfwidth	To Halfwidth by Options	按选项转为半角	オプションに従って半角に	옵션대로 반각으로	Halbe Breite nach Optionen	A ancho medio según opciones	Demi-chasse selon les options	Mezza larghezza in base alle opzioni	Meia largura conforme opções
+dlg.numbers	Insert Incremental Numbers	插入递增数字	連番を挿入	증가 숫자 삽입	Fortlaufende Zahlen einfügen	Insertar números incrementales	Insérer des nombres croissants	Inserisci numeri progressivi	Inserir números incrementais
+dlg.sort	Sort Options	排序选项	並べ替えオプション	정렬 옵션	Sortieroptionen	Opciones de ordenación	Options de tri	Opzioni di ordinamento	Opções de ordenação
+dlg.find_files	Find/Replace in Files	在文件中查找／替换	ファイル内を検索／置換	파일에서 찾기/바꾸기	In Dateien suchen/ersetzen	Buscar/reemplazar en archivos	Rechercher/remplacer dans les fichiers	Trova/sostituisci nei file	Localizar/substituir em ficheiros
+dlg.macro	Run Temporary Macro	运行临时宏	一時マクロを実行	임시 매크로 실행	Temporäres Makro ausführen	Ejecutar macro temporal	Exécuter la macro temporaire	Esegui macro temporanea	Executar macro temporária
+dlg.syntax	Syntax Highlighting	语法高亮设置	構文強調設定	구문 강조 설정	Syntaxhervorhebung	Resaltado de sintaxis	Coloration syntaxique	Evidenziazione sintassi	Realce de sintaxe
+dlg.formatter	Source Formatter (AStyle)	源代码格式化设置（AStyle）	ソース整形（AStyle）	소스 서식(AStyle)	Quelltextformatierung (AStyle)	Formato del código (AStyle)	Mise en forme (AStyle)	Formattazione (AStyle)	Formatação (AStyle)
+dlg.history	Clear History	清除历史记录	履歴を消去	기록 지우기	Verlauf löschen	Borrar el historial	Effacer l'historique	Cancella cronologia	Limpar histórico
+dlg.encoding	Convert Encoding	转换文件编码	文字コードを変換	인코딩 변환	Kodierung umwandeln	Convertir codificación	Convertir l'encodage	Converti codifica	Converter codificação
+dlg.words	Word Count	字数统计	文字数	단어 수	Wörter zählen	Contar palabras	Statistiques	Conteggio parole	Contagem de palavras
+dlg.windows	Window List	窗口列表	ウィンドウ一覧	창 목록	Fensterliste	Lista de ventanas	Liste des fenêtres	Elenco finestre	Lista de janelas
+opt.general	General	常规	一般	일반	Allgemein	General	Général	Generale	Geral
+opt.edit	Edit	编辑	編集	편집	Bearbeiten	Edición	Édition	Modifica	Edição
+opt.new	New Document	新文件	新規文書	새 문서	Neues Dokument	Documento nuevo	Nouveau document	Nuovo documento	Novo documento
+opt.print	Print	打印	印刷	인쇄	Drucken	Imprimir	Impression	Stampa	Imprimir
+opt.keys	Keys	按键	キー	키	Tasten	Teclas	Raccourcis	Tasti	Teclas
+opt.spell	Spelling	拼写检查	スペル	맞춤법	Rechtschreibung	Ortografía	Orthographe	Ortografia	Ortografia
+opt.ui_language	Language:	界面语言：	表示言語：	언어:	Sprache:	Idioma:	Langue :	Lingua:	Idioma:
+opt.default_enc	Default encoding:	默认编码：	既定の文字コード：	기본 인코딩:	Standardkodierung:	Codificación predeterminada:	Encodage par défaut :	Codifica predefinita:	Codificação padrão:
+opt.enforce_enc	Always use the default encoding (do not detect)	一律使用默认编码打开（不自动检测）	常に既定の文字コードで開く（自動判定しない）	항상 기본 인코딩으로 열기(자동 감지 안 함)	Immer die Standardkodierung verwenden (nicht erkennen)	Usar siempre la codificación predeterminada (sin detectar)	Toujours utiliser l'encodage par défaut (sans détection)	Usa sempre la codifica predefinita (senza rilevamento)	Usar sempre a codificação padrão (sem detetar)
+opt.max_mb	Text mode size limit (MB):	文本模式文件大小上限（MB）：	テキストモードの上限（MB）：	텍스트 모드 크기 제한(MB):	Größenlimit für Textmodus (MB):	Límite del modo texto (MB):	Limite du mode texte (Mo) :	Limite modalità testo (MB):	Limite do modo de texto (MB):
+opt.open_mode	Open mode:	打开模式：	開くモード：	열기 모드:	Öffnungsmodus:	Modo de apertura:	Mode d'ouverture :	Modalità di apertura:	Modo de abertura:
+opt.open_auto	Auto (binary files in hex)	自动（二进制文件用十六进制）	自動（バイナリは16進）	자동(이진 파일은 16진수)	Automatisch (Binärdateien als Hex)	Automático (binarios en hexadecimal)	Auto (binaire en hexadécimal)	Automatico (binari in esadecimale)	Automático (binários em hexadecimal)
+opt.open_text	Text mode	文本模式	テキストモード	텍스트 모드	Textmodus	Modo texto	Mode texte	Modalità testo	Modo de texto
+opt.open_column	Column mode	列块模式	矩形モード	열 블록 모드	Spaltenmodus	Modo columna	Mode colonne	Modalità colonna	Modo de coluna
+opt.open_hex	Hex mode	十六进制模式	16進モード	16진수 모드	Hex-Modus	Modo hexadecimal	Mode hexadécimal	Modalità esadecimale	Modo hexadecimal
+opt.search_chars	Max characters per search result line:	搜索结果每行最多字符：	検索結果の1行の最大文字数：	검색 결과 한 줄 최대 문자:	Max. Zeichen je Ergebniszeile:	Máx. caracteres por línea de resultado:	Caractères max. par ligne de résultat :	Caratteri max. per riga di risultato:	Máx. de caracteres por linha de resultado:
+opt.theme	Theme:	界面主题：	テーマ：	테마:	Design:	Tema:	Thème :	Tema:	Tema:
+opt.theme_system	Match System	跟随系统	システムに合わせる	시스템	System	Sistema	Système	Sistema	Sistema
+opt.theme_light	Light	浅色	ライト	밝게	Hell	Claro	Clair	Chiaro	Claro
+opt.theme_dark	Dark	深色	ダーク	어둡게	Dunkel	Oscuro	Sombre	Scuro	Escuro
+opt.editor_font	Editor font:	编辑区字体：	編集フォント：	편집기 글꼴:	Editor-Schriftart:	Fuente del editor:	Police de l'éditeur :	Carattere dell'editor:	Tipo de letra do editor:
+opt.font_auto	Automatic ({q})	自动（{q}）	自動（{q}）	자동({q})	Automatisch ({q})	Automática ({q})	Automatique ({q})	Automatico ({q})	Automático ({q})
+opt.reload_startup	Reopen files from the last session	启动时重新打开上次的文件	起動時に前回のファイルを開く	시작할 때 지난 파일 다시 열기	Dateien der letzten Sitzung erneut öffnen	Reabrir los archivos de la última sesión	Rouvrir les fichiers de la dernière session	Riapri i file dell'ultima sessione	Reabrir os ficheiros da última sessão
+opt.restore_caret	Restore the caret position when opening	打开时还原上次的光标位置	開くときにカーソル位置を復元	열 때 커서 위치 복원	Cursorposition beim Öffnen wiederherstellen	Restaurar el cursor al abrir	Restaurer le curseur à l'ouverture	Ripristina il cursore all'apertura	Restaurar o cursor ao abrir
+opt.autosave	Autosave every	自动保存，每	自動保存、間隔	자동 저장, 매	Automatisch speichern alle	Autoguardar cada	Enregistrement auto toutes les	Salvataggio automatico ogni	Salvar automaticamente a cada
+opt.minutes	minutes	分钟	分	분	Minuten	minutos	minutes	minuti	minutos
+opt.backup	Keep a backup when saving (.bak)	保存时保留备份（文件名.bak）	保存時にバックアップ（.bak）を残す	저장할 때 백업 유지(.bak)	Beim Speichern eine Sicherung behalten (.bak)	Conservar una copia al guardar (.bak)	Conserver une copie à l'enregistrement (.bak)	Conserva un backup al salvataggio (.bak)	Manter uma cópia ao salvar (.bak)
+opt.purge_exit	Clear history on exit	结束时清除历史记录	終了時に履歴を消去	종료할 때 기록 지우기	Verlauf beim Beenden löschen	Borrar el historial al salir	Effacer l'historique à la fermeture	Cancella la cronologia all'uscita	Limpar o histórico ao sair
+opt.wrap_col	Wrap column:	按栏数换行的栏数：	折り返し桁数：	줄 바꿈 열:	Umbruchspalte:	Columna de ajuste:	Colonne de retour :	Colonna di a capo:	Coluna de quebra:
+opt.tab_size	Tab width:	Tab 栏数：	タブ幅：	탭 너비:	Tabulatorbreite:	Ancho de tabulación:	Largeur de tabulation :	Larghezza tabulazione:	Largura da tabulação:
+opt.indent	Indent width:	缩进栏数：	インデント幅：	들여쓰기 너비:	Einzugsbreite:	Ancho de sangría:	Largeur de retrait :	Larghezza rientro:	Largura do recuo:
+opt.guide	Column guide position:	栏位提示线位置：	桁ガイドの位置：	열 안내선 위치:	Position der Spaltenhilfslinie:	Posición de la guía:	Position du guide :	Posizione della guida:	Posição da guia:
+opt.datetime	Date/time format:	日期时间格式：	日時の形式：	날짜/시간 형식:	Datums-/Zeitformat:	Formato de fecha y hora:	Format de date/heure :	Formato data/ora:	Formato de data/hora:
+opt.spacing	Line spacing (%):	行距（%）：	行間（%）：	줄 간격(%):	Zeilenabstand (%):	Interlineado (%):	Interligne (%) :	Interlinea (%):	Espaçamento (%):
+opt.date_preview	Date preview: {q}	日期预览：{q}	日付のプレビュー：{q}	날짜 미리 보기: {q}	Datumsvorschau: {q}	Vista previa de fecha: {q}	Aperçu de la date : {q}	Anteprima data: {q}	Pré-visualização da data: {q}
+opt.spaces_for_tab	Insert spaces instead of tabs	以空格取代 Tab	タブの代わりに空白を挿入	탭 대신 공백 삽입	Leerzeichen statt Tabulatoren	Insertar espacios en lugar de tabuladores	Insérer des espaces à la place des tabulations	Inserisci spazi al posto delle tabulazioni	Inserir espaços em vez de tabulações
+opt.auto_indent	Auto indent	自动缩进	自動インデント	자동 들여쓰기	Automatischer Einzug	Sangría automática	Retrait automatique	Rientro automatico	Recuo automático
+opt.auto_pair	Auto-complete pairs (brackets, quotes)	自动补全成对字符（括号、引号）	対応する括弧・引用符を自動補完	짝 문자 자동 완성(괄호, 따옴표)	Paare automatisch schließen (Klammern, Anführungen)	Completar pares (paréntesis, comillas)	Compléter les paires (parenthèses, guillemets)	Completa le coppie (parentesi, virgolette)	Completar pares (parênteses, aspas)
+opt.wrap_pair	When text is selected, wrap it with the pair	有选取时以成对字符包住选取内容	選択中は対応する文字で囲む	선택 영역이 있으면 짝 문자로 감싸기	Bei Auswahl das Paar darum setzen	Si hay selección, rodearla con el par	Si du texte est sélectionné, l'entourer de la paire	Se c'è una selezione, racchiudila nella coppia	Se houver seleção, envolvê-la com o par
+opt.auto_copy	Copy the mouse selection automatically	鼠标选取后自动复制	マウス選択を自動コピー	마우스로 선택하면 자동 복사	Mausauswahl automatisch kopieren	Copiar la selección del ratón	Copier automatiquement la sélection à la souris	Copia automaticamente la selezione del mouse	Copiar automaticamente a seleção do rato
+opt.middle_paste	Middle-click to paste	鼠标中键粘贴	中クリックで貼り付け	가운데 단추로 붙여넣기	Mittelklick zum Einfügen	Clic central para pegar	Clic milieu pour coller	Clic centrale per incollare	Clique do meio para colar
+opt.fill_paste	Pad short lines with spaces when pasting a block	列块粘贴时以空格补齐短行	矩形貼り付け時に短い行を空白で埋める	열 블록 붙여넣기 때 짧은 줄을 공백으로 채움	Beim Einfügen eines Blocks kurze Zeilen mit Leerzeichen füllen	Al pegar un bloque, rellenar las líneas cortas	En collant un bloc, compléter les lignes courtes	Incollando un blocco, riempi le righe corte	Ao colar um bloco, preencher as linhas curtas
+opt.double_click	Double-click highlights the same word	双击时标示相同词语	ダブルクリックで同じ語句を強調	두 번 클릭하면 같은 단어 강조	Doppelklick hebt dasselbe Wort hervor	Doble clic resalta la misma palabra	Double-clic surligne le même mot	Doppio clic evidenzia la stessa parola	Duplo clique realça a mesma palavra
+opt.typewriter	Typewriter mode (keep the caret centered)	打字机模式（光标保持在画面中央）	タイプライターモード（カーソルを中央に）	타자기 모드(커서를 화면 중앙에)	Schreibmaschinenmodus (Cursor bleibt mittig)	Modo máquina de escribir (cursor centrado)	Mode machine à écrire (curseur centré)	Modalità macchina da scrivere (cursore al centro)	Modo máquina de escrever (cursor ao centro)
+opt.fixed	Fixed-width mode	等宽模式	等幅モード	고정폭 모드	Feste Zeichenbreite	Modo de ancho fijo	Mode largeur fixe	Modalità larghezza fissa	Modo de largura fixa
+opt.encoding	Encoding:	编码：	文字コード：	인코딩:	Kodierung:	Codificación:	Encodage :	Codifica:	Codificação:
+opt.add_bom	Add BOM	加入 BOM	BOM を付ける	BOM 추가	BOM hinzufügen	Añadir BOM	Ajouter un BOM	Aggiungi BOM	Adicionar BOM
+opt.newline	Line ending:	换行符：	改行：	줄 바꿈:	Zeilenende:	Fin de línea:	Fin de ligne :	Fine riga:	Fim de linha:
+opt.syntax	Syntax:	语法：	構文：	구문:	Syntax:	Sintaxis:	Syntaxe :	Sintassi:	Sintaxe:
+opt.filter	Filter:	筛选：	絞り込み：	필터:	Filter:	Filtro:	Filtre :	Filtro:	Filtro:
+opt.pick_command	Select a command on the left	请在左侧选择命令	左でコマンドを選んでください	왼쪽에서 명령을 선택하세요	Wählen Sie links einen Befehl	Seleccione un comando a la izquierda	Choisissez une commande à gauche	Seleziona un comando a sinistra	Selecione um comando à esquerda
+opt.press_key	Press a shortcut (Ctrl/⌘/Alt required, except F-keys; Esc cancels)…	请按下新的快捷键（需含 Ctrl／⌘／Alt，F 键除外；Esc 取消）…	ショートカットを押してください（Ctrl／⌘／Alt が必要。F キーを除く。Esc で取消）…	단축키를 누르세요(Ctrl/⌘/Alt 필요, F 키 제외, Esc 취소)…	Drücken Sie ein Kürzel (Strg/⌘/Alt nötig, außer F-Tasten; Esc bricht ab)…	Pulse un atajo (se requiere Ctrl/⌘/Alt, salvo teclas F; Esc cancela)…	Appuyez sur un raccourci (Ctrl/⌘/Alt requis, sauf touches F ; Échap annule)…	Premi una scorciatoia (Ctrl/⌘/Alt obbligatorio, tranne i tasti F; Esc annulla)…	Prima um atalho (Ctrl/⌘/Alt obrigatório, exceto teclas F; Esc cancela)…
+opt.conflict	{q} is also assigned to “{n}”	{q} 也指派给「{n}」	{q} は「{n}」にも割り当てられています	{q}이(가) "{n}"에도 지정되어 있습니다	{q} ist auch „{n}“ zugeordnet	{q} también está asignado a «{n}»	{q} est aussi assigné à « {n} »	{q} è assegnato anche a «{n}»	{q} também está atribuído a “{n}”
+opt.spell_lang	Dictionary language:	字典语言：	辞書の言語：	사전 언어:	Wörterbuchsprache:	Idioma del diccionario:	Langue du dictionnaire :	Lingua del dizionario:	Idioma do dicionário:
+opt.dict_dir	Put other Hunspell dictionaries (.aff and .dic) in: {q}	可将其他语言的 Hunspell 字典（.aff 与 .dic）放到：{q}	他の言語の Hunspell 辞書（.aff と .dic）を次に置けます：{q}	다른 언어의 Hunspell 사전(.aff, .dic)을 여기에 두세요: {q}	Weitere Hunspell-Wörterbücher (.aff und .dic) hier ablegen: {q}	Puede colocar otros diccionarios Hunspell (.aff y .dic) en: {q}	Placez d'autres dictionnaires Hunspell (.aff et .dic) dans : {q}	Puoi mettere altri dizionari Hunspell (.aff e .dic) in: {q}	Pode colocar outros dicionários Hunspell (.aff e .dic) em: {q}
+opt.personal	Personal dictionary:	个人字典：	ユーザー辞書：	개인 사전:	Persönliches Wörterbuch:	Diccionario personal:	Dictionnaire personnel :	Dizionario personale:	Dicionário pessoal:
+opt.history_ask	Clear recent files, search and replace history, folder history, and caret positions?	要清除最近使用的文件、搜索与替换记录、文件夹记录与光标位置记录吗？	最近使ったファイル、検索と置換、フォルダー、カーソル位置の履歴を消去しますか？	최근 파일, 찾기/바꾸기, 폴더, 커서 위치 기록을 지울까요?	Zuletzt verwendete Dateien, Suchen/Ersetzen, Ordner und Cursorpositionen löschen?	¿Borrar archivos recientes, búsquedas, reemplazos, carpetas y posiciones del cursor?	Effacer les fichiers récents, recherches, remplacements, dossiers et positions du curseur ?	Cancellare file recenti, ricerche, sostituzioni, cartelle e posizioni del cursore?	Limpar ficheiros recentes, pesquisas, substituições, pastas e posições do cursor?
+opt.clear	Clear	清除	消去	지우기	Löschen	Borrar	Effacer	Cancella	Limpar
+font.filter	Filter:	筛选：	絞り込み：	필터:	Filter:	Filtro:	Filtre :	Filtro:	Filtro:
+font.auto	(Automatic monospace font)	（自动选择等宽字体）	（等幅フォントを自動選択）	(고정폭 글꼴 자동 선택)	(Automatische dicktengleiche Schrift)	(Fuente monoespaciada automática)	(Police à chasse fixe automatique)	(Carattere a spaziatura fissa automatico)	(Tipo monoespaçado automático)
+font.size	Size:	大小：	サイズ：	크기:	Größe:	Tamaño:	Taille :	Dimensione:	Tamanho:
+font.cjk	Chinese, Japanese, and Korean characters missing from the font are filled from a system CJK font. Turn off fixed-width mode for proportional fonts.	中文、日文等字符若字体中没有，会自动以系统的 CJK 字体补字。比例字体请搭配关闭「等宽模式」。	フォントにない中日韓の文字はシステムの CJK フォントで補います。プロポーショナルフォントでは等幅モードをオフにしてください。	글꼴에 없는 한중일 문자는 시스템 CJK 글꼴로 채웁니다. 비례 글꼴은 고정폭 모드를 끄세요.	Fehlende CJK-Zeichen werden mit einer Systemschrift ergänzt. Für Proportionalschriften die feste Breite ausschalten.	Los caracteres CJK que falten se toman de una fuente del sistema. Desactive el ancho fijo con fuentes proporcionales.	Les caractères CJK absents sont complétés par une police système. Désactivez la largeur fixe pour une police proportionnelle.	I caratteri CJK mancanti usano un font di sistema. Disattiva la larghezza fissa con font proporzionali.	Caracteres CJK em falta usam um tipo de letra do sistema. Desative a largura fixa com tipos proporcionais.
+print.syntax	Print syntax colors	打印语法色彩	構文の色を印刷	구문 색 인쇄	Syntaxfarben drucken	Imprimir colores de sintaxis	Imprimer les couleurs de syntaxe	Stampa i colori della sintassi	Imprimir cores da sintaxe
+print.lines	Print line numbers	打印行号	行番号を印刷	줄 번호 인쇄	Zeilennummern drucken	Imprimir números de línea	Imprimer les numéros de ligne	Stampa i numeri di riga	Imprimir números de linha
+print.bookmarks	Print bookmarks	打印书签	ブックマークを印刷	책갈피 인쇄	Lesezeichen drucken	Imprimir marcadores	Imprimer les signets	Stampa i segnalibri	Imprimir marcadores
+print.eol	Print end-of-line marks	打印行尾字符	行末文字を印刷	줄 끝 문자 인쇄	Zeilenenden drucken	Imprimir fines de línea	Imprimer les fins de ligne	Stampa i fine riga	Imprimir fins de linha
+print.tabs	Print tab characters	打印 Tab 字符	タブ文字を印刷	탭 문자 인쇄	Tabulatoren drucken	Imprimir tabuladores	Imprimer les tabulations	Stampa le tabulazioni	Imprimir tabulações
+print.spaces	Print space characters	打印空格字符	空白文字を印刷	공백 문자 인쇄	Leerzeichen drucken	Imprimir espacios	Imprimer les espaces	Stampa gli spazi	Imprimir espaços
+print.header	Header	页眉	ヘッダー	머리글	Kopfzeile	Encabezado	En-tête	Intestazione	Cabeçalho
+print.footer	Footer	页脚	フッター	바닥글	Fußzeile	Pie de página	Pied de page	Piè di pagina	Rodapé
+print.vars	Variables: %f name  %p path  %n page  %s pages  %d date  %t time	变量：%f 文件名　%p 路径　%n 页码　%s 总页数　%d 日期　%t 时间	変数：%f 名前　%p パス　%n ページ　%s 総ページ　%d 日付　%t 時刻	변수: %f 이름  %p 경로  %n 쪽  %s 전체 쪽  %d 날짜  %t 시간	Variablen: %f Name  %p Pfad  %n Seite  %s Seiten  %d Datum  %t Zeit	Variables: %f nombre  %p ruta  %n página  %s páginas  %d fecha  %t hora	Variables : %f nom  %p chemin  %n page  %s pages  %d date  %t heure	Variabili: %f nome  %p percorso  %n pagina  %s pagine  %d data  %t ora	Variáveis: %f nome  %p caminho  %n página  %s páginas  %d data  %t hora
+print.hex_header	Hex offset header:	十六进制模式位移标头：	16進オフセット見出し：	16진수 오프셋 머리글:	Hex-Offset-Kopf:	Encabezado de desplazamiento hex:	En-tête de décalage hex :	Intestazione offset esadecimale:	Cabeçalho de deslocamento hex:
+print.none	None	无	なし	없음	Keine	Ninguno	Aucun	Nessuno	Nenhum
+print.first	First page	第一页	最初のページ	첫 페이지	Erste Seite	Primera página	Première page	Prima pagina	Primeira página
+print.every	Every page	每页	すべてのページ	모든 페이지	Jede Seite	Cada página	Chaque page	Ogni pagina	Cada página
+print.browser	Printing opens the laid-out page in the browser. Set paper size and margins in the browser's print dialog.	打印时会以浏览器打开排版后的页面，纸张大小与边界请在浏览器的打印对话框中设置。	印刷はブラウザで組版ページを開きます。用紙と余白はブラウザの印刷ダイアログで設定します。	인쇄는 브라우저에서 조판된 페이지를 엽니다. 용지와 여백은 브라우저 인쇄 대화상자에서 설정하세요.	Drucken öffnet die Seite im Browser. Papier und Ränder stellen Sie im Druckdialog ein.	La impresión abre la página en el navegador. El papel y los márgenes se ajustan allí.	L'impression ouvre la page dans le navigateur. Réglez le papier et les marges dans sa boîte de dialogue.	La stampa apre la pagina nel browser. Carta e margini si impostano lì.	A impressão abre a página no navegador. Defina o papel e as margens lá.
+width.letters	Letters	英文字母	英字	영문자	Buchstaben	Letras	Lettres	Lettere	Letras
+width.digits	Digits	数字	数字	숫자	Ziffern	Dígitos	Chiffres	Cifre	Dígitos
+width.symbols	Symbols	符号	記号	기호	Symbole	Símbolos	Symboles	Simboli	Símbolos
+width.space	Spaces	空格	空白	공백	Leerzeichen	Espacios	Espaces	Spazi	Espaços
+width.katakana	Japanese katakana	日文片假名	カタカナ	일본어 가타카나	Japanisches Katakana	Katakana japonés	Katakana japonais	Katakana giapponese	Katakana japonês
+zoom.out	Zoom Out	缩小字体	縮小	축소	Verkleinern	Alejar	Zoom arrière	Riduci	Reduzir
+zoom.in	Zoom In	放大字体	拡大	확대	Vergrößern	Acercar	Zoom avant	Ingrandisci	Ampliar
+zoom.theme	Toggle dark/light theme	切换深色/浅色主题	ダーク/ライトの切り替え	어두운/밝은 테마 전환	Dunkles/helles Design umschalten	Alternar tema oscuro/claro	Basculer le thème sombre/clair	Attiva tema scuro/chiaro	Alternar tema escuro/claro
+num.initial	Initial value:	起始值：	開始値：	시작 값:	Startwert:	Valor inicial:	Valeur initiale :	Valore iniziale:	Valor inicial:
+num.step	Increment:	递增值：	増分：	증가 값:	Schrittweite:	Incremento:	Incrément :	Incremento:	Incremento:
+num.count	Count (without a column selection):	数量（无列块选取时）：	個数（矩形選択がないとき）：	개수(열 블록 선택이 없을 때):	Anzahl (ohne Spaltenauswahl):	Cantidad (sin selección de columna):	Nombre (sans sélection en colonne) :	Quantità (senza selezione a colonna):	Quantidade (sem seleção de coluna):
+num.format	Format:	格式：	形式：	형식:	Format:	Formato:	Format :	Formato:	Formato:
+num.dec	Decimal	十进制	10進	10진수	Dezimal	Decimal	Décimal	Decimale	Decimal
+num.hex	Hexadecimal	十六进制	16進	16진수	Hexadezimal	Hexadecimal	Hexadécimal	Esadecimale	Hexadecimal
+num.oct	Octal	八进制	8進	8진수	Oktal	Octal	Octal	Ottale	Octal
+num.bin	Binary	二进制	2進	2진수	Binär	Binario	Binaire	Binario	Binário
+num.affix	Prefix / suffix:	前缀／后缀：	接頭辞／接尾辞：	접두사/접미사:	Präfix / Suffix:	Prefijo / sufijo:	Préfixe / suffixe :	Prefisso / suffisso:	Prefixo / sufixo:
+num.upper	Uppercase hexadecimal	十六进制使用大写	16進は大文字	16진수 대문자	Hexadezimal in Großbuchstaben	Hexadecimal en mayúsculas	Hexadécimal en majuscules	Esadecimale maiuscolo	Hexadecimal em maiúsculas
+num.right	Align right	靠右对齐	右揃え	오른쪽 정렬	Rechtsbündig	Alinear a la derecha	Aligner à droite	Allinea a destra	Alinhar à direita
+num.left	Align left	靠左对齐	左揃え	왼쪽 정렬	Linksbündig	Alinear a la izquierda	Aligner à gauche	Allinea a sinistra	Alinhar à esquerda
+num.pad	Pad with zeros	前面补零	先頭をゼロで埋める	앞에 0 채우기	Mit Nullen auffüllen	Rellenar con ceros	Compléter par des zéros	Riempi con zeri	Preencher com zeros
+num.hint	In column mode, one number is inserted on each row of the rectangle. Otherwise, one number is inserted on each line from the caret.	列块模式下会在矩形选取的每一行插入一个数字；否则自光标处起每行插入一个。	矩形モードでは選択した各行に数字を挿入します。それ以外はカーソル位置から各行に挿入します。	열 블록 모드에서는 사각형 선택의 각 줄에 숫자를 넣습니다. 그렇지 않으면 커서부터 각 줄에 넣습니다.	Im Spaltenmodus wird in jede Zeile des Rechtecks eine Zahl eingefügt. Sonst ab der Cursorposition zeilenweise.	En modo columna se inserta un número en cada fila del rectángulo. Si no, uno por línea desde el cursor.	En mode colonne, un nombre est inséré sur chaque ligne du rectangle. Sinon, un par ligne depuis le curseur.	In modalità colonna si inserisce un numero su ogni riga del rettangolo. Altrimenti uno per riga dal cursore.	No modo de coluna insere-se um número em cada linha do retângulo. Caso contrário, um por linha a partir do cursor.
+sort.asc	Ascending	递增	昇順	오름차순	Aufsteigend	Ascendente	Croissant	Crescente	Crescente
+sort.desc	Descending	递减	降順	내림차순	Absteigend	Descendente	Décroissant	Decrescente	Decrescente
+sort.case	Match case	区分大小写	大文字小文字を区別	대소문자 구분	Groß-/Kleinschreibung	Distinguir mayúsculas	Respecter la casse	Distingui maiuscole	Diferenciar maiúsculas
+sort.numeric	Sort numerically	依数值排序	数値で並べ替え	숫자로 정렬	Numerisch sortieren	Ordenar numéricamente	Trier numériquement	Ordina numericamente	Ordenar numericamente
+sort.unique	Remove duplicate lines	移除重复行	重複行を削除	중복 줄 제거	Doppelte Zeilen entfernen	Quitar líneas duplicadas	Supprimer les lignes en double	Rimuovi righe duplicate	Remover linhas duplicadas
+sort.go	Sort	排序	並べ替え	정렬	Sortieren	Ordenar	Trier	Ordina	Ordenar
+fif.find	Find:	查找：	検索：	찾기:	Suchen:	Buscar:	Rechercher :	Trova:	Localizar:
+fif.replace	Replace with:	替换为：	置換後：	바꿀 내용:	Ersetzen durch:	Reemplazar por:	Remplacer par :	Sostituisci con:	Substituir por:
+fif.folder	Folder:	文件夹：	フォルダー：	폴더:	Ordner:	Carpeta:	Dossier :	Cartella:	Pasta:
+fif.types	File types:	文件类型：	ファイルの種類：	파일 형식:	Dateitypen:	Tipos de archivo:	Types de fichiers :	Tipi di file:	Tipos de ficheiro:
+fif.types_hint	e.g. *.rs;*.toml	例如 *.rs;*.toml	例 *.rs;*.toml	예: *.rs;*.toml	z. B. *.rs;*.toml	p. ej. *.rs;*.toml	p. ex. *.rs;*.toml	es. *.rs;*.toml	p. ex. *.rs;*.toml
+fif.exclude	Exclude:	排除：	除外：	제외:	Ausschließen:	Excluir:	Exclure :	Escludi:	Excluir:
+fif.exclude_hint	e.g. target;*.min.js	例如 target;*.min.js	例 target;*.min.js	예: target;*.min.js	z. B. target;*.min.js	p. ej. target;*.min.js	p. ex. target;*.min.js	es. target;*.min.js	p. ex. target;*.min.js
+fif.subdirs	Include subfolders	包含子文件夹	サブフォルダーを含む	하위 폴더 포함	Unterordner einschließen	Incluir subcarpetas	Inclure les sous-dossiers	Includi sottocartelle	Incluir subpastas
+fif.opened	Opened files only	只在已打开的文件中	開いているファイルのみ	열린 파일만	Nur geöffnete Dateien	Solo archivos abiertos	Fichiers ouverts seulement	Solo file aperti	Só ficheiros abertos
+fif.warn	Replacing in files that are not open writes to disk and cannot be undone. Open files are replaced in the editor and can be undone.	替换未打开的文件会直接写入磁盘且无法撤销；已打开的文件在编辑器中替换，可撤销。	開いていないファイルの置換はディスクに直接書き込まれ、元に戻せません。開いているファイルはエディタ内で置換され、元に戻せます。	열리지 않은 파일의 바꾸기는 디스크에 바로 기록되어 실행 취소할 수 없습니다. 열린 파일은 편집기에서 바꾸며 실행 취소할 수 있습니다.	Ersetzen in nicht geöffneten Dateien schreibt auf den Datenträger und lässt sich nicht rückgängig machen. Geöffnete Dateien werden im Editor ersetzt.	Reemplazar en archivos no abiertos escribe en el disco y no se puede deshacer. Los abiertos se reemplazan en el editor.	Remplacer dans des fichiers non ouverts écrit sur le disque sans retour arrière. Les fichiers ouverts sont modifiés dans l'éditeur.	Sostituire in file non aperti scrive sul disco e non si può annullare. I file aperti si modificano nell'editor.	Substituir em ficheiros não abertos grava no disco e não pode ser desfeito. Os abertos são alterados no editor.
+fif.find_all	Find All	全部查找	すべて検索	모두 찾기	Alle suchen	Buscar todo	Tout rechercher	Trova tutto	Localizar tudo
+macro.hint	A macro is a JSON list of steps (produced by Start Recording, then edited here):	宏为 JSON 格式的步骤清单（可由「开始录制」产生后在此修改）：	マクロは JSON 形式の手順です（「記録開始」で作り、ここで編集できます）：	매크로는 JSON 단계 목록입니다(기록 시작으로 만든 뒤 여기서 고칠 수 있습니다):	Ein Makro ist eine JSON-Liste von Schritten (über Aufzeichnung erzeugen und hier bearbeiten):	Una macro es una lista JSON de pasos (créela grabando y edítela aquí):	Une macro est une liste JSON d'étapes (produite par l'enregistrement, puis modifiée ici) :	Una macro è un elenco JSON di passi (creato registrando, poi modificato qui):	Uma macro é uma lista JSON de passos (criada ao gravar e editada aqui):
+macro.run	Run	运行	実行	실행	Ausführen	Ejecutar	Exécuter	Esegui	Executar
+hl.light	Light theme:	浅色主题：	ライトテーマ：	밝은 테마:	Helles Design:	Tema claro:	Thème clair :	Tema chiaro:	Tema claro:
+hl.dark	Dark theme:	深色主题：	ダークテーマ：	어두운 테마:	Dunkles Design:	Tema oscuro:	Thème sombre :	Tema scuro:	Tema escuro:
+fmt.options	AStyle command-line options:	AStyle 命令行选项：	AStyle のコマンドラインオプション：	AStyle 명령줄 옵션:	AStyle-Befehlszeilenoptionen:	Opciones de línea de comandos de AStyle:	Options de ligne de commande AStyle :	Opzioni della riga di comando di AStyle:	Opções da linha de comandos do AStyle:
+fmt.hint	The astyle program must be installed. See https://astyle.sourceforge.net/astyle.html	需要系统已安装 astyle 执行档。选项说明请见 https://astyle.sourceforge.net/astyle.html	astyle 実行ファイルが必要です。説明は https://astyle.sourceforge.net/astyle.html	astyle 실행 파일이 설치되어 있어야 합니다. https://astyle.sourceforge.net/astyle.html	Das Programm astyle muss installiert sein. Siehe https://astyle.sourceforge.net/astyle.html	Debe estar instalado astyle. Véase https://astyle.sourceforge.net/astyle.html	Le programme astyle doit être installé. Voir https://astyle.sourceforge.net/astyle.html	Il programma astyle deve essere installato. Vedi https://astyle.sourceforge.net/astyle.html	O programa astyle tem de estar instalado. Ver https://astyle.sourceforge.net/astyle.html
+msg.history_cleared	History cleared	已清除历史记录	履歴を消去しました	기록을 지웠습니다	Verlauf gelöscht	Historial borrado	Historique effacé	Cronologia cancellata	Histórico limpo
+enc.current	Current encoding: {q}	目前编码：{q}	現在の文字コード：{q}	현재 인코딩: {q}	Aktuelle Kodierung: {q}	Codificación actual: {q}	Encodage actuel : {q}	Codifica attuale: {q}	Codificação atual: {q}
+enc.to	Convert to:	转换为：	変換先：	변환:	Umwandeln in:	Convertir a:	Convertir en :	Converti in:	Converter para:
+enc.hint	Converting keeps the text and writes the new encoding on save. If the file was opened with the wrong encoding, reinterpret it under View → Encoding.	转换编码会保留文字内容，保存时改用新编码写出。若只是打开时编码判断错误，请改用「查看 → 编码」重新解码。	文字コードの変換は内容を保ち、保存時に新しい文字コードで書き出します。開き方が間違っていた場合は「表示 → エンコーディング」で再解釈してください。	인코딩 변환은 내용을 유지하고 저장할 때 새 인코딩으로 기록합니다. 열 때 인코딩이 잘못됐다면 보기 → 인코딩에서 다시 해석하세요.	Die Umwandlung behält den Text und schreibt beim Speichern die neue Kodierung. War die Erkennung falsch, neu interpretieren unter Ansicht → Kodierung.	La conversión conserva el texto y usa la nueva codificación al guardar. Si se abrió mal, reinterprételo en Ver → Codificación.	La conversion conserve le texte et l'écrit dans le nouvel encodage. Si le fichier a été mal ouvert, réinterprétez-le dans Affichage → Encodage.	La conversione conserva il testo e lo salva nella nuova codifica. Se l'apertura era sbagliata, reinterpretare in Visualizza → Codifica.	A conversão mantém o texto e grava a nova codificação ao salvar. Se a deteção falhou, reinterpretar em Ver → Codificação.
+enc.convert	Convert	转换	変換	변환	Umwandeln	Convertir	Convertir	Converti	Converter
+enc.need_text	Switch to text mode first	请先切换到文本模式	先にテキストモードに切り替えてください	먼저 텍스트 모드로 전환하세요	Wechseln Sie zuerst in den Textmodus	Cambie primero al modo texto	Passez d'abord en mode texte	Passa prima alla modalità testo	Mude primeiro para o modo de texto
+enc.done	Converted to {q}. Takes effect when you save.	已转换为 {q}，保存时生效	{q} に変換しました。保存時に反映されます	{q}(으)로 변환했습니다. 저장할 때 적용됩니다	In {q} umgewandelt. Wirksam beim Speichern.	Convertido a {q}. Surte efecto al guardar.	Converti en {q}. Prend effet à l'enregistrement.	Convertito in {q}. Ha effetto al salvataggio.	Convertido para {q}. Tem efeito ao salvar.
+enc.fail	Cannot convert encoding	无法转换编码	文字コードを変換できません	인코딩을 변환할 수 없습니다	Kodierung kann nicht umgewandelt werden	No se puede convertir la codificación	Impossible de convertir l'encodage	Impossibile convertire la codifica	Não é possível converter a codificação
+wc.selection	(Selection)	（选取范围）	（選択範囲）	(선택 영역)	(Auswahl)	(Selección)	(Sélection)	(Selezione)	(Seleção)
+wc.document	(Whole document)	（整份文件）	（文書全体）	(문서 전체)	(Gesamtes Dokument)	(Documento completo)	(Document entier)	(Intero documento)	(Documento inteiro)
+wc.words	Words	字数	単語数	단어 수	Wörter	Palabras	Mots	Parole	Palavras
+wc.chars	Characters (excluding line breaks)	字符数（不含换行）	文字数（改行を除く）	문자 수(줄 바꿈 제외)	Zeichen (ohne Zeilenumbrüche)	Caracteres (sin saltos de línea)	Caractères (sans sauts de ligne)	Caratteri (senza a capo)	Caracteres (sem quebras de linha)
+wc.spaces	Whitespace	空白字符	空白文字	공백 문자	Leerzeichen	Espacios	Espaces	Spazi	Espaços
+wc.half	Halfwidth characters	半角字符	半角文字	반각 문자	Halbbreite Zeichen	Caracteres de ancho medio	Caractères demi-chasse	Caratteri a mezza larghezza	Caracteres de meia largura
+wc.full	Fullwidth characters	全角字符	全角文字	전각 문자	Vollbreite Zeichen	Caracteres de ancho completo	Caractères pleine chasse	Caratteri a larghezza intera	Caracteres de largura inteira
+wc.cjk	CJK characters	中日韩文字	中日韓の文字	한중일 문자	CJK-Zeichen	Caracteres CJK	Caractères CJC	Caratteri CJK	Caracteres CJK
+wc.lines	Lines	行数	行数	줄 수	Zeilen	Líneas	Lignes	Righe	Linhas
+msg.opened	Opened {q}	已打开 {q}	開きました {q}	열었습니다 {q}	Geöffnet {q}	Abierto {q}	Ouvert {q}	Aperto {q}	Aberto {q}
+msg.saved	Saved {q}	已保存 {q}	保存しました {q}	저장했습니다 {q}	Gespeichert {q}	Guardado {q}	Enregistré {q}	Salvato {q}	Salvo {q}
+msg.reloaded	Reloaded	已重新加载	再読み込みしました	다시 로드했습니다	Neu geladen	Recargado	Rechargé	Ricaricato	Recarregado
+msg.open_fail	Cannot open	打开失败	開けません	열 수 없습니다	Öffnen fehlgeschlagen	No se puede abrir	Ouverture impossible	Impossibile aprire	Não é possível abrir
+msg.save_fail	Cannot save	保存失败	保存できません	저장할 수 없습니다	Speichern fehlgeschlagen	No se puede guardar	Enregistrement impossible	Impossibile salvare	Não é possível salvar
+msg.reload_fail	Cannot reload	重新加载失败	再読み込みできません	다시 로드할 수 없습니다	Neu laden fehlgeschlagen	No se puede recargar	Rechargement impossible	Impossibile ricaricare	Não é possível recarregar
+msg.open_file	Open	打开文件	ファイルを開く	파일 열기	Öffnen	Abrir	Ouvrir	Apri	Abrir
+msg.save_as	Save As	另存为	名前を付けて保存	다른 이름으로 저장	Speichern unter	Guardar como	Enregistrer sous	Salva con nome	Salvar como
+msg.settings_bad	Settings file is damaged	设置文件损坏	設定ファイルが壊れています	설정 파일이 손상됨	Einstellungsdatei beschädigt	El archivo de opciones está dañado	Fichier de paramètres endommagé	File delle impostazioni danneggiato	Ficheiro de definições danificado
+msg.settings_reset	The settings file could not be read. Defaults are in use.\nA backup was saved as {q}\n\nError: {n}	设置文件无法读取，已改用默认设置。\n原设置文件已备份为 {q}\n\n错误：{n}	設定ファイルを読めないため、既定値を使います。\nバックアップ：{q}\n\nエラー：{n}	설정 파일을 읽을 수 없어 기본값을 사용합니다.\n백업: {q}\n\n오류: {n}	Die Einstellungen konnten nicht gelesen werden. Es gelten die Vorgaben.\nSicherung: {q}\n\nFehler: {n}	No se pudo leer la configuración. Se usan los valores predeterminados.\nCopia: {q}\n\nError: {n}	Impossible de lire les paramètres. Les valeurs par défaut sont utilisées.\nCopie : {q}\n\nErreur : {n}	Impossibile leggere le impostazioni. Si usano i valori predefiniti.\nCopia: {q}\n\nErrore: {n}	Não foi possível ler as definições. Estão em uso os valores predefinidos.\nCópia: {q}\n\nErro: {n}
+msg.settings_reset_nobak	The settings file could not be read. Defaults are in use (backup failed: {q}).\n\nError: {n}	设置文件无法读取，已改用默认设置（备份失败：{q}）。\n\n错误：{n}	設定ファイルを読めないため、既定値を使います（バックアップ失敗：{q}）。\n\nエラー：{n}	설정 파일을 읽을 수 없어 기본값을 사용합니다(백업 실패: {q}).\n\n오류: {n}	Die Einstellungen konnten nicht gelesen werden. Vorgaben sind aktiv (Sicherung fehlgeschlagen: {q}).\n\nFehler: {n}	No se pudo leer la configuración. Se usan los valores predeterminados (falló la copia: {q}).\n\nError: {n}	Impossible de lire les paramètres. Valeurs par défaut (échec de la copie : {q}).\n\nErreur : {n}	Impossibile leggere le impostazioni. Valori predefiniti (copia non riuscita: {q}).\n\nErrore: {n}	Não foi possível ler as definições. Valores predefinidos (falha da cópia: {q}).\n\nErro: {n}
+msg.save_copy	Save Copy	另存副本	コピーを保存	복사본 저장	Kopie speichern	Guardar copia	Enregistrer une copie	Salva copia	Salvar cópia
+msg.saved_copy	Saved a copy {q}	已另存副本 {q}	コピーを保存しました {q}	복사본을 저장했습니다 {q}	Kopie gespeichert {q}	Copia guardada {q}	Copie enregistrée {q}	Copia salvata {q}	Cópia salva {q}
+msg.bad_hex	The selection is not a valid hex string	选取的内容不是有效的十六进制字符串	選択は有効な16進文字列ではありません	선택 내용이 올바른 16진수 문자열이 아닙니다	Die Auswahl ist keine gültige Hex-Zeichenfolge	La selección no es una cadena hexadecimal válida	La sélection n'est pas une chaîne hexadécimale valide	La selezione non è una stringa esadecimale valida	A seleção não é uma cadeia hexadecimal válida
+msg.need_column	Select a range in column mode first	请先以列块模式选取要对齐的范围	先に矩形モードで揃える範囲を選択してください	먼저 열 블록 모드로 맞출 범위를 선택하세요	Wählen Sie zuerst einen Bereich im Spaltenmodus	Seleccione primero un rango en modo columna	Sélectionnez d'abord une zone en mode colonne	Seleziona prima un intervallo in modalità colonna	Selecione primeiro um intervalo no modo de coluna
+msg.sticky	Sticky mode: press F12 to restore	便利贴模式：按 F12 恢复	付箋モード：F12 で戻す	스티커 모드: F12로 복원	Notizmodus: F12 stellt wieder her	Modo nota: pulse F12 para restaurar	Mode pense-bête : F12 pour restaurer	Modalità nota: premi F12 per ripristinare	Modo de nota: prima F12 para restaurar
+msg.menu_hidden	The menu bar is hidden. Press {q} or right-click the toolbar to show it again.	菜单栏已隐藏，按 {q} 或在工具栏按右键可再次显示	メニューバーを隠しました。{q} またはツールバーの右クリックで再表示できます。	메뉴 막대를 숨겼습니다. {q} 또는 도구 모음 오른쪽 단추로 다시 표시합니다.	Die Menüleiste ist ausgeblendet. {q} oder Rechtsklick auf die Symbolleiste zeigt sie wieder.	La barra de menús está oculta. Pulse {q} o haga clic derecho en la barra de herramientas.	La barre de menus est masquée. Appuyez sur {q} ou cliquez droit sur la barre d'outils.	La barra dei menu è nascosta. Premi {q} o fai clic destro sulla barra degli strumenti.	A barra de menus está oculta. Prima {q} ou clique com o botão direito na barra de ferramentas.
+msg.rec_start	Recording macro	开始录制宏	マクロの記録を開始	매크로 기록 시작	Makroaufzeichnung gestartet	Grabando macro	Enregistrement de la macro	Registrazione della macro	A gravar macro
+msg.rec_stop	Recorded {n} steps	已录制 {n} 个步骤	{n} 手順を記録しました	{n}개 단계를 기록했습니다	{n} Schritte aufgezeichnet	{n} pasos grabados	{n} étapes enregistrées	{n} passi registrati	{n} passos gravados
+msg.no_bom	The current encoding does not support a BOM	目前编码不支持 BOM	現在の文字コードは BOM に対応していません	현재 인코딩은 BOM을 지원하지 않습니다	Die Kodierung unterstützt kein BOM	La codificación no admite BOM	Cet encodage ne prend pas en charge le BOM	La codifica non supporta il BOM	A codificação não suporta BOM
+msg.clip_converted	Converted {n} characters on the clipboard	剪贴板已转换 {n} 个字	クリップボードの {n} 文字を変換しました	클립보드에서 {n}자를 변환했습니다	{n} Zeichen in der Zwischenablage umgewandelt	{n} caracteres convertidos en el portapapeles	{n} caractères convertis dans le presse-papiers	{n} caratteri convertiti negli appunti	{n} caracteres convertidos na área de transferência
+msg.readonly	The document is read-only	文件为只读	文書は読み取り専用です	문서가 읽기 전용입니다	Das Dokument ist schreibgeschützt	El documento es de solo lectura	Le document est en lecture seule	Il documento è di sola lettura	O documento é só de leitura
+msg.not_hex	This command does not apply in hex mode	此命令不适用于十六进制模式	このコマンドは16進モードでは使えません	이 명령은 16진수 모드에서 사용할 수 없습니다	Dieser Befehl gilt nicht im Hex-Modus	Este comando no se aplica en modo hexadecimal	Cette commande ne s'applique pas au mode hexadécimal	Questo comando non vale in modalità esadecimale	Este comando não se aplica ao modo hexadecimal
+msg.no_comment	{q} has no comment syntax	{q} 没有注释符号	{q} にコメント記号がありません	{q}에는 주석 기호가 없습니다	{q} hat keine Kommentarsyntax	{q} no tiene sintaxis de comentario	{q} n'a pas de syntaxe de commentaire	{q} non ha una sintassi di commento	{q} não tem sintaxe de comentário
+msg.need_wrap	Turn on word wrap first	请先开启自动换行	先に折り返しを有効にしてください	먼저 자동 줄 바꿈을 켜세요	Aktivieren Sie zuerst den Zeilenumbruch	Active primero el ajuste de línea	Activez d'abord le retour à la ligne	Attiva prima il ritorno a capo	Ative primeiro a quebra de linha
+msg.unknown_cmd	Unknown command in macro: {q}	宏中有未知命令：{q}	マクロに不明なコマンドがあります：{q}	매크로에 알 수 없는 명령: {q}	Unbekannter Befehl im Makro: {q}	Comando desconocido en la macro: {q}	Commande inconnue dans la macro : {q}	Comando sconosciuto nella macro: {q}	Comando desconhecido na macro: {q}
+msg.no_macro	No macro to play	没有可播放的宏	再生できるマクロがありません	재생할 매크로가 없습니다	Kein Makro zum Abspielen	No hay macro para reproducir	Aucune macro à lire	Nessuna macro da riprodurre	Nenhuma macro para reproduzir
+msg.no_recorded	No macro has been recorded	尚未录制任何宏	まだマクロを記録していません	아직 기록된 매크로가 없습니다	Es wurde noch kein Makro aufgezeichnet	Aún no se ha grabado ninguna macro	Aucune macro n'a encore été enregistrée	Nessuna macro è stata registrata	Ainda não foi gravada nenhuma macro
+msg.macro_saved	Macro saved: {q}	宏已保存：{q}	マクロを保存しました：{q}	매크로를 저장했습니다: {q}	Makro gespeichert: {q}	Macro guardada: {q}	Macro enregistrée : {q}	Macro salvata: {q}	Macro salva: {q}
+msg.save_macro	Save Macro	保存宏	マクロを保存	매크로 저장	Makro speichern	Guardar macro	Enregistrer la macro	Salva macro	Salvar macro
+msg.load_macro	Load Macro	加载宏	マクロを読み込む	매크로 불러오기	Makro laden	Cargar macro	Charger une macro	Carica macro	Carregar macro
+msg.edit_macro	Edit Macro	编辑宏	マクロを編集	매크로 편집	Makro bearbeiten	Editar macro	Modifier la macro	Modifica macro	Editar macro
+msg.macro_filter	MadEdit macro	MadEdit 宏	MadEdit マクロ	MadEdit 매크로	MadEdit-Makro	Macro de MadEdit	Macro MadEdit	Macro di MadEdit	Macro do MadEdit
+msg.unmappable	The current encoding cannot represent {n} characters (for example “{q}”).	目前编码无法表示 {n} 个字符（例如「{q}」）	現在の文字コードでは {n} 文字を表せません（例「{q}」）	현재 인코딩으로 {n}자를 표현할 수 없습니다(예: "{q}")	Die Kodierung kann {n} Zeichen nicht darstellen (zum Beispiel „{q}“).	La codificación no puede representar {n} caracteres (por ejemplo «{q}»).	L'encodage ne peut pas représenter {n} caractères (par exemple « {q} »).	La codifica non può rappresentare {n} caratteri (ad esempio «{q}»).	A codificação não pode representar {n} caracteres (por exemplo “{q}”).
+msg.write_failed	Failed to write the file: {q}	写入文件失败：{q}	ファイルの書き込みに失敗しました：{q}	파일 쓰기에 실패했습니다: {q}	Schreiben der Datei fehlgeschlagen: {q}	Error al escribir el archivo: {q}	Échec de l'écriture du fichier : {q}	Scrittura del file non riuscita: {q}	Falha ao gravar o ficheiro: {q}
+msg.no_path	No file path yet	尚未指定文件路径	まだファイルの場所がありません	아직 파일 경로가 없습니다	Noch kein Dateipfad	Aún no hay ruta de archivo	Aucun chemin de fichier	Nessun percorso di file	Ainda não há caminho de ficheiro
