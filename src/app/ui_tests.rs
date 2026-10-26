@@ -175,7 +175,7 @@ fn test_replace_in_files_skips_opened_file_via_symlink_alias() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
-/// Markdown 預覽：編輯區捲動後，預覽會記錄同步的行號，且錨點隨內容量得
+/// Markdown 預覽：並排顯示時，編輯區捲動後預覽會記錄同步的行號，且錨點隨內容量得
 #[test]
 fn test_markdown_preview_follows_editor_scroll() {
     let dir = std::env::temp_dir().join(format!("madedit-mdsync-{}", std::process::id()));
@@ -186,6 +186,10 @@ fn test_markdown_preview_follows_editor_scroll() {
     let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
     h.run_steps(3);
     h.state_mut().pending.push(super::C::PreviewMarkdown);
+    h.run_steps(2);
+    // 獨立視窗預設不跟隨捲動，切成並排顯示後才同步
+    assert_eq!(h.state_mut().md_preview.as_ref().unwrap().synced_line, None);
+    h.state_mut().md_preview.as_mut().unwrap().set_split(true);
     h.run_steps(5);
     {
         let pv = h.state_mut().md_preview.as_ref().expect("預覽未開啟");

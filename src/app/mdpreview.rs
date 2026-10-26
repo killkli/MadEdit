@@ -6,7 +6,7 @@
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, Color32, RichText, emath::Float as _};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
 /// 文件被切成的片段：一般 Markdown 或 Mermaid 圖表原始碼
@@ -213,7 +213,6 @@ pub fn rewrite_image_paths(md: &str, base_dir: Option<&Path>) -> String {
 struct Diagram {
     /// SVG 載入器的快取識別（含內容雜湊，內容或主題變更即換新）
     uri: String,
-    bytes: Vec<u8>,
     width: f32,
     height: f32,
 }
@@ -238,6 +237,8 @@ const ZOOM_MAX: f32 = 3.0;
 const ZOOM_STEP: f32 = 1.1;
 /// 符合寬度時，重新排版用的寬度以此為單位量化，避免拖曳視窗邊緣時每個像素都重繪
 const WIDTH_BUCKET: f32 = 32.0;
+/// 圖表點陣化倍率上限（避免高倍縮放時產生過大的貼圖）
+const RASTER_MAX: f32 = 6.0;
 
 /// 依編輯區第一行，在（起始行, y）錨點之間線性內插出預覽應捲到的 y。
 /// 錨點需依行號遞增排序；沒有錨點時回傳 None。
@@ -265,7 +266,9 @@ pub struct MarkdownPreview {
     zoom: f32,
     /// 符合寬度：圖表依視窗寬度重新排版，仍太寬才縮小
     fit_width: bool,
-    /// 跟隨編輯區捲動
+    /// 並排顯示：預覽放在主視窗編輯區右側；否則開成獨立視窗
+    pub split: bool,
+    /// 跟隨編輯區捲動（只在並排顯示時有意義，切換並排時自動開關）
     sync_scroll: bool,
     /// 上一幀的內容可用寬度（下一次重建時決定圖表排版寬度）
     avail_w: f32,
@@ -273,6 +276,8 @@ pub struct MarkdownPreview {
     pub(super) anchors: Vec<(usize, f32)>,
     /// 上次同步時的編輯區第一行；變動才同步，使用者仍能自由捲動預覽
     pub(super) synced_line: Option<usize>,
+    /// 並排時上一幀預覽面板所在範圍（主視窗據此避免 Ctrl+滾輪同時縮放編輯區字級）
+    pub(super) rect: egui::Rect,
 }
 
 /// 重建預覽內容的條件
@@ -302,10 +307,12 @@ impl MarkdownPreview {
             cache: CommonMarkCache::default(),
             zoom: 1.0,
             fit_width: true,
-            sync_scroll: true,
+            split: false,
+            sync_scroll: false,
             avail_w: 0.0,
             anchors: Vec::new(),
             synced_line: None,
+            rect: egui::Rect::NOTHING,
         }
     }
 
@@ -323,12 +330,6 @@ impl MarkdownPreview {
         let key = BuildKey { version, dark, base_dir, width: self.layout_width() };
         if self.built.as_ref() == Some(&key) {
             return;
-        }
-        // 釋放舊圖的 SVG 快取，避免編輯過程累積
-        for it in &self.items {
-            if let Content::Diagram(d) = &it.content {
-                ctx.forget_image(&d.uri);
-            }
         }
 // SVG 載入器（resvg）不支援 CSS 變數，請 fermaid 直接依深淺色調色盤輸出實際顏色
         let palette = if dark { fermaid::Palette::dark() } else { fermaid::Palette::light() };
@@ -352,9 +353,11 @@ impl MarkdownPreview {
                             let svg = r.svg;
                             let mut h = std::collections::hash_map::DefaultHasher::new();
                             svg.hash(&mut h);
+                            let uri = format!("bytes://mermaid-{:016x}.svg", h.finish());
+                            // 交給 egui 的位元組快取；同一內容的 uri 不變，已點陣化的圖會直接沿用
+                            ctx.include_bytes(uri.clone(), svg.into_bytes());
                             Content::Diagram(Diagram {
-                                uri: format!("bytes://mermaid-{:016x}.svg", h.finish()),
-                                bytes: svg.into_bytes(),
+                                uri,
                                 width: r.width as f32,
                                 height: r.height as f32,
                             })
@@ -365,12 +368,32 @@ impl MarkdownPreview {
                 }
             }
         }
+        // 只釋放這次不再使用的舊圖（點陣化很花時間，內容沒變的圖要保留快取），避免編輯過程累積
+        let keep: std::collections::HashSet<&str> = items.iter().filter_map(|it| match &it.content {
+            Content::Diagram(d) => Some(d.uri.as_str()),
+            _ => None,
+        }).collect();
+        for it in &self.items {
+            if let Content::Diagram(d) = &it.content
+                && !keep.contains(d.uri.as_str())
+            {
+                ctx.forget_image(&d.uri);
+            }
+        }
         self.items = items;
         self.built = Some(key);
     }
 
-    /// 工具列：縮放、符合寬度、同步捲動
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    /// 切換並排顯示；並排時預設跟隨編輯區捲動，獨立視窗則不跟隨
+    pub fn set_split(&mut self, split: bool) {
+        self.split = split;
+        self.sync_scroll = split;
+        self.synced_line = None;
+    }
+
+    /// 工具列：縮放、符合寬度、並排顯示、同步捲動；回傳是否按下關閉
+    fn toolbar(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut close = false;
         ui.horizontal(|ui| {
             if ui.button("−").on_hover_text("縮小（Ctrl+滾輪）").clicked() {
                 self.zoom = (self.zoom / ZOOM_STEP).max(ZOOM_MIN);
@@ -383,20 +406,37 @@ impl MarkdownPreview {
             }
             ui.separator();
             ui.checkbox(&mut self.fit_width, "符合寬度").on_hover_text("圖表依視窗寬度重新排版");
-            ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("預覽跟隨編輯區捲動");
+            ui.separator();
+            let label = if self.split { "獨立視窗" } else { "並排顯示" };
+            let tip = if self.split { "改用獨立視窗顯示預覽" } else { "預覽放在編輯區右側，並跟隨編輯區捲動" };
+            if ui.button(label).on_hover_text(tip).clicked() {
+                self.set_split(!self.split);
+            }
+            // 同步捲動只在並排時提供
+            if self.split {
+                ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("預覽跟隨編輯區捲動");
+                // 並排時沒有視窗標題列可關，另給關閉按鈕
+                close = ui.button("×").on_hover_text("關閉預覽").clicked();
+            }
         });
+        close
     }
 
     /// 繪製預覽內容；`top_line` 是編輯區目前第一個可見的行（從 0 起算）
     pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize) -> MdAction {
-        if ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
+        self.rect = ui.max_rect();
+        // 獨立視窗才看視窗關閉與 Esc；並排時這些屬於主視窗與編輯區
+        if !self.split && ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
             return MdAction::Close;
         }
-        egui::Panel::top("md-preview-toolbar").show(ui, |ui| self.toolbar(ui));
+        let close = egui::Panel::top("md-preview-toolbar").show(ui, |ui| self.toolbar(ui)).inner;
+        if close {
+            return MdAction::Close;
+        }
 
-        // Ctrl+滾輪（或觸控板捏合）縮放
+        // Ctrl+滾輪（或觸控板捏合）縮放；並排時只在滑鼠位於預覽上才縮放，避免與編輯區字級縮放衝突
         let delta = ui.input(|i| i.zoom_delta());
-        if delta != 1.0 {
+        if delta != 1.0 && (!self.split || ui.rect_contains_pointer(ui.max_rect())) {
             self.zoom = (self.zoom * delta).clamp(ZOOM_MIN, ZOOM_MAX);
         }
 
@@ -436,9 +476,22 @@ impl MarkdownPreview {
                         if self.fit_width && d.width * scale > avail_w {
                             scale = avail_w / d.width;
                         }
-                        let img = egui::Image::from_bytes(d.uri.clone(), d.bytes.clone())
-                            .fit_to_exact_size(egui::vec2(d.width * scale, d.height * scale));
-                        ui.add(img);
+                        let size = egui::vec2(d.width * scale, d.height * scale);
+                        // 點陣化倍率取 0.5 的級距（無條件進位），縮放或拉寬視窗時不必每幀重新點陣化，
+                        // 只差一點的倍率直接由 GPU 縮放貼圖
+                        let raster = ((scale * ui.ctx().pixels_per_point() * 2.0).ceil() / 2.0).clamp(0.5, RASTER_MAX);
+                        let hint = egui::load::SizeHint::Scale(raster.ord());
+                        match ui.ctx().try_load_texture(&d.uri, Default::default(), hint) {
+                            Ok(egui::load::TexturePoll::Ready { texture }) => {
+                                ui.add(egui::Image::from_texture(texture).fit_to_exact_size(size));
+                            }
+                            Ok(egui::load::TexturePoll::Pending { .. }) => {
+                                ui.allocate_ui(size, |ui| ui.spinner());
+                            }
+                            Err(e) => {
+                                ui.label(RichText::new(format!("圖表顯示失敗：{e}")).color(Color32::LIGHT_RED));
+                            }
+                        }
                         ui.add_space(8.0);
                     }
                     Content::Error { message, source } => {

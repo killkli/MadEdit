@@ -70,20 +70,33 @@ impl App {
         }
     }
 
-    /// 顯示 Markdown 預覽視窗（獨立原生視窗），內容隨文件版本與深淺色主題自動更新
-    pub fn show_markdown_preview(&mut self, ctx: &egui::Context) {
+    /// 顯示 Markdown 預覽（並排時為編輯區右側面板，否則為獨立原生視窗），內容隨文件版本與深淺色主題自動更新；
+    /// 並排面板必須在 CentralPanel 之前呼叫
+    pub fn show_markdown_preview(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
         let Some(mut pv) = self.md_preview.take() else { return };
         // 預覽中的文件已被關閉時，一併關閉預覽
         let Some(tab) = self.tabs.iter().find(|t| t.doc.id == pv.doc_id) else { return };
         // 相對路徑圖片以文件所在資料夾為基準
         let base_dir = tab.doc.path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf());
-        pv.refresh(ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(ctx), base_dir);
+        pv.refresh(&ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(&ctx), base_dir);
         let top_line = tab.view.top_line(&tab.doc.editor);
-        let builder = egui::ViewportBuilder::default()
-            .with_title(format!("Markdown 預覽 - {}", pv.title))
-            .with_inner_size([820.0, 900.0])
-            .with_min_inner_size([360.0, 280.0]);
-        let action = ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line));
+        let action = if pv.split {
+            // 預設佔主視窗一半寬，可拖曳邊界調整
+            let half = ctx.content_rect().width() / 2.0;
+            egui::Panel::right("md-preview-split")
+                .resizable(true)
+                .default_size(half)
+                .min_size(240.0)
+                .show(ui, |ui| pv.ui(ui, top_line))
+                .inner
+        } else {
+            let builder = egui::ViewportBuilder::default()
+                .with_title(format!("Markdown 預覽 - {}", pv.title))
+                .with_inner_size([820.0, 900.0])
+                .with_min_inner_size([360.0, 280.0]);
+            ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line))
+        };
         if action == super::mdpreview::MdAction::None {
             self.md_preview = Some(pv);
         }
@@ -558,7 +571,9 @@ impl App {
                 }
             }
             C::PreviewMarkdown => {
-                // 於 App 內開啟 Markdown 預覽（含 Mermaid 圖表）
+                // 於 App 內開啟 Markdown 預覽（含 Mermaid 圖表）。
+                // 圖片載入器（SVG 載入器建立時會載入全部系統字型，約數百毫秒）延到第一次預覽才安裝，不拖慢啟動；重複呼叫無妨
+                egui_extras::install_image_loaders(ctx);
                 let doc = self.doc();
                 self.md_preview = Some(super::mdpreview::MarkdownPreview::new(doc.id, doc.display_name()));
             }

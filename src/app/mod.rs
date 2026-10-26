@@ -152,8 +152,6 @@ impl App {
             md_preview: None,
         };
         app.load_icons(&cc.egui_ctx);
-        // Markdown 預覽中的 Mermaid 圖以 SVG 位元組載入
-        egui_extras::install_image_loaders(&cc.egui_ctx);
         app.rebuild_bindings();
         app.apply_theme(&cc.egui_ctx);
         egui_extras_style(&cc.egui_ctx);
@@ -931,7 +929,9 @@ impl eframe::App for App {
 
         // Ctrl/⌘ + 滾輪縮放字型
         let zoom = ctx.input(|i| if i.modifiers.command { i.smooth_scroll_delta().y } else { 0.0 });
-        if zoom != 0.0 && ui.rect_contains_pointer(ui.max_rect()) {
+        // 滑鼠在並排的 Markdown 預覽上時，Ctrl+滾輪交給預覽自己縮放
+        let over_preview = self.md_preview.as_ref().is_some_and(|p| p.split && ui.rect_contains_pointer(p.rect));
+        if zoom != 0.0 && ui.rect_contains_pointer(ui.max_rect()) && !over_preview {
             self.settings.font_size = (self.settings.font_size + zoom.signum()).clamp(6.0, 72.0);
         }
 
@@ -959,6 +959,8 @@ impl eframe::App for App {
         if self.fif.show_results {
             egui::Panel::bottom("fif-results").resizable(true).default_size(180.0).show(ui, |ui| self.find_results_panel(ui));
         }
+        // 並排的 Markdown 預覽面板要在 CentralPanel 之前，獨立視窗版本放這裡也無妨
+        self.show_markdown_preview(ui);
         egui::CentralPanel::default().frame(egui::Frame::new()).show(ui, |ui| {
             self.disk_banner(ui);
             self.find_bar(ui);
@@ -968,7 +970,6 @@ impl eframe::App for App {
 
         self.show_dialogs(&ctx);
         self.show_print_preview(&ctx);
-        self.show_markdown_preview(&ctx);
         self.show_confirm(&ctx);
         self.fif.poll(&ctx);
 
