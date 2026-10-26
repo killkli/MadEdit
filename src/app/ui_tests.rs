@@ -42,7 +42,9 @@ fn benchmark_markdown_preview_ui() {
         });
         h.run_steps(5);
         let elapsed = start.elapsed();
-        assert!(!h.state_mut().tab_mut().md_preview.as_ref().unwrap().anchors.is_empty());
+        let pv = h.state_mut().tab_mut().md_preview.as_ref().unwrap();
+        assert!(!pv.anchors.is_empty());
+        assert!((pv.rect.width() - 700.0).abs() < 20.0, "指定文件也須維持左右各半，預覽寬度 {}", pv.rect.width());
         if sample >= 3 {
             first.push(elapsed);
         }
@@ -304,8 +306,7 @@ fn test_markdown_preview_follows_editor_scroll() {
     h.run_steps(3);
     h.state_mut().pending.push(super::C::PreviewMarkdown);
     h.run_steps(2);
-    // 獨立視窗預設不跟隨捲動，切成並排顯示後才同步
-    assert_eq!(h.state_mut().tab_mut().md_preview.as_ref().unwrap().synced_line, None);
+    // 改為並排，檢查預覽的實際位置與來源錨點。
     h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(super::mdpreview::Placement::Right);
     h.run_steps(5);
     {
@@ -346,7 +347,81 @@ fn test_markdown_preview_scrolls_within_wrapped_editor_line() {
     assert!(tab.md_preview.as_ref().unwrap().scroll_position.0 > 10.0, "同一邏輯行內的換行也須推進預覽");
 }
 
-/// Markdown 預覽：切成左右／上下並排時，面板固定為編輯區的一半，之後幾幀也不會彈回其他大小
+/// 直接送入滾輪事件，驗證實際互動與平滑捲動的後續幀，而非直接修改預覽狀態。
+fn scroll_preview(h: &mut Harness<'static, App>, delta: f32) {
+    let rect = h.state_mut().tab_mut().md_preview.as_ref().unwrap().rect;
+    h.hover_at(eframe::egui::pos2(rect.center().x, rect.bottom() - 80.0));
+    h.run_steps(1);
+    h.event(Event::MouseWheel {
+        unit: eframe::egui::MouseWheelUnit::Point,
+        delta: eframe::egui::vec2(0.0, delta),
+        phase: eframe::egui::TouchPhase::Move,
+        source: eframe::egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    h.run_steps(30);
+}
+
+#[test]
+fn test_markdown_preview_scrolls_editor_without_feedback_or_selection_change() {
+    use super::mdpreview::Placement;
+    use crate::core::editor::{Selection, TextPosition};
+    for placement in [Placement::Right, Placement::Bottom, Placement::Window] {
+        let mut h = harness();
+        h.state_mut().doc_mut().syntax = "Markdown".into();
+        h.state_mut().doc_mut().editor.set_text(&(0..150).map(|i| format!("## Heading {i}\n\nParagraph {i}\n\n")).collect::<String>());
+        h.state_mut().doc_mut().version += 1;
+        let selection = Selection::new(TextPosition::new(0, 1), TextPosition::new(2, 3));
+        h.state_mut().doc_mut().editor.selection = selection;
+        h.state_mut().pending.push(C::PreviewMarkdown);
+        h.run_steps(3);
+        h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(placement);
+        h.run_steps(8);
+        scroll_preview(&mut h, -500.0);
+        let tab = h.state_mut().tab_mut();
+        let first = tab.view.top_row;
+        assert!(first > 10, "預覽捲動後須帶動編輯區：{placement:?}, {first}");
+        assert_eq!(tab.doc.editor.selection, selection, "同步不能移動游標或選取");
+        let offset = tab.md_preview.as_ref().unwrap().scroll_position.0;
+        h.run_steps(15);
+        let tab = h.state_mut().tab_mut();
+        assert_eq!(tab.view.top_row, first, "閒置後來源位置不能繼續來回變動");
+        assert!((tab.md_preview.as_ref().unwrap().scroll_position.0 - offset).abs() < 0.1, "預覽不能被整行取整誤差拉回");
+        // 接著改由編輯區捲動，確認主導權能立即交回。
+        tab.view.top_row = first + 40;
+        h.run_steps(5);
+        assert_eq!(h.state_mut().tab_mut().md_preview.as_ref().unwrap().synced_line, Some(first + 40));
+        h.get_by_label("同步捲動").click();
+        h.run_steps(3);
+        scroll_preview(&mut h, -400.0);
+        assert_eq!(h.state_mut().tab_mut().view.top_row, first + 40, "停用同步後兩側須可各自閱讀");
+    }
+}
+
+#[test]
+fn test_markdown_preview_reverse_scrolls_within_wrapped_line() {
+    use super::mdpreview::Placement;
+    use crate::core::settings::WrapMode;
+    let mut h = harness();
+    h.state_mut().doc_mut().syntax = "Markdown".into();
+    h.state_mut().doc_mut().editor.set_text(&format!("{}\n\nend\n", "long text ".repeat(1000)));
+    h.state_mut().doc_mut().version += 1;
+    h.state_mut().settings.wrap_mode = WrapMode::ByWindow;
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Right);
+    h.run_steps(8);
+    scroll_preview(&mut h, -700.0);
+    let tab = h.state_mut().tab_mut();
+    let (line, fraction) = tab.view.top_line(&tab.doc.editor);
+    assert_eq!(line, 0);
+    assert!(fraction > 0.0 && tab.view.top_row > 0, "長段落內須帶動來源的換行列");
+    let before = tab.md_preview.as_ref().unwrap().scroll_position.0;
+    h.run_steps(15);
+    assert!((h.state_mut().tab_mut().md_preview.as_ref().unwrap().scroll_position.0 - before).abs() < 0.1);
+}
+
+/// Markdown 預覽：切成左右／上下並排時各佔一半，拖曳後須保留新的尺寸。
 #[test]
 fn test_markdown_preview_docks_at_half_size() {
     use super::mdpreview::Placement;
@@ -354,21 +429,75 @@ fn test_markdown_preview_docks_at_half_size() {
     std::fs::create_dir_all(&dir).unwrap();
     let p = dir.join("dock.md");
     // 內含寬圖表，確認內容不會把面板撐大
-    std::fs::write(&p, "# 標題\n\n```mermaid\nflowchart LR\n  A[很長很長的節點一] --> B[很長很長的節點二] --> C[很長很長的節點三] --> D[很長很長的節點四]\n```\n").unwrap();
+    let table = format!("\n| {} |\n| {} |\n| {} |\n", vec!["欄位"; 12].join(" | "), vec!["---"; 12].join(" | "), vec!["LongUnbrokenCellValue"; 12].join(" | "));
+    std::fs::write(&p, format!("# 標題\n\n```mermaid\nflowchart LR\n  A[很長很長的節點一] --> B[很長很長的節點二] --> C[很長很長的節點三] --> D[很長很長的節點四]\n```\n{table}")).unwrap();
     let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
     h.run_steps(3);
     h.state_mut().pending.push(super::C::PreviewMarkdown);
     h.run_steps(3);
+    let mut half_y = 0.0;
     for placement in [Placement::Right, Placement::Bottom, Placement::Right] {
-        h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(placement);
+        h.get_by_label(if placement == Placement::Right { "左右並排" } else { "上下並排" }).click();
         h.run_steps(8);
+        // 模擬原生預覽關閉後，主視窗才收到新的可用尺寸；仍須重新平分。
+        h.set_size(eframe::egui::vec2(900.0, 650.0));
+        h.run_steps(4);
+        let resized = h.get_by_role_and_label(eframe::egui::accesskit::Role::Splitter, "Resize panel").rect();
+        if placement == Placement::Right { assert!((resized.center().x - 450.0).abs() < 1.0); }
+        h.set_size(eframe::egui::vec2(1000.0, 700.0));
+        h.run_steps(4);
+        let handle = h.get_by_role_and_label(eframe::egui::accesskit::Role::Splitter, "Resize panel").rect();
         let pv = h.state_mut().tab_mut().md_preview.as_ref().unwrap();
         let (w, hgt) = (pv.rect.width(), pv.rect.height());
         if placement == Placement::Right {
             assert!((w - 500.0).abs() < 20.0, "左右並排寬度 {w}");
+            assert!((handle.center().x - 500.0).abs() < 1.0, "分隔線應在正中央");
+            half_y = handle.center().y;
         } else {
             assert!(hgt > 200.0 && hgt < 400.0 && w > 900.0, "上下並排 {w}x{hgt}");
+            assert!((handle.center().y - half_y).abs() < 1.0, "上下並排分隔線應在可用高度中央");
         }
+        // 第二次拖曳幅度不同，留下非一半的尺寸，再驗證切換擺放方式時確實重設。
+        for direction in [1.0, -1.5] {
+            let before = h.state_mut().tab_mut().md_preview.as_ref().unwrap().rect;
+            let handle = h.get_by_role_and_label(eframe::egui::accesskit::Role::Splitter, "Resize panel").rect();
+            // 從分隔線中央抓取，才能抓到與編輯區捲軸重疊的回歸問題。
+            let start = handle.center();
+            let end = start + direction * if placement == Placement::Right { eframe::egui::vec2(100.0, 0.0) } else { eframe::egui::vec2(0.0, 70.0) };
+            h.hover_at(start);
+            h.drag_at(start);
+            h.run_steps(2);
+            if direction > 0.0 {
+                h.hover_at(end);
+                h.run_steps(3);
+                h.drop_at(end);
+            } else {
+                // Harness 的 event() 會將各事件拆成不同幀；直接寫入 RawInput，
+                // 才能重現 Computer Use 的「移動與放開同幀」。
+                h.input_mut().events.extend([
+                    Event::PointerMoved(end),
+                    Event::PointerButton { pos: end, button: eframe::egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE },
+                ]);
+            }
+            h.run_steps(8);
+            // 文件更新與圖表重新排版後，也不能覆蓋使用者調整的大小。
+            h.state_mut().doc_mut().version += 1;
+            h.run_steps(8);
+            let after = h.state_mut().tab_mut().md_preview.as_ref().unwrap().rect;
+            let (before_size, after_size, delta) = if placement == Placement::Right {
+                (before.width(), after.width(), end.x - start.x)
+            } else { (before.height(), after.height(), end.y - start.y) };
+            assert!((before_size - after_size).abs() > 40.0, "拖曳應改變面板大小：{placement:?}, {before_size} → {after_size}");
+            assert!((before_size - delta - after_size).abs() < 2.0, "放開後不能彈回：{placement:?}, 預期 {}，實際 {after_size}", before_size - delta);
+        }
+        let manual = h.state_mut().tab_mut().md_preview.as_ref().unwrap().rect;
+        h.set_size(eframe::egui::vec2(1100.0, 760.0));
+        h.run_steps(5);
+        let resized = h.state_mut().tab_mut().md_preview.as_ref().unwrap().rect;
+        let difference = if placement == Placement::Right { manual.width() - resized.width() } else { manual.height() - resized.height() };
+        assert!(difference.abs() < 2.0, "使用者調整後，主視窗改變大小也不能強制改回一半");
+        h.set_size(eframe::egui::vec2(1000.0, 700.0));
+        h.run_steps(5);
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

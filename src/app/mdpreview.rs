@@ -300,6 +300,16 @@ pub fn scroll_target(anchors: &[(usize, f32)], line: usize, fraction: f32) -> Op
     Some(y0 + (y1 - y0) * ((line - l0) as f32 + fraction.clamp(0.0, 1.0)) / (l1 - l0) as f32)
 }
 
+/// 將預覽頂端反向換算成來源行與行內進度；同高錨點取最後一個，避開空白／隱藏內容。
+fn source_position(anchors: &[(usize, f32)], y: f32) -> Option<(usize, f32)> {
+    let i = anchors.partition_point(|a| a.1 <= y).checked_sub(1);
+    let Some(i) = i else { return (!anchors.is_empty()).then_some((0, 0.0)) };
+    let (l0, y0) = anchors[i];
+    let Some(&(l1, y1)) = anchors.get(i + 1) else { return Some((l0, 0.0)) };
+    let line = l0 as f32 + (l1 - l0) as f32 * ((y - y0) / (y1 - y0)).clamp(0.0, 1.0);
+    Some((line.floor() as usize, line.fract()))
+}
+
 /// Markdown 預覽視窗狀態（每個分頁各自一份，只顯示目前分頁的預覽）
 pub struct MarkdownPreview {
     /// 已建立內容時的條件；任一變動就重建
@@ -317,17 +327,25 @@ pub struct MarkdownPreview {
     pub placement: Placement,
     /// 剛切換成並排，下一幀把面板設回編輯區的一半大小
     pub(super) reset_size: bool,
-    /// 跟隨編輯區捲動（只在並排顯示時有意義，切換擺放方式時自動開關）
+    /// 上幀可用長度與面板外框長度；維持各半時，原生視窗尺寸改變也要重新平分。
+    pub(super) dock_geometry: Option<(f32, f32)>,
+    pub(super) resize_started: bool,
+    pub(super) resize_to: Option<f32>,
+    /// 編輯區與預覽雙向同步捲動，切換擺放方式時保留使用者選擇。
     sync_scroll: bool,
     /// 上一幀的內容可用寬度（下一次重建時決定圖表排版寬度）
     avail_w: f32,
     /// 上一幀量到的（起始行, y）錨點
     pub(super) anchors: Vec<(usize, f32)>,
-    /// 上次同步時的編輯區第一行；變動才同步，使用者仍能自由捲動預覽
+    /// 上次觀察到的編輯區位置；變動才由編輯區主導同步。
     pub(super) synced_line: Option<usize>,
     synced_fraction: f32,
     /// 內容、縮放、面板寬度或圖片載入改變排版後，使用新量到的錨點再次同步。
     sync_pending: bool,
+    /// 預覽主導時保留精確來源位置，避免編輯區整列捲動的取整誤差把預覽拉回。
+    preview_source: Option<(usize, f32)>,
+    last_offset: Option<f32>,
+    last_viewport_size: egui::Vec2,
     #[cfg(test)]
     pub(super) scroll_position: (f32, f32),
     /// 並排時上一幀預覽面板所在範圍（主視窗據此避免 Ctrl+滾輪同時縮放編輯區字級）
@@ -360,6 +378,7 @@ pub enum Placement {
 pub enum MdAction {
     None,
     Close,
+    ScrollTo { line: usize, fraction: f32 },
 }
 
 impl MarkdownPreview {
@@ -374,12 +393,18 @@ impl MarkdownPreview {
             fit_width: true,
             placement: Placement::Window,
             reset_size: false,
-            sync_scroll: false,
+            dock_geometry: None,
+            resize_started: false,
+            resize_to: None,
+            sync_scroll: true,
             avail_w: 0.0,
             anchors: Vec::new(),
             synced_line: None,
             synced_fraction: 0.0,
             sync_pending: true,
+            preview_source: None,
+            last_offset: None,
+            last_viewport_size: egui::Vec2::ZERO,
             #[cfg(test)]
             scroll_position: (0.0, 0.0),
             rect: egui::Rect::NOTHING,
@@ -497,12 +522,22 @@ impl MarkdownPreview {
         self.placement != Placement::Window
     }
 
-    /// 切換擺放方式；並排時預設跟隨編輯區捲動並設為編輯區的一半大小，獨立視窗則不跟隨
+    /// 切換擺放方式；並排時設為編輯區的一半大小，同步選擇保持不變。
     pub fn set_placement(&mut self, placement: Placement) {
         self.placement = placement;
-        self.sync_scroll = self.docked();
         self.synced_line = None;
+        self.preview_source = None;
+        self.last_offset = None;
         self.reset_size = self.docked();
+        self.dock_geometry = None;
+        self.resize_started = false;
+        self.resize_to = None;
+    }
+
+    /// 回記編輯區實際可達的整列位置；下幀不把這次被動同步誤認為新的編輯區捲動。
+    pub fn acknowledge_scroll(&mut self, line: usize, fraction: f32) {
+        self.synced_line = Some(line);
+        self.synced_fraction = fraction;
     }
 
     fn reload_images(&mut self, ctx: &egui::Context) {
@@ -531,19 +566,19 @@ impl MarkdownPreview {
             ui.separator();
             let choices = [
                 (Placement::Window, "獨立視窗", "以獨立視窗顯示預覽"),
-                (Placement::Right, "左右並排", "預覽放在編輯區右側，各佔一半，並跟隨編輯區捲動"),
-                (Placement::Bottom, "上下並排", "預覽放在編輯區下方，各佔一半，並跟隨編輯區捲動"),
+                (Placement::Right, "左右並排", "預覽放在編輯區右側，各佔一半"),
+                (Placement::Bottom, "上下並排", "預覽放在編輯區下方，各佔一半"),
             ];
             for (p, label, tip) in choices {
                 if ui.selectable_label(self.placement == p, label).on_hover_text(tip).clicked() && self.placement != p {
                     self.set_placement(p);
                 }
             }
-            // 同步捲動只在並排時提供
+            if ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("捲動編輯區或預覽時，同步另一側的位置").changed() {
+                self.synced_line = None;
+                self.preview_source = None;
+            }
             if self.docked() {
-                if ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("預覽跟隨編輯區捲動").changed() {
-                    self.synced_line = None;
-                }
                 // 並排時沒有視窗標題列可關，另給關閉按鈕
                 close = ui.button("×").on_hover_text("關閉預覽").clicked();
             }
@@ -593,12 +628,16 @@ impl MarkdownPreview {
 
         // 編輯區第一行改變時，把預覽捲到對應位置
         let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
-        if self.sync_scroll && (self.sync_pending || self.synced_line != Some(top_line) || self.synced_fraction != fraction) {
-            if let Some(y) = scroll_target(&self.anchors, top_line, fraction) {
+        let editor_changed = self.synced_line != Some(top_line) || self.synced_fraction != fraction;
+        if editor_changed { self.preview_source = None; }
+        let mut following_editor = false;
+        if self.sync_scroll && (self.sync_pending || editor_changed) {
+            let (line, progress) = self.preview_source.unwrap_or((top_line, fraction));
+            if let Some(y) = scroll_target(&self.anchors, line, progress) {
                 area = area.vertical_scroll_offset(y);
-                self.synced_line = Some(top_line);
-                self.synced_fraction = fraction;
+                self.acknowledge_scroll(top_line, fraction);
                 self.sync_pending = false;
+                following_editor = true;
             }
         }
 
@@ -667,17 +706,30 @@ impl MarkdownPreview {
                 anchors.push((self.source_lines, ui.cursor().min.y - origin));
             }
         }));
+        let offset = output.inner.state.clamped_offset().y;
         #[cfg(test)]
-        { self.scroll_position = (output.inner.state.clamped_offset().y, (output.inner.content_size.y - output.inner.inner_rect.height()).max(0.0)); }
-        #[cfg(not(test))]
-        let _ = output;
-        if anchors.len() != self.anchors.len() || anchors.iter().zip(&self.anchors).any(|(a, b)| a.0 != b.0 || (a.1 - b.1).abs() > 0.5) {
+        { self.scroll_position = (offset, (output.inner.content_size.y - output.inner.inner_rect.height()).max(0.0)); }
+        let layout_changed = output.inner.inner_rect.size() != self.last_viewport_size
+            || anchors.len() != self.anchors.len()
+            || anchors.iter().zip(&self.anchors).any(|(a, b)| a.0 != b.0 || (a.1 - b.1).abs() > 0.5);
+        if layout_changed {
             self.sync_pending = true;
             if self.sync_scroll { ui.ctx().request_repaint(); }
         }
+        // 只有預覽自行移動才反向同步：排版重算與程式設定 offset 都不能回送，避免兩側互拉。
+        let moved = self.last_offset.is_some_and(|last| (offset - last).abs() > 0.01);
+        self.last_offset = Some(offset);
+        self.last_viewport_size = output.inner.inner_rect.size();
         self.anchors = anchors;
         // 寬度或縮放改變會讓圖表排版寬度跨級，下一幀由 refresh 重建
         self.avail_w = avail_w;
+        if self.sync_scroll && moved && !following_editor && !layout_changed {
+            if let Some((line, fraction)) = source_position(&self.anchors, offset) {
+                self.preview_source = Some((line, fraction));
+                ui.ctx().request_repaint();
+                return MdAction::ScrollTo { line, fraction };
+            }
+        }
         MdAction::None
     }
 }
@@ -1043,7 +1095,12 @@ mod tests {
         preview.set_placement(Placement::Right);
         egui_kittest::Harness::builder().allow_missing_glyphs().with_size([600.0, 500.0]).build_ui_state(|ui, s: &mut PreviewTest| {
             s.preview.refresh(ui.ctx(), &s.text, s.version, false, None);
-            s.preview.ui(ui, s.top_line, s.fraction);
+            if let MdAction::ScrollTo { line, .. } = s.preview.ui(ui, s.top_line, s.fraction) {
+                // 模擬未自動換行的編輯區，只有整行位置；預覽仍應保留自己的精確位置。
+                s.top_line = line;
+                s.fraction = 0.0;
+                s.preview.acknowledge_scroll(s.top_line, s.fraction);
+            }
         }, PreviewTest { preview, text, version: 0, top_line, fraction: 0.0 })
     }
 
@@ -1172,6 +1229,71 @@ mod tests {
         assert_eq!(scroll_target(&[], 3, 0.0), None);
         // 文件開頭的空白行回到頂端，不停留在上一個捲動位置。
         assert_eq!(scroll_target(&[(2, 30.0)], 0, 0.0), Some(0.0));
+    }
+
+    #[test]
+    fn test_source_position_handles_gaps_duplicate_anchors_and_boundaries() {
+        let anchors = [(2, 30.0), (4, 90.0), (4, 120.0), (10, 300.0), (12, 300.0)];
+        assert_eq!(source_position(&[], 0.0), None);
+        assert_eq!(source_position(&anchors, 0.0), Some((0, 0.0)));
+        assert_eq!(source_position(&anchors, 30.0), Some((2, 0.0)));
+        assert_eq!(source_position(&anchors, 45.0), Some((2, 0.5)));
+        assert_eq!(source_position(&anchors, 100.0), Some((4, 0.0)));
+        assert_eq!(source_position(&anchors, 210.0), Some((7, 0.0)));
+        assert_eq!(source_position(&anchors, 300.0), Some((12, 0.0)));
+        assert_eq!(source_position(&anchors, 1000.0), Some((12, 0.0)));
+    }
+
+    #[test]
+    fn test_window_preview_reverse_scroll_and_reflow_keep_reading_position() {
+        let text: String = (0..100).map(|i| format!("## Heading {i}\n\nParagraph {i}\n\n")).collect();
+        let mut h = preview_harness(text, 0);
+        h.state_mut().preview.set_placement(Placement::Window);
+        h.run_steps(8);
+        // 獨立視窗與並排使用相同 UI；在無原生視窗的測試中直接送入其內容區事件。
+        h.hover_at(egui::pos2(250.0, 300.0));
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, -600.0),
+            phase: egui::TouchPhase::Move, source: egui::MouseWheelSource::Wheel, modifiers: egui::Modifiers::NONE,
+        });
+        h.run_steps(30);
+        assert!(h.state().top_line > 10, "獨立預覽也須回報來源位置");
+        let source = h.state().preview.preview_source.expect("須保留預覽精確位置");
+        let editor_line = h.state().top_line;
+        let offset = h.state().preview.scroll_position.0;
+        h.run_steps(10);
+        assert!((h.state().preview.scroll_position.0 - offset).abs() < 0.1);
+        h.state_mut().preview.zoom = 1.5;
+        h.run_steps(5);
+        let pv = &h.state().preview;
+        let target = scroll_target(&pv.anchors, source.0, source.1).unwrap();
+        assert!((pv.scroll_position.0 - target.min(pv.scroll_position.1)).abs() < 1.0, "重新排版後須保留預覽閱讀位置");
+        assert_eq!(h.state().top_line, editor_line, "縮放不能當成使用者捲動而回送來源位置");
+        h.set_size(egui::vec2(450.0, 600.0));
+        h.run_steps(5);
+        assert_eq!(h.state().top_line, editor_line, "調整視窗大小不能回送來源位置");
+    }
+
+    #[test]
+    fn test_preview_scrollbar_drag_updates_source_and_stays_still_after_release() {
+        use egui_kittest::kittest::Queryable;
+        let text: String = (0..100).map(|i| format!("## Heading {i}\n\nParagraph {i}\n\n")).collect();
+        let mut h = preview_harness(text, 0);
+        h.run_steps(8);
+        let bar = h.get_by_role(egui::accesskit::Role::ScrollBar).rect();
+        let start = egui::pos2(bar.center().x, bar.top() + 10.0);
+        let end = egui::pos2(bar.center().x, bar.center().y);
+        h.hover_at(start);
+        h.drag_at(start);
+        h.run_steps(2);
+        h.hover_at(end);
+        h.run_steps(2);
+        h.drop_at(end);
+        h.run_steps(5);
+        assert!(h.state().top_line > 100, "拖曳預覽捲軸須回送來源位置");
+        let offset = h.state().preview.scroll_position.0;
+        h.run_steps(10);
+        assert!((h.state().preview.scroll_position.0 - offset).abs() < 0.1, "放開捲軸後不能被來源位置拉回");
     }
 
     #[test]

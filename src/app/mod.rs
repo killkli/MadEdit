@@ -993,7 +993,17 @@ impl eframe::App for App {
         }
         // 並排的 Markdown 預覽面板要在 CentralPanel 之前，獨立視窗版本放這裡也無妨
         self.show_markdown_preview(ui);
-        egui::CentralPanel::default().frame(egui::Frame::new()).show(ui, |ui| {
+        // 分隔線的拖曳範圍會跨入編輯區；留出抓取空間，避免稍後建立的捲軸搶走事件。
+        let mut editor_margin = egui::Margin::ZERO;
+        if let Some(pv) = &self.tabs[self.active].md_preview {
+            let gap = ui.style().interaction.resize_grab_radius_side.ceil() as i8 + 1;
+            match pv.placement {
+                mdpreview::Placement::Right => editor_margin.right = gap,
+                mdpreview::Placement::Bottom => editor_margin.bottom = gap,
+                mdpreview::Placement::Window => {}
+            }
+        }
+        egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(editor_margin)).show(ui, |ui| {
             self.disk_banner(ui);
             self.find_bar(ui);
             self.goto_bar(ui);

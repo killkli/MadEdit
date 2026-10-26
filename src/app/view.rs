@@ -313,6 +313,16 @@ impl ViewState {
         (line, (row - first) as f32 / (end - first).max(1) as f32)
     }
 
+    /// 預覽反向同步只改變可視範圍，保留游標與選取；換行時取最接近的視覺列。
+    pub fn scroll_to_source(&mut self, ed: &EditorState, line: usize, fraction: f32) {
+        let line = line.min(ed.lines.len().saturating_sub(1));
+        self.top_row = if self.wrapped() {
+            let first = self.wrap.line_first_row[line] as usize;
+            let end = self.wrap.line_first_row.get(line + 1).map_or(self.row_count(ed), |r| *r as usize);
+            (first + (fraction.clamp(0.0, 1.0) * (end - first) as f32).round() as usize).min(end.saturating_sub(1))
+        } else { line };
+    }
+
     /// 文字位置所在的視覺列
     fn row_of(&self, pos: TextPosition) -> usize {
         if !self.wrapped() {

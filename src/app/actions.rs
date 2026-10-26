@@ -89,7 +89,13 @@ impl App {
                     .with_title(format!("Markdown 預覽 - {}", tab.doc.display_name()))
                     .with_inner_size([820.0, 900.0])
                     .with_min_inner_size([360.0, 280.0]);
-                ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line, fraction))
+                let mut action = super::mdpreview::MdAction::None;
+                ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| {
+                    let next = pv.ui(ui, top_line, fraction);
+                    // 原生視窗同一幀可能多次排版，保留先前回報的捲動／關閉動作。
+                    if next != super::mdpreview::MdAction::None { action = next; }
+                });
+                action
             }
             placement => {
                 // 左右與上下用不同的面板識別，各自記住使用者拖曳後的大小
@@ -100,13 +106,59 @@ impl App {
                 };
                 let mut panel = panel.resizable(true).default_size(half).min_size(160.0);
                 // 剛切換成並排時強制設為一半，不沿用先前的大小；之後使用者可拖曳邊界調整
-                if std::mem::take(&mut pv.reset_size) {
+                let available = half * 2.0;
+                let keep_half = pv.dock_geometry.is_some_and(|(old_available, old_size)| {
+                    (available - old_available).abs() > 0.5 && (old_size - old_available / 2.0).abs() < 1.0
+                });
+                if std::mem::take(&mut pv.reset_size) || keep_half {
                     panel = panel.exact_size(half);
                 }
-                panel.show(ui, |ui| pv.ui(ui, top_line, fraction)).inner
+                if let Some(size) = pv.resize_to.take() {
+                    panel = panel.exact_size(size);
+                }
+                let shown = panel.show(ui, |ui| {
+                    // 預覽只使用面板分配的範圍；寬表格、程式碼或圖表不能把內容需求
+                    // 回報成面板的新尺寸，否則下一幀會覆蓋各半或手動拖曳後的大小。
+                    let rect = ui.available_rect_before_wrap();
+                    let mut content = ui.new_child(egui::UiBuilder::new().id_salt("md-preview-content").max_rect(rect));
+                    content.shrink_clip_rect(rect);
+                    let action = pv.ui(&mut content, top_line, fraction);
+                    ui.advance_cursor_after_rect(rect);
+                    action
+                });
+                if pv.placement == placement {
+                    let size = if placement == Placement::Right { shown.response.rect.width() } else { shown.response.rect.height() };
+                    pv.dock_geometry = Some((available, size));
+                    let pane = shown.response.rect;
+                    let edge = if placement == Placement::Right {
+                        egui::Rect::from_min_max(pane.min, egui::pos2(pane.left(), pane.bottom()))
+                    } else { egui::Rect::from_min_max(pane.min, egui::pos2(pane.right(), pane.top())) };
+                    let edge = edge.expand(ui.style().interaction.resize_grab_radius_side);
+                    if ctx.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(edge) {
+                        pv.resize_started = true;
+                    }
+                    // 快速移動與放開可能落在同一幀，egui 此時未必回報 drag_stopped；
+                    // 只要先前確實按在分隔線上，就依放開位置保存尺寸，再交由面板正常記憶。
+                    if ctx.input(|i| i.pointer.primary_released()) && std::mem::take(&mut pv.resize_started) {
+                        if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                            let size = if placement == Placement::Right { area.right() - pos.x } else { area.bottom() - pos.y };
+                            pv.resize_to = Some(size.clamp(160.0_f32.min(available), available));
+                            ctx.request_repaint();
+                        }
+                    }
+                }
+                shown.inner
             }
         };
-        if action == super::mdpreview::MdAction::None {
+        if let super::mdpreview::MdAction::ScrollTo { line, fraction } = action {
+            let tab = self.tab_mut();
+            tab.view.scroll_to_source(&tab.doc.editor, line, fraction);
+            let (line, fraction) = tab.view.top_line(&tab.doc.editor);
+            pv.acknowledge_scroll(line, fraction);
+            // 獨立預覽視窗的事件也必須喚醒主視窗，讓來源位置立即更新。
+            ctx.request_repaint();
+        }
+        if action != super::mdpreview::MdAction::Close {
             self.tab_mut().md_preview = Some(pv);
         }
     }
