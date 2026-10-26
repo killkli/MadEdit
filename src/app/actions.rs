@@ -75,9 +75,8 @@ impl App {
     pub fn show_markdown_preview(&mut self, ui: &mut egui::Ui) {
         use super::mdpreview::Placement;
         let ctx = ui.ctx().clone();
-        let Some(mut pv) = self.md_preview.take() else { return };
-        // 預覽中的文件已被關閉時，一併關閉預覽
-        let Some(tab) = self.tabs.iter().find(|t| t.doc.id == pv.doc_id) else { return };
+        let tab = self.tab_mut();
+        let Some(mut pv) = tab.md_preview.take() else { return };
         // 相對路徑圖片以文件所在資料夾為基準
         let base_dir = tab.doc.path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf());
         pv.refresh(&ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(&ctx), base_dir);
@@ -87,7 +86,7 @@ impl App {
         let action = match pv.placement {
             Placement::Window => {
                 let builder = egui::ViewportBuilder::default()
-                    .with_title(format!("Markdown 預覽 - {}", pv.title))
+                    .with_title(format!("Markdown 預覽 - {}", tab.doc.display_name()))
                     .with_inner_size([820.0, 900.0])
                     .with_min_inner_size([360.0, 280.0]);
                 ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line))
@@ -108,7 +107,7 @@ impl App {
             }
         };
         if action == super::mdpreview::MdAction::None {
-            self.md_preview = Some(pv);
+            self.tab_mut().md_preview = Some(pv);
         }
     }
 
@@ -588,8 +587,7 @@ impl App {
                 if !ctx.is_loader_installed(super::mdpreview::DiagramLoader::ID) {
                     super::mdpreview::DiagramLoader::install(ctx, self.fonts.diagram_font());
                 }
-                let doc = self.doc();
-                self.md_preview = Some(super::mdpreview::MarkdownPreview::new(doc.id, doc.display_name()));
+                self.tab_mut().md_preview = Some(super::mdpreview::MarkdownPreview::new());
             }
             C::PreviewHtml => {
                 let html = print::preview_html(self.doc(), false);

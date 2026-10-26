@@ -188,11 +188,11 @@ fn test_markdown_preview_follows_editor_scroll() {
     h.state_mut().pending.push(super::C::PreviewMarkdown);
     h.run_steps(2);
     // 獨立視窗預設不跟隨捲動，切成並排顯示後才同步
-    assert_eq!(h.state_mut().md_preview.as_ref().unwrap().synced_line, None);
-    h.state_mut().md_preview.as_mut().unwrap().set_placement(super::mdpreview::Placement::Right);
+    assert_eq!(h.state_mut().tab_mut().md_preview.as_ref().unwrap().synced_line, None);
+    h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(super::mdpreview::Placement::Right);
     h.run_steps(5);
     {
-        let pv = h.state_mut().md_preview.as_ref().expect("預覽未開啟");
+        let pv = h.state_mut().tab_mut().md_preview.as_ref().expect("預覽未開啟");
         assert!(pv.anchors.len() > 100, "錨點數 {}", pv.anchors.len());
         // 錨點 y 應隨行號遞增
         assert!(pv.anchors.windows(2).all(|w| w[0].0 <= w[1].0 && w[0].1 <= w[1].1));
@@ -200,7 +200,7 @@ fn test_markdown_preview_follows_editor_scroll() {
     }
     h.state_mut().tab_mut().view.top_row = 200;
     h.run_steps(5);
-    assert_eq!(h.state_mut().md_preview.as_ref().unwrap().synced_line, Some(200));
+    assert_eq!(h.state_mut().tab_mut().md_preview.as_ref().unwrap().synced_line, Some(200));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -218,9 +218,9 @@ fn test_markdown_preview_docks_at_half_size() {
     h.state_mut().pending.push(super::C::PreviewMarkdown);
     h.run_steps(3);
     for placement in [Placement::Right, Placement::Bottom, Placement::Right] {
-        h.state_mut().md_preview.as_mut().unwrap().set_placement(placement);
+        h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(placement);
         h.run_steps(8);
-        let pv = h.state_mut().md_preview.as_ref().unwrap();
+        let pv = h.state_mut().tab_mut().md_preview.as_ref().unwrap();
         let (w, hgt) = (pv.rect.width(), pv.rect.height());
         if placement == Placement::Right {
             assert!((w - 500.0).abs() < 20.0, "左右並排寬度 {w}");
@@ -248,4 +248,31 @@ fn test_backspace_wrapped_selection_does_not_panic() {
     h.key_press(Key::Backspace);
     h.run_steps(2);
     assert_eq!(text(&mut h), "\nend");
+}
+
+/// Markdown 預覽屬於各自的分頁：切到別的分頁就不顯示，切回來仍保留原本的擺放方式
+#[test]
+fn test_markdown_preview_follows_active_tab() {
+    use super::mdpreview::Placement;
+    let dir = std::env::temp_dir().join(format!("madedit-mdtab-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b) = (dir.join("a.md"), dir.join("b.md"));
+    std::fs::write(&a, "# A\n").unwrap();
+    std::fs::write(&b, "# B\n").unwrap();
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![a, b], None));
+    h.run_steps(3);
+    h.state_mut().activate(0);
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Right);
+    h.run_steps(3);
+    h.state_mut().pending.push(C::NextWindow);
+    h.run_steps(3);
+    assert_eq!(h.state_mut().active, 1);
+    assert!(h.state_mut().tab_mut().md_preview.is_none(), "另一個分頁不應顯示預覽");
+    h.state_mut().pending.push(C::NextWindow);
+    h.run_steps(3);
+    let pv = h.state_mut().tab_mut().md_preview.as_ref().expect("切回後應恢復預覽");
+    assert_eq!(pv.placement, Placement::Right);
+    let _ = std::fs::remove_dir_all(&dir);
 }

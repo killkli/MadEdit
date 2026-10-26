@@ -258,12 +258,8 @@ pub fn scroll_target(anchors: &[(usize, f32)], line: usize) -> Option<f32> {
     Some(y0 + (y1 - y0) * (line - l0) as f32 / (l1 - l0) as f32)
 }
 
-/// Markdown 預覽視窗狀態
+/// Markdown 預覽視窗狀態（每個分頁各自一份，只顯示目前分頁的預覽）
 pub struct MarkdownPreview {
-    /// 預覽中的文件識別碼
-    pub doc_id: u64,
-    /// 文件顯示名稱（視窗標題用）
-    pub title: String,
     /// 已建立內容時的條件；任一變動就重建
     built: Option<BuildKey>,
     items: Vec<Item>,
@@ -317,10 +313,8 @@ pub enum MdAction {
 }
 
 impl MarkdownPreview {
-    pub fn new(doc_id: u64, title: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            doc_id,
-            title,
             built: None,
             items: Vec::new(),
             cache: CommonMarkCache::default(),

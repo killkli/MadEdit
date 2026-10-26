@@ -46,11 +46,13 @@ pub struct Tab {
     pub hex: HexViewState,
     /// 磁碟上的檔案已被其他程式修改（只有使用者選擇重新載入或忽略時才清除）
     pub disk_changed: bool,
+    /// 此分頁的 Markdown 預覽；切換分頁時跟著切換
+    pub md_preview: Option<mdpreview::MarkdownPreview>,
 }
 
 impl Tab {
     fn new(doc: Document) -> Self {
-        Self { doc, view: ViewState::default(), hex: HexViewState::default(), disk_changed: false }
+        Self { doc, view: ViewState::default(), hex: HexViewState::default(), disk_changed: false, md_preview: None }
     }
 }
 
@@ -109,8 +111,6 @@ pub struct App {
     chinese_safe: bool,
     /// 開啟中的預覽列印視窗
     preview: Option<preview::PrintPreview>,
-    /// 開啟中的 Markdown 預覽視窗
-    md_preview: Option<mdpreview::MarkdownPreview>,
 }
 
 impl App {
@@ -149,7 +149,6 @@ impl App {
             focus_editor: true,
             chinese_safe: true,
             preview: None,
-            md_preview: None,
         };
         app.load_icons(&cc.egui_ctx);
         app.rebuild_bindings();
@@ -930,7 +929,7 @@ impl eframe::App for App {
         // Ctrl/⌘ + 滾輪縮放字型
         let zoom = ctx.input(|i| if i.modifiers.command { i.smooth_scroll_delta().y } else { 0.0 });
         // 滑鼠在並排的 Markdown 預覽上時，Ctrl+滾輪交給預覽自己縮放
-        let over_preview = self.md_preview.as_ref().is_some_and(|p| p.docked() && ui.rect_contains_pointer(p.rect));
+        let over_preview = self.tabs[self.active].md_preview.as_ref().is_some_and(|p| p.docked() && ui.rect_contains_pointer(p.rect));
         if zoom != 0.0 && ui.rect_contains_pointer(ui.max_rect()) && !over_preview {
             self.settings.font_size = (self.settings.font_size + zoom.signum()).clamp(6.0, 72.0);
         }
