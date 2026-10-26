@@ -835,6 +835,8 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         }
         for a in actions {
             apply_action(doc, view, &a, settings, widths, &lay);
+            // 編輯後立即重建換行快取，後續動作與本幀繪製才不會用舊的斷行位置索引新內容
+            view.update_wrap(doc, &lay, widths);
             out.actions.push(a);
         }
         if doc.mode == EditMode::Column && !doc.editor.selection.is_block() {

@@ -230,3 +230,22 @@ fn test_markdown_preview_docks_at_half_size() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_backspace_wrapped_selection_does_not_panic() {
+    // 自動換行時刪除多行選取：同一幀內換行快取須先更新再繪製，否則以舊的斷行位置索引新內容而 panic
+    use crate::core::editor::{Selection, TextPosition};
+    use crate::core::settings::WrapMode;
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([400.0, 700.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    h.run_steps(3);
+    h.state_mut().settings.wrap_mode = WrapMode::ByWindow;
+    let long = "word ".repeat(60);
+    h.state_mut().doc_mut().editor.set_text(&format!("{long}\n{long}\n\nend"));
+    h.state_mut().doc_mut().version += 1;
+    h.run_steps(2);
+    h.state_mut().doc_mut().editor.selection = Selection::new(TextPosition::new(0, 0), TextPosition::new(2, 0));
+    h.run_steps(2);
+    h.key_press(Key::Backspace);
+    h.run_steps(2);
+    assert_eq!(text(&mut h), "\nend");
+}
