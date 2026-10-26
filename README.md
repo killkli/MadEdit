@@ -9,7 +9,7 @@
 
 原版 C++ / wxWidgets 架構的 **MadEdit** 是許多開發者與資料處理人員心目中的經典工具（支援列塊編輯、Hex 檢視與多國語系編碼切換），但隨著時間推移，龐雜的 C++ 跨平台依賴與編譯鏈在現代 Windows、macOS 與 Linux 環境下日益難以維護。在下原本也由 MadEdit-Mod 的原始碼重新建置出 Mac 版本與 Linux 版本，但是速度慢，有許多功能在非Windows難以正常實現，尤其是字型顯示，修改後各平臺不一致，於是才使用 Rust 重製。
 
-**MadEdit-Rust** 以 **Rust (Edition 2024)** 與即時模式 GUI 框架 **[egui / eframe](https://github.com/emilk/egui)** 重新打造，遵循 **KISS (Keep It Simple, Stupid)** 設計原則，在零 C++ GUI 系統庫依賴的前提下，重現原版 MadEdit 的經典介面與命令集（依原版命令表實作 165 個命令）。
+**MadEdit** 以 **Rust (Edition 2024)** 與即時模式 GUI 框架 **[egui / eframe](https://github.com/emilk/egui)** 重新打造，遵循 **KISS (Keep It Simple, Stupid)** 設計原則，在零 C++ GUI 系統庫依賴的前提下，重現原版 MadEdit 的經典介面與命令集（依原版命令表實作 165 個命令）。
 
 > 介面曾以 Slint 實作，2026-10 改寫為 egui，以支援使用者任選系統字型（含比例字型）與更完整的輸入法處理，詳見 [ADR 0011](docs/adr/0011-egui-rewrite.md)。
 
@@ -40,30 +40,50 @@
 - **Piece Table** 以定位讀取（pread）分頁快取原始檔案，不使用 mmap（避免檔案被外部截短時發生 SIGBUS）。
 - 超過門檻的大型檔案以十六進位模式開啟，資料留在磁碟上按需讀取。
 
-### 5. 原版 MadEdit 命令集
-- **檔案**：多文件分頁、另存副本、全部儲存、最近檔案、唯讀旗標、列印與預覽、工作階段保存。
+### 5. Markdown 預覽（含 Mermaid 圖表）
+- 從「檢視 → 預覽為 → 以 Markdown 預覽」或工具列預覽按鈕開啟，在 App 內直接繪製 Markdown（`egui_commonmark`）；目前檔案不是 Markdown 時按鈕停用。
+- ` ```mermaid ` 區塊以純 Rust 的 `fermaid` 轉成圖表顯示，不需瀏覽器或 Node.js。
+- 相對路徑圖片以文件所在資料夾為基準，支援 PNG、JPEG、GIF、WebP 與 SVG。
+- 可切換**獨立視窗**、**左右並排**或**上下並排**；並排時與編輯區各佔一半，並可**同步捲動**跟隨編輯區。
+- 支援縮放（`Ctrl` / `⌘` + 滾輪或觸控板捏合）與圖表符合寬度；高對比配色（深色純黑底、淺色純白底）。
+- 預覽狀態隨分頁各自保存，切換分頁時同步切換。
+- 另可「以 HTML 預覽」交給系統瀏覽器開啟。
+
+### 6. 原版 MadEdit 命令集
+- **檔案**：多文件分頁、另存副本、全部儲存、最近檔案、唯讀旗標、列印與 App 內預覽列印（A4 分頁、翻頁、縮放）、工作階段保存。
 - **編輯**：書籤行操作、Hex 字串互轉、縮排、註解、大小寫、全半形、Tab 與空白互轉、遞增數字、排序、欄位對齊。
 - **搜尋**：純文字 / 大小寫 / 全字 / Regex / Hex 搜尋取代、在多個檔案中尋找／取代、跳至對應括號。
 - **檢視**：自動換行、行號、書籤欄、尺標、控制字元、目前行、欄位提示線、深淺色主題、Markdown／HTML 預覽。
 - **巨集與工具**：巨集錄製播放、快捷鍵重新指派、拼字檢查、字數統計、簡繁與日文漢字轉換、JSON／XML 格式化。
+
+### 7. macOS 原生整合
+- 支援 Finder「打開方式」與拖曳到 Dock 圖示開檔（含中文、空白、百分比檔名），執行中開檔會在同一個 App 新增分頁。
+- 系統選單與 Dock 的「結束」也會先確認未儲存的修改。
+- 快捷鍵依 macOS 慣例（⌘W、⌘Q、⌘⇧S、⌘⌥F、Control+Tab 等），⌘H、⌘M、⌘Tab 保留給系統。
 
 ---
 
 ## 🏗️ 專案目錄結構
 
 ```text
-MadEdit-Rust/
+MadEdit/
 ├── Cargo.toml / Cargo.lock
 ├── build.rs                # Windows 執行檔圖示嵌入
 ├── assets/                 # 應用程式圖示、工具列圖示（取自原版）、拼字字典
 ├── scripts/
 │   ├── make_appbundle.sh   # 產生 macOS MadEdit.app
-│   └── make_linux_dist.sh  # 產生 Linux 發行壓縮檔
+│   ├── install_macos.sh    # 建置並安裝 MadEdit.app 到 /Applications
+│   ├── test_macos_bundle.sh / test_macos_runtime.py  # macOS 打包與原生執行回歸測試
+│   ├── make_linux_dist.sh  # 產生 Linux 發行壓縮檔
+│   ├── install_linux.sh    # 建置並安裝到本機 ~/.local
+│   └── make_windows_dist.ps1 # 產生 Windows 發行壓縮檔
 ├── src/
 │   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
-│   ├── app/                # egui 介面層（選單、工具列、自繪編輯區、Hex 檢視、對話框、命令表）
+│   ├── macos.rs            # macOS Finder／Dock 開檔與結束事件橋接
+│   ├── app/                # egui 介面層（選單、工具列、自繪編輯區、Hex 檢視、Markdown 預覽、對話框、命令表）
 │   └── core/               # 與 UI 無關的核心邏輯（文件、編碼、Piece Table、搜尋、語法、設定）
-├── docs/                   # 架構決策紀錄 (ADR) 與領域文件
+├── vendor/accesskit_macos/ # 回補 Touch Bar 退出崩潰修正的 AccessKit（見 vendor/README.md）
+├── docs/                   # 架構決策紀錄 (ADR)、領域文件與 macOS 驗證紀錄
 ├── GLOSSARY.md             # 專案領域詞彙表
 └── AGENTS.md               # AI 協作與開發指南
 ```
@@ -128,6 +148,15 @@ macOS 打包回歸測試：`./scripts/test_macos_bundle.sh`（不覆寫已安裝
 > 由於未經 Apple 公證，從網路下載的 App 第一次開啟時可能被 Gatekeeper 阻擋，
 > 請在 Finder 中按右鍵選「打開」，或執行 `xattr -cr MadEdit.app` 移除隔離屬性。
 
+### Windows 發行檔
+
+可直接從 [Releases](https://github.com/tenyi/MadEdit/releases) 下載 `MadEdit-<版本>-windows-x86_64.zip`，解壓縮後執行 `MadEdit.exe`。
+自行打包（輸出至 `dist/`）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1
+```
+
 ### Linux 發行檔
 
 可直接從 [Releases](https://github.com/tenyi/MadEdit/releases) 下載 `MadEdit-<版本>-linux-x86_64.tar.gz`，
@@ -152,6 +181,9 @@ cargo install cargo-zigbuild
 | :--- | :--- | :--- |
 | **GUI 框架** | [`eframe` / `egui`](https://github.com/emilk/egui) (`v0.37`) | 即時模式 GUI、自繪編輯區與 Hex 檢視、輸入法事件 |
 | **系統字型** | [`fontique`](https://crates.io/crates/fontique) | 列舉並載入系統字型 |
+| **Markdown 預覽** | [`egui_commonmark`](https://crates.io/crates/egui_commonmark) | 在 App 內繪製 Markdown |
+| **Mermaid 圖表** | [`fermaid`](https://crates.io/crates/fermaid) + [`resvg`](https://crates.io/crates/resvg) | 純 Rust 將 Mermaid 轉為 SVG 並點陣化 |
+| **macOS 整合** | [`objc2`](https://crates.io/crates/objc2) | Finder／Dock 開檔與結束事件 |
 | **字元編碼** | [`encoding_rs`](https://crates.io/crates/encoding_rs) | 多語系字元編碼轉換與無損驗證 |
 | **語法突顯** | [`syntect`](https://crates.io/crates/syntect) | Sublime Text 語法定義與主題 |
 | **正規表達式** | [`regex`](https://crates.io/crates/regex) | 正規表達式搜尋與群組取代 |
