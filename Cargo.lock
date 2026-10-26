@@ -29,6 +29,7 @@ dependencies = [
  "serde_json",
  "spellbook",
  "syntect",
+ "sys-locale",
  "unicode-width",
 ]
 

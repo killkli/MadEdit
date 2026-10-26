@@ -131,10 +131,15 @@ impl App {
                 self.save_tab(i, true);
             }
             C::SaveACopy => {
-                if let Some(p) = rfd::FileDialog::new().set_title("另存副本").set_file_name(self.doc().display_name()).save_file().map(Self::trim_file_name) {
+                let title = self.t("msg.save_copy", "另存副本").to_string();
+                let fail = self.t("msg.save_fail", "存檔失敗").to_string();
+                if let Some(p) = rfd::FileDialog::new().set_title(&title).set_file_name(self.doc().display_name()).save_file().map(Self::trim_file_name) {
                     match self.doc().save_copy(&p) {
-                        Ok(()) => self.set_status(format!("已另存副本 {}", p.display())),
-                        Err(e) => self.message("另存副本失敗", e.to_string()),
+                        Ok(()) => {
+                            let shown = p.display().to_string();
+                            self.set_status(self.tf("msg.saved_copy", "已另存副本 {q}", None, Some(&shown)));
+                        }
+                        Err(e) => self.message(&fail, e.to_string()),
                     }
                 }
             }
@@ -357,7 +362,7 @@ impl App {
                         let d = encoding::decode_with(&bytes, self.doc().encoding);
                         self.copy_to_system(&d.text);
                     }
-                    None => self.set_status("選取的內容不是有效的十六進位字串"),
+                    None => self.set_status(self.t("msg.bad_hex", "選取的內容不是有效的十六進位字串")),
                 }
             }
             C::IncreaseIndent | C::DecreaseIndent if !hex && editable => {
@@ -401,11 +406,11 @@ impl App {
             C::InsertNumbers if !hex && editable => self.dialog = Some(Dialog::InsertNumbers),
             C::ColumnAlignLeft | C::ColumnAlignRight if !hex && editable => {
                 let right = c == C::ColumnAlignRight;
-                let doc = self.doc_mut();
-                if !doc.editor.selection.is_block() {
-                    self.set_status("請先以列塊模式選取要對齊的範圍");
+                if !self.doc().editor.selection.is_block() {
+                    self.set_status(self.t("msg.need_column", "請先以列塊模式選取要對齊的範圍"));
                     return;
                 }
+                let doc = self.doc_mut();
                 let hint = doc.selection_hint();
                 doc.edit(EditKind::Other, hint, |ed| {
                     let b = ed.selection.visual_bounds(ed);
@@ -514,7 +519,7 @@ impl App {
                 let level = if self.post_it || self.settings.always_on_top { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal };
                 ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
                 if self.post_it {
-                    self.set_status("便利貼模式：按 F12 恢復");
+                    self.set_status(self.t("msg.sticky", "便利貼模式：按 F12 恢復"));
                 }
             }
             C::SetFont => self.dialog = Some(Dialog::Font { filter: String::new(), family: self.settings.font_family.clone(), size: self.settings.font_size }),
@@ -553,7 +558,7 @@ impl App {
                 self.settings.show_menubar = !self.settings.show_menubar;
                 if !self.settings.show_menubar {
                     let key = self.shortcut_text(C::ToggleMenubar, ctx);
-                    self.set_status(format!("選單列已隱藏，按 {key} 或在工具列按右鍵可再次顯示"));
+                    self.set_status(self.tf("msg.menu_hidden", "選單列已隱藏，按 {q} 或在工具列按右鍵可再次顯示", None, Some(&key)));
                 }
             }
             C::ToggleStatusbar => self.settings.show_statusbar = !self.settings.show_statusbar,
@@ -601,11 +606,11 @@ impl App {
             C::StartRecMacro => {
                 self.macros.steps.clear();
                 self.macros.recording = true;
-                self.set_status("開始錄製巨集");
+                self.set_status(self.t("msg.rec_start", "開始錄製巨集"));
             }
             C::StopRecMacro => {
                 self.macros.recording = false;
-                self.set_status(format!("已錄製 {} 個步驟", self.macros.steps.len()));
+                self.set_status(self.tf("msg.rec_stop", "已錄製 {n} 個步驟", Some(self.macros.steps.len()), None));
             }
             C::PlayRecMacro => {
                 let steps = self.macros.steps.clone();
@@ -614,7 +619,9 @@ impl App {
             C::SaveRecMacro => self.save_recorded_macro(),
             C::RunTempMacro => self.dialog = Some(Dialog::TempMacro { script: super::macros::to_json(&self.macros.steps), error: None }),
             C::LoadMacro => {
-                let mut dlg = rfd::FileDialog::new().set_title("載入巨集").add_filter("MadEdit 巨集", &["json"]);
+                let title = self.t("msg.load_macro", "載入巨集").to_string();
+                let filter = self.t("msg.macro_filter", "MadEdit 巨集").to_string();
+                let mut dlg = rfd::FileDialog::new().set_title(title).add_filter(filter, &["json"]);
                 if let Some(d) = super::macros::macro_dir() {
                     dlg = dlg.set_directory(d);
                 }
@@ -623,7 +630,9 @@ impl App {
                 }
             }
             C::EditMacroFile => {
-                let mut dlg = rfd::FileDialog::new().set_title("編輯巨集").add_filter("MadEdit 巨集", &["json"]);
+                let title = self.t("msg.edit_macro", "編輯巨集").to_string();
+                let filter = self.t("msg.macro_filter", "MadEdit 巨集").to_string();
+                let mut dlg = rfd::FileDialog::new().set_title(title).add_filter(filter, &["json"]);
                 if let Some(d) = super::macros::macro_dir() {
                     dlg = dlg.set_directory(d);
                 }
@@ -642,10 +651,10 @@ impl App {
             C::SourceFormatter => self.dialog = Some(Dialog::SourceFormatter),
             C::PurgeHistories => self.dialog = Some(Dialog::PurgeHistories),
             C::ToggleBOM => {
-                let doc = self.doc_mut();
-                if !encoding::supports_bom(doc.encoding) {
-                    self.set_status("目前編碼不支援 BOM");
+                if !encoding::supports_bom(self.doc().encoding) {
+                    self.set_status(self.t("msg.no_bom", "目前編碼不支援 BOM"));
                 } else {
+                    let doc = self.doc_mut();
                     let b = !doc.has_bom;
                     doc.set_bom(b);
                 }
@@ -681,7 +690,7 @@ impl App {
                 if let Some(t) = self.system_clipboard() {
                     let (out, n) = chinese::convert(&t, conv, self.chinese_safe);
                     self.copy_to_system(&out);
-                    self.set_status(format!("剪貼簿已轉換 {n} 個字"));
+                    self.set_status(self.tf("msg.clip_converted", "剪貼簿已轉換 {n} 個字", Some(n), None));
                 }
             }
             C::Markdown2Html if !hex && editable => self.transform(Scope::Whole, &|s| Ok(textops::markdown_to_html(s))),
@@ -732,9 +741,9 @@ impl App {
 
             _ => {
                 if !editable {
-                    self.set_status("文件為唯讀");
+                    self.set_status(self.t("msg.readonly", "文件為唯讀"));
                 } else if hex {
-                    self.set_status("此命令不適用於十六進位模式");
+                    self.set_status(self.t("msg.not_hex", "此命令不適用於十六進位模式"));
                 }
             }
         }
@@ -918,7 +927,7 @@ impl App {
             self.transform(Scope::Whole, &|s| Ok(textops::toggle_block_comment(s, open, close, Some(add))));
         } else {
             let name = self.doc().syntax.clone();
-            self.set_status(format!("{name} 沒有註解符號"));
+            self.set_status(self.tf("msg.no_comment", "{q} 沒有註解符號", None, Some(&name)));
         }
     }
 
@@ -940,14 +949,18 @@ impl App {
 
     /// 自動換行處改為實際換行字元
     fn wrap_to_newlines(&mut self) {
-        let tab = &mut self.tabs[self.active];
-        let doc = &mut tab.doc;
-        let (a, b) = if doc.editor.selection.is_empty() { (0, doc.editor.lines.len() - 1) } else { selected_line_range(&doc.editor) };
-        let breaks: Vec<Vec<usize>> = (a..=b).map(|l| tab.view.wrap_breaks(l)).collect();
+        let (a, b, breaks) = {
+            let tab = &self.tabs[self.active];
+            let doc = &tab.doc;
+            let (a, b) = if doc.editor.selection.is_empty() { (0, doc.editor.lines.len() - 1) } else { selected_line_range(&doc.editor) };
+            let breaks: Vec<Vec<usize>> = (a..=b).map(|l| tab.view.wrap_breaks(l)).collect();
+            (a, b, breaks)
+        };
         if breaks.iter().all(|v| v.is_empty()) {
-            self.set_status("請先開啟自動換行");
+            self.set_status(self.t("msg.need_wrap", "請先開啟自動換行"));
             return;
         }
+        let doc = self.doc_mut();
         doc.edit(EditKind::Other, a..b + 1, |ed| {
             let mut out = Vec::new();
             for (k, l) in (a..=b).enumerate() {

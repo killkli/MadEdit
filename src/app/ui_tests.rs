@@ -9,6 +9,8 @@ use super::{App, Confirm};
 
 fn harness() -> Harness<'static, App> {
     let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    // 測試機的系統語言不一定是繁體中文，按鈕文字固定用原文
+    h.state_mut().settings.ui_language = crate::core::settings::UiLanguage::ZhTw;
     h.run_steps(3);
     h
 }

@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### 新增
+- 介面語言可跟隨系統，或改為 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。選單與選項對話框都會套用。
 - `Makefile` 統一開發與打包指令（`make check`、`make test`、`make dist`）。
 - Linux AppImage（x86_64 與 aarch64），內含執行檔與拼字字典。
 - Linux 壓縮檔與 Windows zip 可指定 `x86_64` 或 `aarch64`。

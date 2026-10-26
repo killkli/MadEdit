@@ -54,7 +54,8 @@ MadEdit/
 │   │   └── README.md       # 圖示來源與 GNU GPL 授權說明
 │   ├── icons\              # 由 icons-src 轉換而來的 PNG（勿手動修改）
 │   ├── make_toolbar_icons.py # XPM → PNG 轉換腳本（純標準函式庫）
-│   └── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
+│   ├── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
+│   └── i18n\              # 介面譯文（messages.tsv；繁體中文以程式原文為準）
 ├── scripts\
 │   ├── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
 │   ├── make_dmg.sh         # 產生 macOS 磁碟映像檔（.dmg，含 Applications 軟連結與簽章）
@@ -69,6 +70,7 @@ MadEdit/
 │   ├── app\                # egui 介面層
 │   │   ├── mod.rs          # App 狀態、分頁、存檔／關閉流程、狀態列、主迴圈
 │   │   ├── commands.rs     # 命令表（依原版 CommandTable，165 個命令，另加 Ctrl/⌘+1～9 切換分頁）與快捷鍵解析
+│   │   ├── i18n.rs         # 介面語言：跟隨系統或手動選擇，查 messages.tsv
 │   │   ├── actions.rs      # 所有命令的實作（App::run）
 │   │   ├── menus.rs        # 選單列與工具列
 │   │   ├── dialogs.rs      # 選項、字型、排序、遞增數字、在檔案中尋找等對話框與確認視窗
@@ -177,6 +179,7 @@ MadEdit/
     存檔失敗清空內容、狀態訊息不顯示、外部變更橫幅、取代不更新書籤、存檔前檢查外部修改、mmap SIGBUS、暫存檔名、emoji 寬度、
     視窗尺寸未傳入可視範圍）。
   - 改寫期間另修：主題目前行底色與註解同色導致文字看不見、程式字型把 `->` `=>` 連字、第一幀字型家族未註冊造成 panic。
+  - 介面語言：跟隨系統，或 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。譯文在 `assets/i18n/messages.tsv`，繁體中文仍以程式裡的原文為準。
 - [x] 專案基礎骨架與 Git 版本控制初始化。
 - [x] 專案正式更名為 MadEdit（移除 `-Rust` 套件後綴）：
   - `Cargo.toml` 套件名 `MadEdit-Rust` → `MadEdit`，建置產出的執行檔命名為 `MadEdit`（Windows 為 `MadEdit.exe`）。
@@ -306,7 +309,7 @@ MadEdit/
 - 已完成檔案時間戳記 (`mtime`) 比對、Windows 記憶體對映解鎖、Slint 定時器、頂部內嵌黃色通知橫幅與游標/書籤智慧保留重新載入。
 
 ### Phase 11: egui 全面改寫與原版功能補齊 - [已完成]
-- 見第 5 節與 [ADR 0011](docs/adr/0011-egui-rewrite.md)。未實作項目：單一執行個體、介面語言切換、檔案關聯、真正的 bidi、
+- 見第 5 節與 [ADR 0011](docs/adr/0011-egui-rewrite.md)。未實作項目：單一執行個體、檔案關聯、真正的 bidi、
   語法配色逐項自訂、跨行 Regex、Python 巨集（改為 JSON 步驟清單）。
 
 ### Phase 10: 經典 MadEdit 風格介面重塑 (Classic UI Redesign) - [已完成]

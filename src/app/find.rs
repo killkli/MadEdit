@@ -190,12 +190,13 @@ impl App {
                 }
                 self.tab_mut().view.ensure_visible = true;
                 let wrapped = if backward { s > from } else { s < from };
-                self.find.info = Some(if wrapped { "已從另一端繼續搜尋".into() } else { String::new() });
+                self.find.info = Some(if wrapped { self.t("find.wrapped", "已從另一端繼續搜尋").to_string() } else { String::new() });
                 true
             }
             None => {
-                self.find.info = Some("找不到符合的文字".into());
-                self.set_status(format!("找不到「{}」", self.find.query));
+                self.find.info = Some(self.t("find.not_found", "找不到符合的文字").to_string());
+                let q = self.find.query.clone();
+                self.set_status(self.tf("find.not_found_q", "找不到「{q}」", None, Some(&q)));
                 false
             }
         }
@@ -215,7 +216,7 @@ impl App {
             match encoding::encode_text(&self.find.query, self.doc().encoding, false) {
                 Ok(b) => b,
                 Err(_) => {
-                    self.find.info = Some("目前編碼無法表示搜尋文字".into());
+                    self.find.info = Some(self.t("find.bad_encoding", "目前編碼無法表示搜尋文字").to_string());
                     return false;
                 }
             }
@@ -236,11 +237,11 @@ impl App {
                 hb.move_to(off + pattern.len() - 1, true);
                 let rows = 8;
                 hb.top_row = (off / crate::core::hexbuf::BYTES_PER_ROW).saturating_sub(rows);
-                self.find.info = Some(format!("位移 {off:X}h"));
+                self.find.info = Some(self.tf("find.offset", "位移 {q}", None, Some(&format!("{off:X}h"))));
                 true
             }
             None => {
-                self.find.info = Some("找不到符合的資料".into());
+                self.find.info = Some(self.t("find.no_bytes", "找不到符合的資料").to_string());
                 false
             }
         }
@@ -251,7 +252,7 @@ impl App {
         match self.text_regex() {
             Ok(re) => {
                 let n: usize = self.doc().editor.lines.iter().map(|l| re.find_iter(l).filter(|m| m.start() != m.end()).count()).sum();
-                self.find.info = Some(format!("共 {n} 個符合"));
+                self.find.info = Some(self.tf("find.count_n", "共 {n} 個符合", Some(n), None));
             }
             Err(e) => self.find.info = Some(e),
         }
@@ -336,8 +337,9 @@ impl App {
             let all = 0..doc.editor.lines.len();
             doc.edit(EditKind::Other, hint, |ed| replace_all_lines(ed, &re, &rep, use_regex, all))
         };
-        self.find.info = Some(format!("已取代 {count} 處"));
-        self.set_status(format!("已取代 {count} 處"));
+        let msg = self.tf("find.replaced", "已取代 {n} 處", Some(count), None);
+        self.find.info = Some(msg.clone());
+        self.set_status(msg);
     }
 
     pub fn find_bar(&mut self, ui: &mut egui::Ui) {
@@ -349,10 +351,27 @@ impl App {
         let mut do_replace = false;
         let mut do_replace_all = false;
         let mut do_count = false;
+        // 先取出譯文，避免與下方對欄位的可變借用重疊
+        let lbl_find = self.t("find.find", "尋找：");
+        let lbl_hex_hint = self.t("find.hex_hint", "十六進位，例如 4D 61 64").to_string();
+        let lbl_prev = self.t("find.prev", "◀ 上一個");
+        let lbl_next = self.t("find.next", "下一個 ▶");
+        let lbl_count = self.t("find.count", "計數");
+        let lbl_case = self.t("find.case", "大小寫");
+        let lbl_word = self.t("find.word", "全字");
+        let lbl_regex = self.t("find.regex", "Regex");
+        let lbl_hex = self.t("find.hex", "Hex");
+        let lbl_wrap = self.t("find.wrap", "循環");
+        let lbl_toggle = self.t("find.replace_toggle", "取代…");
+        let lbl_close = self.t("find.close", "關閉 (Esc)");
+        let lbl_replace = self.t("find.replace", "取代：");
+        let lbl_replace_btn = self.t("find.replace_btn", "取代");
+        let lbl_replace_all = self.t("find.replace_all", "全部取代");
+        let lbl_in_sel = self.t("find.in_selection", "只在選取範圍內");
         egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 4)).fill(ui.visuals().faint_bg_color).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("尋找：");
-                let resp = ui.add(egui::TextEdit::singleline(&mut self.find.query).desired_width(260.0).hint_text(if self.find.hex { "十六進位，例如 4D 61 64" } else { "" }));
+                ui.label(lbl_find);
+                let resp = ui.add(egui::TextEdit::singleline(&mut self.find.query).desired_width(260.0).hint_text(if self.find.hex { lbl_hex_hint.clone() } else { String::new() }));
                 if std::mem::take(&mut self.find.focus) {
                     resp.request_focus();
                     // 全選以便直接輸入新的搜尋文字
@@ -373,33 +392,33 @@ impl App {
                         }
                     }
                 });
-                if ui.button("◀ 上一個").clicked() {
+                if ui.button(lbl_prev).clicked() {
                     do_next = Some(true);
                 }
-                if ui.button("下一個 ▶").clicked() {
+                if ui.button(lbl_next).clicked() {
                     do_next = Some(false);
                 }
-                if ui.button("計數").clicked() {
+                if ui.button(lbl_count).clicked() {
                     do_count = true;
                 }
-                ui.checkbox(&mut self.settings.search_match_case, "大小寫");
-                ui.checkbox(&mut self.settings.search_whole_word, "全字");
-                ui.checkbox(&mut self.settings.search_regex, "Regex");
-                ui.checkbox(&mut self.find.hex, "Hex");
-                ui.checkbox(&mut self.settings.search_wrap_around, "循環");
-                if ui.selectable_label(self.find.replace, "取代…").clicked() {
+                ui.checkbox(&mut self.settings.search_match_case, lbl_case);
+                ui.checkbox(&mut self.settings.search_whole_word, lbl_word);
+                ui.checkbox(&mut self.settings.search_regex, lbl_regex);
+                ui.checkbox(&mut self.find.hex, lbl_hex);
+                ui.checkbox(&mut self.settings.search_wrap_around, lbl_wrap);
+                if ui.selectable_label(self.find.replace, lbl_toggle).clicked() {
                     self.find.replace = !self.find.replace;
                 }
                 if let Some(info) = &self.find.info {
                     ui.label(info);
                 }
-                if ui.button("✕").on_hover_text("關閉 (Esc)").clicked() {
+                if ui.button("✕").on_hover_text(lbl_close).clicked() {
                     close = true;
                 }
             });
             if self.find.replace {
                 ui.horizontal(|ui| {
-                    ui.label("取代：");
+                    ui.label(lbl_replace);
                     let resp = ui.add(egui::TextEdit::singleline(&mut self.find.replacement).desired_width(260.0));
                     if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                         do_replace = true;
@@ -412,13 +431,13 @@ impl App {
                             }
                         }
                     });
-                    if ui.button("取代").clicked() {
+                    if ui.button(lbl_replace_btn).clicked() {
                         do_replace = true;
                     }
-                    if ui.button("全部取代").clicked() {
+                    if ui.button(lbl_replace_all).clicked() {
                         do_replace_all = true;
                     }
-                    ui.checkbox(&mut self.settings.search_in_selection, "只在選取範圍內");
+                    ui.checkbox(&mut self.settings.search_in_selection, lbl_in_sel);
                 });
             }
             if ui.input(|i| i.key_pressed(Key::Escape)) {
@@ -450,10 +469,14 @@ impl App {
         let mut go = false;
         let mut close = false;
         let hex_mode = self.doc().mode == EditMode::Hex;
+        let lbl_goto_pos = self.t("find.goto_pos", "移至位置（位元組，可用 0x 十六進位）：");
+        let lbl_goto_line = self.t("find.goto_line", "移至行（行號 或 行:欄）：");
+        let lbl_go = self.t("find.go", "跳轉");
+        let lbl_by_bytes = self.t("find.by_bytes", "依位元組位置");
         egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 4)).fill(ui.visuals().faint_bg_color).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let by_pos = self.goto.by_position || hex_mode;
-                ui.label(if by_pos { "移至位置（位元組，可用 0x 十六進位）：" } else { "移至行（行號 或 行:欄）：" });
+                ui.label(if by_pos { lbl_goto_pos } else { lbl_goto_line });
                 let resp = ui.add(egui::TextEdit::singleline(&mut self.goto.input).desired_width(160.0));
                 if std::mem::take(&mut self.goto.focus) {
                     resp.request_focus();
@@ -461,11 +484,11 @@ impl App {
                 if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     go = true;
                 }
-                if ui.button("跳轉").clicked() {
+                if ui.button(lbl_go).clicked() {
                     go = true;
                 }
                 if !hex_mode {
-                    ui.checkbox(&mut self.goto.by_position, "依位元組位置");
+                    ui.checkbox(&mut self.goto.by_position, lbl_by_bytes);
                 }
                 if let Some(e) = &self.goto.error {
                     ui.colored_label(egui::Color32::RED, e);
@@ -493,6 +516,7 @@ impl App {
 
     fn goto_target(&mut self) -> Result<(), String> {
         let input = self.goto.input.trim().to_string();
+        // 不借用 self，錯誤字串稍後再翻譯
         let parse_num = |s: &str| -> Result<usize, String> {
             let s = s.trim();
             let r = if let Some(h) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
@@ -502,11 +526,11 @@ impl App {
             } else {
                 s.parse()
             };
-            r.map_err(|_| format!("無效的數字：{s}"))
+            r.map_err(|_| s.to_string())
         };
         let hex_mode = self.doc().mode == EditMode::Hex;
         if self.goto.by_position || hex_mode {
-            let off = parse_num(&input)?;
+            let off = parse_num(&input).map_err(|tok| self.tf("find.bad_number", "無效的數字：{q}", None, Some(&tok)))?;
             let doc = self.doc_mut();
             if hex_mode {
                 let hb = doc.hex.as_mut().unwrap();
@@ -546,8 +570,11 @@ impl App {
             }
         } else {
             let mut parts = input.splitn(2, [':', ',']);
-            let line = parse_num(parts.next().unwrap_or(""))?.max(1);
-            let col = parts.next().map(parse_num).transpose()?.unwrap_or(1).max(1);
+            let line = parse_num(parts.next().unwrap_or("")).map_err(|tok| self.tf("find.bad_number", "無效的數字：{q}", None, Some(&tok)))?.max(1);
+            let col = match parts.next() {
+                Some(s) => parse_num(s).map_err(|tok| self.tf("find.bad_number", "無效的數字：{q}", None, Some(&tok)))?.max(1),
+                None => 1,
+            };
             let doc = self.doc_mut();
             let from = doc.editor.selection.head;
             doc.record_jump(from);

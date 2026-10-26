@@ -2,6 +2,7 @@
 
 mod actions;
 pub mod commands;
+mod i18n;
 mod dialogs;
 mod find;
 mod findfiles;
@@ -27,7 +28,7 @@ use crate::core::document::{Document, OpenOptions, SaveError};
 use crate::core::editor;
 use crate::core::encoding;
 use crate::core::model::{EditMode, NewLineFormat};
-use crate::core::settings::{SessionFile, Settings, ThemeChoice};
+use crate::core::settings::{SessionFile, Settings, SettingsLoadError, ThemeChoice};
 use crate::core::spell::SpellChecker;
 
 use commands::C;
@@ -187,9 +188,10 @@ impl App {
         if app.settings.spell_check {
             app.load_spell();
         }
-        if let Some(text) = settings_error {
+        if let Some(err) = settings_error {
+            let text = app.settings_error_text(&err);
             if app.confirm.is_none() {
-                app.confirm = Some(Confirm::Message { title: "設定檔損毀".into(), text });
+                app.confirm = Some(Confirm::Message { title: app.t("msg.settings_bad", "設定檔損毀").to_string(), text });
             } else {
                 app.set_status(text);
             }
@@ -217,6 +219,41 @@ impl App {
 
     pub fn set_status(&mut self, msg: impl Into<String>) {
         self.status = Some((msg.into(), 0.0));
+    }
+
+    /// 設定檔損毀提示。譯文裡的 `\n` 是跳脫的換行
+    fn settings_error_text(&self, err: &SettingsLoadError) -> String {
+        let raw = match &err.backup {
+            Ok(path) => self
+                .t("msg.settings_reset", "設定檔無法讀取，已改用預設設定。\n原設定檔已備份為 {q}\n\n錯誤：{n}")
+                .replace("{q}", &path.display().to_string())
+                .replace("{n}", &err.detail),
+            Err(e) => self
+                .t("msg.settings_reset_nobak", "設定檔無法讀取，已改用預設設定（備份失敗：{q}）。\n\n錯誤：{n}")
+                .replace("{q}", e)
+                .replace("{n}", &err.detail),
+        };
+        raw.replace("\\n", "\n")
+    }
+
+    /// 目前介面實際使用的語言（「跟隨系統」已解析成具體語言）
+    pub fn ui_lang(&self) -> i18n::Lang {
+        i18n::resolve(self.settings.ui_language)
+    }
+
+    /// 介面字串。`zh_tw` 是繁體中文原文。
+    pub fn t<'a>(&self, key: &str, zh_tw: &'a str) -> &'a str {
+        i18n::translate(self.ui_lang(), key, zh_tw)
+    }
+
+    /// 帶 `{n}` 或 `{q}` 的介面字串
+    pub fn tf(&self, key: &str, zh_tw: &str, n: Option<usize>, q: Option<&str>) -> String {
+        i18n::fill(self.t(key, zh_tw), n, q)
+    }
+
+    /// 命令在選單與工具列提示上的文字
+    pub fn cmd_text(&self, c: C) -> String {
+        i18n::command_text(self.ui_lang(), c)
     }
 
     pub fn open_options(&self) -> OpenOptions {
@@ -304,18 +341,19 @@ impl App {
                     self.activate(idx);
                 }
                 self.settings.add_recent_file(canon);
-                self.set_status(if notes.is_empty() { format!("已開啟 {}", path.display()) } else { notes.join("；") });
+                let shown = path.display().to_string();
+                self.set_status(if notes.is_empty() { self.tf("msg.opened", "已開啟 {q}", None, Some(&shown)) } else { notes.join("；") });
                 true
             }
             Err(e) => {
-                self.confirm = Some(Confirm::Message { title: "開啟失敗".into(), text: format!("{}\n{e}", path.display()) });
+                self.confirm = Some(Confirm::Message { title: self.t("msg.open_fail", "開啟失敗").to_string(), text: format!("{}\n{e}", path.display()) });
                 false
             }
         }
     }
 
     pub fn open_dialog(&mut self) {
-        let mut dlg = rfd::FileDialog::new().set_title("開啟舊檔");
+        let mut dlg = rfd::FileDialog::new().set_title(self.t("msg.open_file", "開啟舊檔"));
         if let Some(dir) = self.doc().path.as_ref().and_then(|p| p.parent()) {
             dlg = dlg.set_directory(dir);
         }
@@ -343,7 +381,7 @@ impl App {
         let id = self.tabs[idx].doc.id;
         let path = if as_new || self.tabs[idx].doc.path.is_none() {
             let name = self.tabs[idx].doc.display_name();
-            let mut dlg = rfd::FileDialog::new().set_title("另存新檔").set_file_name(&name);
+            let mut dlg = rfd::FileDialog::new().set_title(self.t("msg.save_as", "另存新檔")).set_file_name(&name);
             if let Some(dir) = self.tabs[idx].doc.path.as_ref().and_then(|p| p.parent()) {
                 dlg = dlg.set_directory(dir);
             }
@@ -380,7 +418,8 @@ impl App {
                 self.tabs[idx].disk_changed = false;
                 if let Some(p) = self.tabs[idx].doc.path.clone() {
                     self.settings.add_recent_file(p.clone());
-                    self.set_status(format!("已儲存 {}", p.display()));
+                    let shown = p.display().to_string();
+                    self.set_status(self.tf("msg.saved", "已儲存 {q}", None, Some(&shown)));
                 }
                 true
             }
@@ -389,12 +428,22 @@ impl App {
                 false
             }
             Err(SaveError::Unmappable(u)) => {
-                let message = SaveError::Unmappable(u).to_string();
+                let samples: String = u.samples.iter().collect();
+                let message = self
+                    .t("msg.unmappable", "目前編碼無法表示 {n} 個字元（例如「{q}」）")
+                    .replace("{n}", &u.count.to_string())
+                    .replace("{q}", &samples);
                 self.confirm = Some(Confirm::SaveUnmappable { id, path, message });
                 false
             }
             Err(e) => {
-                self.confirm = Some(Confirm::Message { title: "存檔失敗".into(), text: e.to_string() });
+                let text = match &e {
+                    SaveError::Io(err) => self.tf("msg.write_failed", "寫入檔案失敗：{q}", None, Some(&err.to_string())),
+                    SaveError::NoPath => self.t("msg.no_path", "尚未指定檔案路徑").to_string(),
+                    SaveError::ReadOnly => self.t("msg.readonly", "文件為唯讀").to_string(),
+                    _ => e.to_string(),
+                };
+                self.confirm = Some(Confirm::Message { title: self.t("msg.save_fail", "存檔失敗").to_string(), text });
                 false
             }
         }
@@ -457,9 +506,9 @@ impl App {
             Ok(()) => {
                 self.tabs[i].disk_changed = false;
                 self.tabs[i].view.ensure_visible = true;
-                self.set_status("已重新載入");
+                self.set_status(self.t("msg.reloaded", "已重新載入"));
             }
-            Err(e) => self.confirm = Some(Confirm::Message { title: "重新載入失敗".into(), text: e.to_string() }),
+            Err(e) => self.confirm = Some(Confirm::Message { title: self.t("msg.reload_fail", "重新載入失敗").to_string(), text: e.to_string() }),
         }
     }
 
@@ -700,6 +749,7 @@ impl App {
         let mut activate = None;
         let mut close = None;
         let mut menu_cmd: Option<(usize, C)> = None;
+        let unsaved = self.t("st.unsaved", "尚未儲存").to_string();
         egui::ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -713,7 +763,7 @@ impl App {
                     }
                     let selected = i == self.active;
                     let resp = ui.add(egui::Button::selectable(selected, name)).on_hover_text(
-                        t.doc.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "尚未儲存".into()),
+                        t.doc.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| unsaved.clone()),
                     );
                     if resp.clicked() {
                         activate = Some(i);
@@ -723,7 +773,7 @@ impl App {
                     }
                     resp.context_menu(|ui| {
                         for c in [C::Save, C::SaveAs, C::Reload, C::Close, C::CloseOthers, C::CloseLeft, C::CloseRight, C::CloseAll] {
-                            if ui.button(c.menu_text()).clicked() {
+                            if ui.button(self.cmd_text(c)).clicked() {
                                 menu_cmd = Some((i, c));
                                 ui.close();
                             }
@@ -756,60 +806,99 @@ impl App {
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
-        let doc = self.doc();
-        ui.horizontal(|ui| {
+        // 先把文件狀態抄出來，避免翻譯時同時借用文件
+        let snap = {
+            let doc = self.doc();
             let ed = &doc.editor;
-            if doc.mode == EditMode::Hex {
-                if let Some(hb) = &doc.hex {
-                    ui.monospace(format!("位移 {:X}h / {:X}h", hb.caret, hb.len()));
-                    ui.separator();
+            let position = if doc.mode == EditMode::Hex {
+                doc.hex.as_ref().map(|hb| {
                     let sel = hb.selection().map(|(s, e)| e - s).unwrap_or(0);
-                    ui.monospace(format!("選取 {sel}"));
-                }
+                    (format!("{:X}h", hb.caret), format!("{:X}h", hb.len()), sel)
+                })
             } else {
+                None
+            };
+            let text = if doc.mode != EditMode::Hex {
                 let h = ed.selection.head;
                 let vcol = editor::char_col_to_visual_col(&ed.lines[h.line], h.col);
-                ui.monospace(format!("行 {}/{}  欄 {}", h.line + 1, ed.lines.len(), vcol + 1));
-                ui.separator();
-                ui.monospace(format!("字元 {}", ed.char_pos(h)));
-                ui.separator();
-                if ed.selection.is_block() {
+                let block = if ed.selection.is_block() {
                     let b = ed.selection.visual_bounds(ed);
-                    ui.monospace(format!("列塊 {}×{}", b.max_line - b.min_line + 1, b.max_vcol - b.min_vcol));
+                    Some(((b.max_line - b.min_line + 1).to_string(), (b.max_vcol - b.min_vcol).to_string()))
                 } else {
-                    ui.monospace(format!("選取 {}", ed.selection_char_count()));
+                    None
+                };
+                Some((h.line + 1, ed.lines.len(), vcol + 1, ed.char_pos(h), ed.selection_char_count(), block))
+            } else {
+                None
+            };
+            (
+                position,
+                text,
+                doc.has_bom,
+                doc.newline,
+                doc.mixed_newlines,
+                doc.encoding.name().to_string(),
+                doc.syntax.clone(),
+                doc.mode,
+                doc.read_only,
+                if doc.mode == EditMode::Hex { doc.hex.as_ref().is_some_and(|h| h.overwrite) } else { ed.overwrite_mode },
+                doc.selecting_mode,
+            )
+        };
+        let (position, text, has_bom, newline, mixed_newlines, encoding, syntax, mode, read_only, overwrite, selecting) = snap;
+        let recording = self.macros.recording;
+        let status = self.status.clone();
+        ui.horizontal(|ui| {
+            if let Some((caret, len, sel)) = position {
+                ui.monospace(self.t("st.offset", "位移 {n} / {q}").replace("{n}", &caret).replace("{q}", &len));
+                ui.separator();
+                ui.monospace(self.tf("st.sel", "選取 {n}", Some(sel), None));
+            } else if let Some((line, total, col, chars, sel, block)) = text {
+                let total = total.to_string();
+                ui.monospace(format!(
+                    "{}  {}",
+                    self.tf("st.line", "行 {n}/{q}", Some(line), Some(&total)),
+                    self.tf("st.col", "欄 {n}", Some(col), None)
+                ));
+                ui.separator();
+                ui.monospace(self.tf("st.char", "字元 {n}", Some(chars), None));
+                ui.separator();
+                if let Some((rows, cols)) = block {
+                    ui.monospace(self.t("st.block", "列塊 {n}×{q}").replace("{n}", &rows).replace("{q}", &cols));
+                } else {
+                    ui.monospace(self.tf("st.sel", "選取 {n}", Some(sel), None));
                 }
             }
             ui.separator();
-            let bom = if doc.has_bom { ".BOM" } else { "" };
-            let nl = match doc.newline {
+            let bom = if has_bom { ".BOM" } else { "" };
+            let nl = match newline {
                 NewLineFormat::Dos => "CRLF",
                 NewLineFormat::Unix => "LF",
                 NewLineFormat::Mac => "CR",
             };
-            ui.monospace(format!("{}{} {}{}", doc.encoding.name(), bom, nl, if doc.mixed_newlines { "(混合)" } else { "" }));
+            let mixed = if mixed_newlines { self.t("st.mixed", "(混合)") } else { "" };
+            ui.monospace(format!("{encoding}{bom} {nl}{mixed}"));
             ui.separator();
-            ui.monospace(&doc.syntax);
+            ui.monospace(syntax);
             ui.separator();
-            ui.monospace(match doc.mode {
-                EditMode::Text => "文字",
-                EditMode::Column => "列塊",
-                EditMode::Hex => "十六進位",
+            ui.monospace(match mode {
+                EditMode::Text => self.t("st.text", "文字"),
+                EditMode::Column => self.t("st.column", "列塊"),
+                EditMode::Hex => self.t("st.hex", "十六進位"),
             });
             ui.separator();
-            ui.monospace(if doc.read_only { "唯讀" } else { "可寫" });
+            ui.monospace(if read_only { self.t("st.readonly", "唯讀") } else { self.t("st.writable", "可寫") });
             ui.separator();
-            let ovr = if doc.mode == EditMode::Hex { doc.hex.as_ref().is_some_and(|h| h.overwrite) } else { ed.overwrite_mode };
-            ui.monospace(if ovr { "OVR" } else { "INS" });
-            if doc.selecting_mode {
+            ui.monospace(if overwrite { "OVR" } else { "INS" });
+            if selecting {
                 ui.separator();
-                ui.colored_label(Color32::from_rgb(200, 120, 0), "選取中");
+                ui.colored_label(Color32::from_rgb(200, 120, 0), self.t("st.selecting", "選取中"));
             }
-            if self.macros.recording {
+            if recording {
                 ui.separator();
-                ui.colored_label(Color32::RED, "● 錄製巨集");
+                ui.colored_label(Color32::RED, self.t("st.recording", "● 錄製巨集"));
             }
-            if let Some((msg, _)) = &self.status {
+            if let Some((msg, _)) = &status {
                 ui.separator();
                 ui.label(msg);
             }
@@ -827,18 +916,28 @@ impl App {
         let exists = t.doc.path.as_ref().is_some_and(|p| p.exists());
         egui::Frame::new().fill(Color32::from_rgb(255, 236, 170)).inner_margin(6.0).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.colored_label(Color32::BLACK, if exists { "⚠ 檔案已被其他程式修改。" } else { "⚠ 檔案已被其他程式刪除或移動。" });
+                ui.colored_label(
+                    Color32::BLACK,
+                    format!(
+                        "⚠ {}",
+                        if exists {
+                            self.t("banner.modified", "檔案已被其他程式修改。")
+                        } else {
+                            self.t("banner.deleted", "檔案已被其他程式刪除或移動。")
+                        }
+                    ),
+                );
                 if modified {
-                    ui.colored_label(Color32::from_rgb(160, 0, 0), "重新載入會遺失目前未存檔的修改。");
+                    ui.colored_label(Color32::from_rgb(160, 0, 0), self.t("banner.lose", "重新載入會遺失目前未存檔的修改。"));
                 }
-                if exists && ui.button("重新載入").clicked() {
+                if exists && ui.button(self.t("btn.reload", "重新載入")).clicked() {
                     if modified {
                         self.confirm = Some(Confirm::ReloadModified { id });
                     } else {
                         self.reload_tab(id);
                     }
                 }
-                if ui.button("忽略").clicked() {
+                if ui.button(self.t("btn.ignore", "忽略")).clicked() {
                     let t = &mut self.tabs[self.active];
                     t.doc.ignore_disk_change();
                     t.disk_changed = false;

@@ -30,6 +30,7 @@
 ### 2. 字型與輸入法
 - 編輯區字型可任選系統字型與字級（含比例字型），CJK 字元自動以系統中日韓字型補字。
 - 支援 macOS 輸入法（注音、倉頡等）預編輯顯示與候選窗定位。
+- 介面語言可跟隨系統，或在「檢視 → 介面語言」與選項中改為 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。語言名稱一律用該語言自己的寫法。
 
 ### 3. 多語系編碼支援與防損毀保護
 - 整合 `encoding_rs` 與自訂 UTF-16 編解碼器，支援 **UTF-8、UTF-8 BOM、UTF-16LE、UTF-16BE、Big5、GB18030、Shift_JIS、EUC-KR、windows-1252、ISO-8859-1** 等編碼。
