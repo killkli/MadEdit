@@ -69,11 +69,13 @@ export ARCH
 export VERSION
 
 # 檔案總管開啟檔案時要把路徑傳進 AppImage；發行用的 .desktop 在安裝腳本裡才改寫 Exec。
-DESKTOP="$(mktemp "${TMPDIR:-/tmp}/madedit-desktop.XXXXXX")"
+# linuxdeploy recognizes a desktop file by its .desktop extension, so keep the original name inside a temp dir.
+DESKTOP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/madedit-desktop.XXXXXX")"
+DESKTOP="${DESKTOP_DIR}/madedit.desktop"
 sed 's|^Exec=.*|Exec=MadEdit %F|' "${STAGE}/madedit.desktop" > "${DESKTOP}"
 APPDIR="${OUT_DIR}/.${NAME}.AppDir"
 cleanup() {
-    rm -f "${DESKTOP:-}"
+    rm -rf "${DESKTOP_DIR:-}"
     if [[ -n "${APPDIR:-}" ]]; then
         rm -rf "${APPDIR}"
     fi
