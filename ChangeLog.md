@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-27
+
+### 修正
+- Linux AppImage 打包因暫存桌面檔缺少 `.desktop` 副檔名而失敗。
+
 ## [0.6.0] - 2026-10-27
 
 ### 新增
@@ -20,7 +25,6 @@
 
 ### 修正
 - Markdown 預覽的並排尺寸、一般與參照式圖片（含中文、空白與百分比編碼檔名）載入。
-- Linux AppImage 打包因暫存桌面檔缺少 `.desktop` 副檔名而失敗。
 
 ## [0.5.24] - 2026-10-26
 
@@ -83,7 +87,8 @@
 ### 新增
 - 專案起步。Slint 時期完成編碼、自繪編輯區、大檔引擎、列塊選取、搜尋取代、語法突顯、跳行、換行格式、書籤、外部變更監控與經典介面。
 
-[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/tenyi/MadEdit/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/tenyi/MadEdit/compare/v0.5.24...v0.6.0
 [0.5.24]: https://github.com/tenyi/MadEdit/compare/v0.5.23...v0.5.24
 [0.5.23]: https://github.com/tenyi/MadEdit/compare/v0.5.22...v0.5.23
