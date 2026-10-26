@@ -579,7 +579,8 @@ impl App {
                     self.focus_editor = true;
                 }
             }
-            C::PreviewMarkdown => {
+            // 非 Markdown 檔不開預覽（選單與工具列已停用，這裡擋住快捷鍵與巨集）
+            C::PreviewMarkdown if self.doc().is_markdown() => {
                 // 於 App 內開啟 Markdown 預覽（含 Mermaid 圖表）。
                 // 圖片載入器延到第一次預覽才安裝，不拖慢啟動；重複呼叫無妨。
                 // 圖表載入器要後裝，egui 會先問後裝的載入器

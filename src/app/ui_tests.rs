@@ -276,3 +276,26 @@ fn test_markdown_preview_follows_active_tab() {
     assert_eq!(pv.placement, Placement::Right);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Markdown 預覽只對 Markdown 檔開啟：其他檔案即使以快捷鍵觸發也不會開
+#[test]
+fn test_markdown_preview_only_for_markdown() {
+    let dir = std::env::temp_dir().join(format!("madedit-mdonly-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (txt, md) = (dir.join("a.txt"), dir.join("b.md"));
+    std::fs::write(&txt, "# A\n").unwrap();
+    std::fs::write(&md, "# B\n").unwrap();
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![txt, md], None));
+    h.run_steps(3);
+    h.state_mut().activate(0);
+    assert!(!h.state_mut().doc().is_markdown());
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    assert!(h.state_mut().tab_mut().md_preview.is_none(), "純文字檔不應開啟預覽");
+    h.state_mut().activate(1);
+    assert!(h.state_mut().doc().is_markdown());
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    assert!(h.state_mut().tab_mut().md_preview.is_some(), "Markdown 檔應開啟預覽");
+    let _ = std::fs::remove_dir_all(&dir);
+}

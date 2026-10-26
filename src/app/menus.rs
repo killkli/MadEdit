@@ -344,7 +344,8 @@ impl App {
         self.check(ui, C::HexMode, mode == EditMode::Hex);
         ui.separator();
         ui.menu_button(check_label(false, "預覽為"), |ui| {
-            self.item(ui, C::PreviewMarkdown);
+            let is_md = self.doc().is_markdown();
+            self.item_enabled(ui, C::PreviewMarkdown, is_md);
             self.item(ui, C::PreviewHtml);
         });
     }
@@ -507,6 +508,7 @@ impl App {
                 ];
                 let can_undo = self.doc().can_undo();
                 let can_redo = self.doc().can_redo();
+                let is_md = self.doc().is_markdown();
                 for group in groups {
                     for &(icon, c, selected) in *group {
                         let Some(tex) = self.icons.get(icon) else { continue };
@@ -518,6 +520,7 @@ impl App {
                         let enabled = match c {
                             C::Undo => can_undo,
                             C::Redo => can_redo,
+                            C::PreviewMarkdown => is_md,
                             _ => true,
                         };
                         let sc = self.shortcut_text(c, ui.ctx());

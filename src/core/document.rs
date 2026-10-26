@@ -229,6 +229,11 @@ impl Document {
         self.text_changed(0);
     }
 
+    /// 目前語法為 Markdown（決定能否開啟 Markdown 預覽）
+    pub fn is_markdown(&self) -> bool {
+        self.syntax == "Markdown"
+    }
+
     /// 顯示用名稱（檔名或「未命名」）
     pub fn display_name(&self) -> String {
         self.path
