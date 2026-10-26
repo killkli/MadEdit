@@ -483,9 +483,11 @@ impl MarkdownPreview {
         let zoom = self.zoom;
         let mut anchors = Vec::with_capacity(self.items.len());
         let mut avail_w = self.avail_w;
-        // 內容區自己鋪上面板底色：獨立視窗沒有 CentralPanel，否則淺色模式下會露出深色的視窗底
-        let fill = egui::Frame::new().fill(ui.visuals().panel_fill);
+        // 內容區自己鋪底色（獨立視窗沒有 CentralPanel，否則淺色模式下會露出深色的視窗底），並提高文字對比
+        let dark = ui.visuals().dark_mode;
+        let fill = egui::Frame::new().fill(if dark { Color32::BLACK } else { Color32::WHITE });
         egui::CentralPanel::default().frame(fill).show(ui, |ui| area.show(ui, |ui| {
+            high_contrast(ui.visuals_mut());
             // 文字隨縮放放大（圖表另外依尺寸縮放）
             for ts in ui.style_mut().text_styles.values_mut() {
                 ts.size *= zoom;
@@ -540,6 +542,24 @@ impl MarkdownPreview {
         self.avail_w = avail_w;
         MdAction::None
     }
+}
+
+/// 預覽內容的高對比配色：深色為純黑底、淺色為純白底；內文、粗體與標題都接近純黑／純白，
+/// 程式碼、表格斑馬紋與引用等次要底色只比底色稍亮／稍暗，仍分得出區塊
+fn high_contrast(v: &mut egui::Visuals) {
+    let (text, strong, faint, code) = if v.dark_mode {
+        (Color32::from_gray(225), Color32::WHITE, Color32::from_gray(22), Color32::from_gray(36))
+    } else {
+        (Color32::from_gray(28), Color32::BLACK, Color32::from_gray(244), Color32::from_gray(234))
+    };
+    v.panel_fill = if v.dark_mode { Color32::BLACK } else { Color32::WHITE };
+    v.widgets.noninteractive.fg_stroke.color = text;
+    v.widgets.active.fg_stroke.color = strong;
+    // 引用與次要說明文字（egui 預設把內文透明度減半，在預覽中太淡）
+    v.weak_text_color = Some(text.gamma_multiply(0.85));
+    v.faint_bg_color = faint;
+    v.extreme_bg_color = code;
+    v.code_bg_color = code;
 }
 
 /// Mermaid 圖表專用的 SVG 載入器。
