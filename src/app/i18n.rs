@@ -225,6 +225,15 @@ mod tests {
     }
 
     #[test]
+    fn every_markdown_preview_text_is_translated() {
+        let keys: Vec<_> = catalog().iter().filter(|(k, _)| k.starts_with("md.")).collect();
+        assert!(!keys.is_empty());
+        for (key, cols) in keys {
+            assert!(cols.iter().all(|c| !c.is_empty()), "{key} 缺少譯文");
+        }
+    }
+
+    #[test]
     fn english_new_file_keeps_mnemonic() {
         assert_eq!(command_text(Lang::En, C::New), "New (N)");
         assert_eq!(command_text(Lang::ZhTw, C::Find), "尋找(F)...");

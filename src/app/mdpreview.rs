@@ -13,6 +13,8 @@ use egui::load::{BytesPoll, ImageLoadResult, ImageLoader, ImagePoll, LoadError, 
 use egui::mutex::Mutex;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
+use super::i18n::{self, Lang};
+
 /// 文件被切成的片段：一般 Markdown 或 Mermaid 圖表原始碼
 #[derive(Debug, Clone, PartialEq)]
 pub enum Segment {
@@ -265,8 +267,8 @@ struct Diagram {
 enum Content {
     Markdown(String),
     Diagram(Arc<Diagram>),
-    /// Mermaid 語法錯誤：訊息與原始碼
-    Error { message: String, source: String },
+    /// Mermaid 語法錯誤：位置、訊息與原始碼（位置文字於繪製時依介面語言組合）
+    Error { line: u32, column: u32, message: String, source: String },
 }
 
 /// 一個繪製項目與它在原始文件中的起始行（同步捲動用）
@@ -484,7 +486,7 @@ impl MarkdownPreview {
                                 height: r.height as f32,
                             }))
                         }
-                        Err(e) => Content::Error { message: format!("第 {} 行第 {} 欄：{}", e.line, e.column, e.message), source: src },
+                        Err(e) => Content::Error { line: e.line, column: e.column, message: e.message, source: src },
                     };
                     items.push(Item { line: piece.line, end_line, content });
                 }
@@ -549,40 +551,41 @@ impl MarkdownPreview {
     }
 
     /// 工具列：縮放、符合寬度、並排顯示、同步捲動；回傳是否按下關閉
-    fn toolbar(&mut self, ui: &mut egui::Ui) -> bool {
+    fn toolbar(&mut self, ui: &mut egui::Ui, lang: Lang) -> bool {
+        let t = |k: &str, zh: &'static str| i18n::translate(lang, k, zh);
         let mut close = false;
         ui.horizontal_wrapped(|ui| {
-            if ui.button("−").on_hover_text("縮小（Ctrl+滾輪）").clicked() {
+            if ui.button("−").on_hover_text(t("md.zoom_out", "縮小（Ctrl+滾輪）")).clicked() {
                 self.zoom = (self.zoom / ZOOM_STEP).max(ZOOM_MIN);
             }
-            if ui.button(format!("{:.0}%", self.zoom * 100.0)).on_hover_text("還原 100%").clicked() {
+            if ui.button(format!("{:.0}%", self.zoom * 100.0)).on_hover_text(t("md.zoom_reset", "還原 100%")).clicked() {
                 self.zoom = 1.0;
             }
-            if ui.button("+").on_hover_text("放大（Ctrl+滾輪）").clicked() {
+            if ui.button("+").on_hover_text(t("md.zoom_in", "放大（Ctrl+滾輪）")).clicked() {
                 self.zoom = (self.zoom * ZOOM_STEP).min(ZOOM_MAX);
             }
             ui.separator();
-            ui.checkbox(&mut self.fit_width, "符合寬度").on_hover_text("圖表依視窗寬度重新排版");
+            ui.checkbox(&mut self.fit_width, t("md.fit_width", "符合寬度")).on_hover_text(t("md.fit_width_tip", "圖表依視窗寬度重新排版"));
             ui.separator();
             let choices = [
-                (Placement::Window, "獨立視窗", "以獨立視窗顯示預覽"),
-                (Placement::Right, "左右並排", "預覽放在編輯區右側，各佔一半"),
-                (Placement::Bottom, "上下並排", "預覽放在編輯區下方，各佔一半"),
+                (Placement::Window, t("md.window", "獨立視窗"), t("md.window_tip", "以獨立視窗顯示預覽")),
+                (Placement::Right, t("md.right", "左右並排"), t("md.right_tip", "預覽放在編輯區右側，各佔一半")),
+                (Placement::Bottom, t("md.bottom", "上下並排"), t("md.bottom_tip", "預覽放在編輯區下方，各佔一半")),
             ];
             for (p, label, tip) in choices {
                 if ui.selectable_label(self.placement == p, label).on_hover_text(tip).clicked() && self.placement != p {
                     self.set_placement(p);
                 }
             }
-            if ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("捲動編輯區或預覽時，同步另一側的位置").changed() {
+            if ui.checkbox(&mut self.sync_scroll, t("md.sync", "同步捲動")).on_hover_text(t("md.sync_tip", "捲動編輯區或預覽時，同步另一側的位置")).changed() {
                 self.synced_line = None;
                 self.preview_source = None;
             }
             if self.docked() {
                 // 並排時沒有視窗標題列可關，另給關閉按鈕
-                close = ui.button("×").on_hover_text("關閉預覽").clicked();
+                close = ui.button("×").on_hover_text(t("md.close", "關閉預覽")).clicked();
             }
-            if !self.image_uris.is_empty() && ui.button("重新載入圖片").on_hover_text("圖片檔案更新或補回後，重新讀取圖片").clicked() {
+            if !self.image_uris.is_empty() && ui.button(t("md.reload_images", "重新載入圖片")).on_hover_text(t("md.reload_images_tip", "圖片檔案更新或補回後，重新讀取圖片")).clicked() {
                 self.reload_images(ui.ctx());
             }
         });
@@ -590,24 +593,24 @@ impl MarkdownPreview {
     }
 
     /// 繪製預覽內容；`top_line` 是編輯區目前第一個可見的行（從 0 起算）
-    pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize, fraction: f32) -> MdAction {
+    pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize, fraction: f32, lang: Lang) -> MdAction {
         self.rect = ui.max_rect();
         // 獨立視窗才看視窗關閉與 Esc；並排時這些屬於主視窗與編輯區
         if !self.docked() && ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
             return MdAction::Close;
         }
         let close = egui::Panel::top("md-preview-toolbar").show(ui, |ui| {
-            let close = self.toolbar(ui);
+            let close = self.toolbar(ui, lang);
             let errors: Vec<_> = self.image_uris.iter().filter_map(|uri| {
                 let message = if !uri.contains("://") && !uri.starts_with("data:") {
-                    Some("請先儲存文件，再載入相對路徑圖片。".to_string())
+                    Some(i18n::translate(lang, "md.save_first", "請先儲存文件，再載入相對路徑圖片。").to_string())
                 } else {
                     ui.ctx().try_load_texture(uri, Default::default(), SizeHint::default()).err().map(|e| e.to_string())
                 };
                 message.map(|m| (uri, m))
             }).collect();
             if !errors.is_empty() {
-                ui.collapsing(RichText::new(format!("{} 張圖片載入失敗", errors.len())).color(Color32::LIGHT_RED), |ui| {
+                ui.collapsing(RichText::new(i18n::fill(i18n::translate(lang, "md.images_failed", "{n} 張圖片載入失敗"), Some(errors.len()), None)).color(Color32::LIGHT_RED), |ui| {
                     for (uri, message) in errors {
                         ui.label(uri);
                         ui.label(message);
@@ -689,13 +692,14 @@ impl MarkdownPreview {
                                 ui.allocate_ui(size, |ui| ui.spinner());
                             }
                             Err(e) => {
-                                ui.label(RichText::new(format!("圖表顯示失敗：{e}")).color(Color32::LIGHT_RED));
+                                ui.label(RichText::new(format!("{}{e}", i18n::translate(lang, "md.diagram_failed", "圖表顯示失敗："))).color(Color32::LIGHT_RED));
                             }
                         }
                         ui.add_space(8.0);
                     }
-                    Content::Error { message, source } => {
-                        ui.label(RichText::new(format!("Mermaid 語法錯誤：{message}")).color(Color32::LIGHT_RED));
+                    Content::Error { line, column, message, source } => {
+                        let at = i18n::fill(i18n::translate(lang, "md.mermaid_error", "Mermaid 語法錯誤：第 {n} 行第 {q} 欄："), Some(*line as usize), Some(&column.to_string()));
+                        ui.label(RichText::new(format!("{at}{message}")).color(Color32::LIGHT_RED));
                         ui.code(source);
                     }
                 }
@@ -1095,7 +1099,7 @@ mod tests {
         preview.set_placement(Placement::Right);
         egui_kittest::Harness::builder().allow_missing_glyphs().with_size([600.0, 500.0]).build_ui_state(|ui, s: &mut PreviewTest| {
             s.preview.refresh(ui.ctx(), &s.text, s.version, false, None);
-            if let MdAction::ScrollTo { line, .. } = s.preview.ui(ui, s.top_line, s.fraction) {
+            if let MdAction::ScrollTo { line, .. } = s.preview.ui(ui, s.top_line, s.fraction, Lang::ZhTw) {
                 // 模擬未自動換行的編輯區，只有整行位置；預覽仍應保留自己的精確位置。
                 s.top_line = line;
                 s.fraction = 0.0;

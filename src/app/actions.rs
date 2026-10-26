@@ -75,6 +75,8 @@ impl App {
     pub fn show_markdown_preview(&mut self, ui: &mut egui::Ui) {
         use super::mdpreview::Placement;
         let ctx = ui.ctx().clone();
+        let lang = self.ui_lang();
+        let title = self.t("md.title", "Markdown 預覽");
         let tab = self.tab_mut();
         let Some(mut pv) = tab.md_preview.take() else { return };
         // 相對路徑圖片以文件所在資料夾為基準
@@ -86,12 +88,12 @@ impl App {
         let action = match pv.placement {
             Placement::Window => {
                 let builder = egui::ViewportBuilder::default()
-                    .with_title(format!("Markdown 預覽 - {}", tab.doc.display_name()))
+                    .with_title(format!("{title} - {}", tab.doc.display_name()))
                     .with_inner_size([820.0, 900.0])
                     .with_min_inner_size([360.0, 280.0]);
                 let mut action = super::mdpreview::MdAction::None;
                 ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| {
-                    let next = pv.ui(ui, top_line, fraction);
+                    let next = pv.ui(ui, top_line, fraction, lang);
                     // 原生視窗同一幀可能多次排版，保留先前回報的捲動／關閉動作。
                     if next != super::mdpreview::MdAction::None { action = next; }
                 });
@@ -122,7 +124,7 @@ impl App {
                     let rect = ui.available_rect_before_wrap();
                     let mut content = ui.new_child(egui::UiBuilder::new().id_salt("md-preview-content").max_rect(rect));
                     content.shrink_clip_rect(rect);
-                    let action = pv.ui(&mut content, top_line, fraction);
+                    let action = pv.ui(&mut content, top_line, fraction, lang);
                     ui.advance_cursor_after_rect(rect);
                     action
                 });
