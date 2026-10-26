@@ -326,6 +326,14 @@ impl App {
         }
     }
 
+    /// 去除檔名前後的空白（使用者在另存對話框誤輸入的空白），目錄部分不動
+    pub fn trim_file_name(p: PathBuf) -> PathBuf {
+        match p.file_name().and_then(|n| n.to_str()) {
+            Some(n) if n.trim() != n && !n.trim().is_empty() => p.with_file_name(n.trim()),
+            _ => p,
+        }
+    }
+
     /// 存檔（必要時詢問路徑或確認）；`as_new` 為真時一律詢問路徑
     pub fn save_tab(&mut self, idx: usize, as_new: bool) -> bool {
         let id = self.tabs[idx].doc.id;
@@ -336,7 +344,7 @@ impl App {
                 dlg = dlg.set_directory(dir);
             }
             match dlg.save_file() {
-                Some(p) => Some(p),
+                Some(p) => Some(Self::trim_file_name(p)),
                 None => return false,
             }
         } else {

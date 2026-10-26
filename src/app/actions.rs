@@ -131,7 +131,7 @@ impl App {
                 self.save_tab(i, true);
             }
             C::SaveACopy => {
-                if let Some(p) = rfd::FileDialog::new().set_title("另存副本").set_file_name(self.doc().display_name()).save_file() {
+                if let Some(p) = rfd::FileDialog::new().set_title("另存副本").set_file_name(self.doc().display_name()).save_file().map(Self::trim_file_name) {
                     match self.doc().save_copy(&p) {
                         Ok(()) => self.set_status(format!("已另存副本 {}", p.display())),
                         Err(e) => self.message("另存副本失敗", e.to_string()),
