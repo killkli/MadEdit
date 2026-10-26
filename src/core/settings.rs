@@ -372,6 +372,10 @@ impl Settings {
         if cfg!(test) {
             return None;
         }
+        // 便攜版與原生整合測試可使用獨立目錄，避免覆寫日常工作的設定與工作階段。
+        if let Some(dir) = std::env::var_os("MADEDIT_CONFIG_DIR").filter(|d| !d.is_empty()) {
+            return Some(PathBuf::from(dir).join("settings.json"));
+        }
         dirs::config_dir().map(|d| d.join("MadEdit").join("settings.json"))
     }
 

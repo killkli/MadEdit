@@ -3,6 +3,8 @@
 
 mod app;
 mod core;
+#[cfg(target_os = "macos")]
+mod macos;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,6 +12,8 @@ use std::sync::Arc;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    #[cfg(target_os = "macos")]
+    macos::install();
     // 命令列：MadEdit [檔案...] [--screenshot <輸出.png>]（截圖供自動化測試使用）
     let mut files = Vec::new();
     let mut screenshot = None;

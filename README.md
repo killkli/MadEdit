@@ -73,7 +73,7 @@ MadEdit-Rust/
 ## 🚀 建置與執行指南
 
 ### 環境需求
-- **Rust 工具鏈**：Rust `1.85` 或以上版本（支援 Rust Edition 2024）
+- **Rust 工具鏈**：Rust `1.95` 或以上版本（egui / eframe 0.37 的最低需求）
 - 支援平台：**Windows**、**macOS**、**Linux**
 
 ### 開發與測試指令
@@ -97,13 +97,33 @@ macOS 上的 GUI 程式需放在 `.app` bundle 內，才能正確顯示 Dock 圖
    ```
 2. 編譯並產生 App：
    ```bash
-   cargo build --release
    ./scripts/make_appbundle.sh
    ```
 3. 產物位於 `dist/MadEdit.app`（已含圖示與拼字字典，並以 ad-hoc 簽章），可直接開啟或拖進「應用程式」資料夾：
    ```bash
    open dist/MadEdit.app
    ```
+
+腳本會自動建置本機架構（Apple Silicon 或 Intel），支援 Cargo 自訂的 target-dir／build.target。
+如已建好 universal binary，可用 `MADEDIT_BIN=/path/to/MadEdit ./scripts/make_appbundle.sh` 打包。
+App 內含圖示與字典；打包、簽章及驗證全部完成後才取代舊版。
+
+安裝到 `/Applications`：`./scripts/install_macos.sh`；也可用
+`DEST="$HOME/Applications/MadEdit.app" ./scripts/install_macos.sh` 指定安裝位置。
+
+支援 Finder「打開方式」、拖曳檔案至 Dock 圖示，以及
+`open -a "$PWD/dist/MadEdit.app" 檔案.txt`。已啟動時會在同一個 App 開啟新分頁。
+常用快捷鍵為 ⌘W 關閉分頁、⌘Q 結束（未儲存時先確認）、⌘⇧S 另存新檔、⌘⌥F 取代、
+⌘/ 註解、Control+Tab 切換分頁；Option+方向鍵移動字詞、⌘+方向鍵移到行首尾／文件頭尾。
+⌘H、⌘M、⌘Tab 保留給系統。
+
+macOS 打包回歸測試：`./scripts/test_macos_bundle.sh`（不覆寫已安裝的 App）。
+在已登入的 macOS 桌面執行 `python3 scripts/test_macos_runtime.py`，會連續啟動正式 App，
+驗證文字／二進位文件繪製與正常退出，截圖與記錄留在 `dist/validation/runtime/`。
+本次平台、測試結果與驗證範圍見 [macOS 移植驗證](docs/macos-validation.md)。
+設定預設存於 `~/Library/Application Support/MadEdit/settings.json`；可用環境變數
+`MADEDIT_CONFIG_DIR` 指定獨立設定目錄。`--screenshot 輸出.png` 使用預設設定並自動離開，
+不讀寫日常工作階段，可供原生視窗驗證使用。
 
 > 由於未經 Apple 公證，從網路下載的 App 第一次開啟時可能被 Gatekeeper 阻擋，
 > 請在 Finder 中按右鍵選「打開」，或執行 `xattr -cr MadEdit.app` 移除隔離屬性。
@@ -130,7 +150,7 @@ cargo install cargo-zigbuild
 
 | 領域 | 套件 / 技術 | 用途 |
 | :--- | :--- | :--- |
-| **GUI 框架** | [`eframe` / `egui`](https://github.com/emilk/egui) (`v0.35`) | 即時模式 GUI、自繪編輯區與 Hex 檢視、輸入法事件 |
+| **GUI 框架** | [`eframe` / `egui`](https://github.com/emilk/egui) (`v0.37`) | 即時模式 GUI、自繪編輯區與 Hex 檢視、輸入法事件 |
 | **系統字型** | [`fontique`](https://crates.io/crates/fontique) | 列舉並載入系統字型 |
 | **字元編碼** | [`encoding_rs`](https://crates.io/crates/encoding_rs) | 多語系字元編碼轉換與無損驗證 |
 | **語法突顯** | [`syntect`](https://crates.io/crates/syntect) | Sublime Text 語法定義與主題 |

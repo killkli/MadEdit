@@ -17,7 +17,25 @@ macro_rules! commands {
             /// 選單與對話框顯示的名稱
             pub fn label(self) -> &'static str { match self { $(C::$name => $label),* } }
             /// 預設快捷鍵
-            pub fn default_keys(self) -> &'static str { match self { $(C::$name => $key),* } }
+            pub fn default_keys(self) -> &'static str {
+                // 保留其他平台的原版配置；macOS 避開隱藏、最小化、關閉等系統組合鍵。
+                if cfg!(target_os = "macos") {
+                    match self {
+                        C::Close => return "Ctrl+W",
+                        C::Exit => return "Ctrl+Q",
+                        C::SaveAs => return "Ctrl+Shift+S",
+                        C::SaveAll => return "Ctrl+Alt+S",
+                        C::Replace => return "Ctrl+Alt+F",
+                        C::Comment => return "Ctrl+Slash",
+                        C::Uncomment => return "Ctrl+Shift+Slash",
+                        C::FixedWidthMode => return "Ctrl+Alt+Shift+F",
+                        C::NoWrap | C::WrapByWindow | C::ShowSpaceChar => return "",
+                        C::ToggleWindow => return "MacCtrl+Tab",
+                        _ => {}
+                    }
+                }
+                match self { $(C::$name => $key),* }
+            }
             pub fn from_id(id: &str) -> Option<C> { ALL.iter().copied().find(|c| c.id() == id) }
         }
     };
@@ -285,6 +303,23 @@ pub fn is_bindable(sc: &KeyboardShortcut) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_macos_default_bindings_are_unique_and_keep_system_keys_free() {
+        let mut seen = std::collections::HashMap::new();
+        for &c in ALL {
+            for key in c.default_keys().split('|').filter(|s| !s.is_empty()) {
+                assert!(seen.insert(key, c).is_none(), "重複快捷鍵：{key}");
+            }
+        }
+        assert_eq!(seen.get("Ctrl+W"), Some(&C::Close));
+        assert_eq!(seen.get("Ctrl+Q"), Some(&C::Exit));
+        assert_eq!(seen.get("Ctrl+Shift+S"), Some(&C::SaveAs));
+        assert!(!seen.contains_key("Ctrl+H"), "⌘H 留給系統隱藏視窗");
+        assert!(!seen.contains_key("Ctrl+M"), "⌘M 留給系統最小化視窗");
+        assert!(!seen.contains_key("Ctrl+Tab"), "⌘Tab 留給系統切換程式");
+    }
 
     #[test]
     fn test_is_bindable_requires_modifier_except_function_keys() {
