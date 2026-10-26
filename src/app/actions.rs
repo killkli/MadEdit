@@ -80,7 +80,7 @@ impl App {
         // 相對路徑圖片以文件所在資料夾為基準
         let base_dir = tab.doc.path.as_ref().and_then(|p| p.parent()).map(|d| d.to_path_buf());
         pv.refresh(&ctx, &tab.doc.text(), tab.doc.version, Self::is_dark(&ctx), base_dir);
-        let top_line = tab.view.top_line(&tab.doc.editor);
+        let (top_line, fraction) = tab.view.top_line(&tab.doc.editor);
         // 編輯區（扣除選單、工具列、狀態列後）剩下的範圍，並排時各佔一半
         let area = ui.available_rect_before_wrap();
         let action = match pv.placement {
@@ -89,7 +89,7 @@ impl App {
                     .with_title(format!("Markdown 預覽 - {}", tab.doc.display_name()))
                     .with_inner_size([820.0, 900.0])
                     .with_min_inner_size([360.0, 280.0]);
-                ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line))
+                ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| pv.ui(ui, top_line, fraction))
             }
             placement => {
                 // 左右與上下用不同的面板識別，各自記住使用者拖曳後的大小
@@ -103,7 +103,7 @@ impl App {
                 if std::mem::take(&mut pv.reset_size) {
                     panel = panel.exact_size(half);
                 }
-                panel.show(ui, |ui| pv.ui(ui, top_line)).inner
+                panel.show(ui, |ui| pv.ui(ui, top_line, fraction)).inner
             }
         };
         if action == super::mdpreview::MdAction::None {

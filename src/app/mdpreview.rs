@@ -112,11 +112,11 @@ pub fn split_mermaid(text: &str) -> Vec<Piece> {
     out
 }
 
-/// 把一段 Markdown 依頂層區塊（段落、標題、清單、程式碼、表格…）切開，回傳（區塊起始行, 區塊文字）。
+/// 把一段 Markdown 依頂層區塊切開，回傳（起始行, 結尾下一行, 區塊文字）。
 /// 分開繪製後才能量到每個區塊在預覽中的位置，用來和編輯區同步捲動。
 /// 連結參照定義（`[a]: url`）可能在別的區塊，所以附加到每個區塊後面；
 /// 含註腳定義時定義與引用會跨區塊，改為整段不切。
-pub fn split_blocks(md: &str) -> Vec<(usize, String)> {
+pub fn split_blocks(md: &str) -> Vec<(usize, usize, String)> {
     use pulldown_cmark::{Event, Options, Parser, Tag};
     // 與 egui_commonmark 解析時的選項一致，表格等才不會被切壞
     let opts = Options::ENABLE_TABLES
@@ -125,19 +125,12 @@ pub fn split_blocks(md: &str) -> Vec<(usize, String)> {
         | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_DEFINITION_LIST;
     let parser = Parser::new_ext(md, opts);
-    let mut defs = String::new();
-    for (label, d) in parser.reference_definitions().iter() {
-        defs.push_str(&format!("[{label}]: <{}>", d.dest));
-        if let Some(t) = &d.title {
-            defs.push_str(&format!(" \"{}\"", t.replace('"', "\\\"")));
-        }
-        defs.push('\n');
-    }
+    let defs = reference_definitions(&parser);
     let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
     let (mut depth, mut start) = (0usize, 0usize);
     for (ev, r) in parser.into_offset_iter() {
         match ev {
-            Event::Start(Tag::FootnoteDefinition(_)) => return vec![(0, md.to_string())],
+            Event::Start(Tag::FootnoteDefinition(_)) => return vec![(0, md.lines().count(), md.to_string())],
             Event::Start(_) => {
                 if depth == 0 {
                     start = r.start;
@@ -161,14 +154,28 @@ pub fn split_blocks(md: &str) -> Vec<(usize, String)> {
         .map(|r| {
             line += md[pos..r.start].matches('\n').count();
             pos = r.start;
+            let end_line = line + md[r.clone()].lines().count();
             let mut text = md[r.clone()].trim_end_matches('\n').to_string();
             if !defs.is_empty() {
                 text.push_str("\n\n");
                 text.push_str(&defs);
             }
-            (line, text)
+            (line, end_line, text)
         })
         .collect()
+}
+
+/// 參照定義可能位於 Mermaid 區塊另一側，先保留整份文件的定義供各段使用。
+fn reference_definitions(parser: &pulldown_cmark::Parser<'_>) -> String {
+    let mut defs = String::new();
+    for (label, d) in parser.reference_definitions().iter() {
+        defs.push_str(&format!("[{label}]: <{}>", d.dest.replace('&', "&amp;").replace('<', "%3C").replace('>', "%3E")));
+        if let Some(t) = &d.title {
+            defs.push_str(&format!(" \"{}\"", t.replace('&', "&amp;").replace('\\', "\\\\").replace('"', "\\\"")));
+        }
+        defs.push('\n');
+    }
+    defs
 }
 
 /// 是否為相對路徑圖片位址：沒有協定（`xxx://`、`data:`）、不是絕對路徑、不是 Windows 磁碟機路徑
@@ -181,36 +188,67 @@ fn is_relative_image_url(url: &str) -> bool {
         && !(b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
 }
 
-/// 把 Markdown 圖片的相對路徑改寫成以「文件所在資料夾」為基準的絕對 `file://` 位址。
-/// egui_commonmark 預設以程式工作目錄解析相對路徑，不符合編輯 Markdown 的習慣。
-/// 路徑以 `<...>` 包起來，因此含空白也能正確解析；百分比編碼（`%20`）交給載入器處理。
-/// 文件尚未存檔（沒有 `base_dir`）時不改寫。
-pub fn rewrite_image_paths(md: &str, base_dir: Option<&Path>) -> String {
-    use pulldown_cmark::{Event, Parser, Tag};
-    let Some(base) = base_dir else { return md.to_string() };
-    // 收集（位元組範圍, 新位址）；範圍是圖片語法中位址文字的位置
+/// 將本機圖片轉成明確的 file URI；百分比編碼由既有非同步檔案載入器處理。
+fn image_uri(url: &str, base_dir: Option<&Path>) -> String {
+    if url.contains("://") || url.starts_with("data:") || url.starts_with('#') {
+        return url.to_string();
+    }
+    let full = if is_relative_image_url(url) {
+        let Some(base) = base_dir else { return url.to_string() };
+        base.join(url).to_string_lossy().into_owned()
+    } else {
+        url.to_string()
+    }.replace('\\', "/");
+    if full.starts_with("//") {
+        format!("file:{full}")
+    } else if full.as_bytes().get(1) == Some(&b':') {
+        format!("file:///{full}")
+    } else {
+        format!("file://{full}")
+    }
+}
+
+/// 只改寫圖片，不改動共用參照定義的文字連結；保留原始替代文字的格式與跳脫字元。
+/// 回傳繪製用的 Markdown 與實際圖片 URI，供錯誤提示及重新載入使用。
+pub fn rewrite_image_paths(md: &str, base_dir: Option<&Path>) -> (String, Vec<String>) {
+    use pulldown_cmark::{Event, Parser, Tag, TagEnd};
     let mut edits: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-    for (ev, range) in Parser::new(md).into_offset_iter() {
-        let Event::Start(Tag::Image { dest_url, .. }) = ev else { continue };
-        if !is_relative_image_url(&dest_url) {
+    let mut uris = Vec::new();
+    let mut events = Parser::new(md).into_offset_iter();
+    while let Some((ev, range)) = events.next() {
+        let Event::Start(Tag::Image { dest_url, title, .. }) = ev else { continue };
+        let uri = image_uri(&dest_url, base_dir);
+        uris.push(uri.clone());
+        if uri == dest_url.as_ref() {
             continue;
         }
-        // 位址在圖片語法的尾端（標題文字在其後），取最後一次出現的位置；
-        // 參照式圖片（`![a][ref]`）的位址不在此範圍內，找不到就略過
-        let span = &md[range.clone()];
-        let Some(off) = span.rfind(dest_url.as_ref()) else { continue };
-        let start = range.start + off;
-        let full = base.join(dest_url.as_ref()).to_string_lossy().replace('\\', "/");
-        edits.push((start..start + dest_url.len(), format!("<file://{full}>")));
+        // 子事件的來源範圍包含格式標記、程式碼與巢狀括號，可準確取得替代文字結尾；
+        // 不用搜尋解碼後的網址，避免標題含相同網址或網址有跳脫字元時換錯位置。
+        let mut label_end = range.start + 2;
+        let mut depth = 1;
+        for (ev, r) in events.by_ref() {
+            match ev {
+                Event::Start(Tag::Image { .. }) => depth += 1,
+                Event::End(TagEnd::Image) => {
+                    depth -= 1;
+                    if depth == 0 { break; }
+                }
+                _ => {}
+            }
+            label_end = label_end.max(r.end);
+        }
+        let title = if title.is_empty() { String::new() } else {
+            format!(" \"{}\"", title.replace('&', "&amp;").replace('\\', "\\\\").replace('"', "&quot;").replace('\n', "&#10;").replace('\r', "&#13;"))
+        };
+        let escaped_uri = uri.replace('&', "&amp;").replace('<', "%3C").replace('>', "%3E");
+        edits.push((range.clone(), format!("{}](<{escaped_uri}>{title})", &md[range.start..label_end])));
     }
     let mut out = md.to_string();
     // 由後往前替換，前面的位置才不會位移
     for (r, new) in edits.into_iter().rev() {
-        // 原位址若已用 `<...>` 包起來，連同角括號一併替換
-        let (s, e) = if out[..r.start].ends_with('<') && out[r.end..].starts_with('>') { (r.start - 1, r.end + 1) } else { (r.start, r.end) };
-        out.replace_range(s..e, &new);
+        out.replace_range(r, &new);
     }
-    out
+    (out, uris)
 }
 
 /// 渲染完成、可顯示的 Mermaid 圖
@@ -234,6 +272,7 @@ enum Content {
 /// 一個繪製項目與它在原始文件中的起始行（同步捲動用）
 struct Item {
     line: usize,
+    end_line: usize,
     content: Content,
 }
 
@@ -250,14 +289,15 @@ const RASTER_MAX: f32 = 6.0;
 
 /// 依編輯區第一行，在（起始行, y）錨點之間線性內插出預覽應捲到的 y。
 /// 錨點需依行號遞增排序；沒有錨點時回傳 None。
-pub fn scroll_target(anchors: &[(usize, f32)], line: usize) -> Option<f32> {
-    let i = anchors.partition_point(|a| a.0 <= line).checked_sub(1)?;
+pub fn scroll_target(anchors: &[(usize, f32)], line: usize, fraction: f32) -> Option<f32> {
+    if anchors.is_empty() { return None; }
+    let Some(i) = anchors.partition_point(|a| a.0 <= line).checked_sub(1) else { return Some(0.0) };
     let (l0, y0) = anchors[i];
     let Some(&(l1, y1)) = anchors.get(i + 1) else { return Some(y0) };
     if l1 <= l0 {
         return Some(y0);
     }
-    Some(y0 + (y1 - y0) * (line - l0) as f32 / (l1 - l0) as f32)
+    Some(y0 + (y1 - y0) * ((line - l0) as f32 + fraction.clamp(0.0, 1.0)) / (l1 - l0) as f32)
 }
 
 /// Markdown 預覽視窗狀態（每個分頁各自一份，只顯示目前分頁的預覽）
@@ -266,6 +306,9 @@ pub struct MarkdownPreview {
     built: Option<BuildKey>,
     items: Vec<Item>,
     cache: CommonMarkCache,
+    image_uris: Vec<String>,
+    /// 文件結尾也要有錨點，最後一個長段落／圖表才能在區塊內繼續捲動。
+    source_lines: usize,
     /// 縮放比例（文字與圖表一起縮放）
     zoom: f32,
     /// 符合寬度：圖表依視窗寬度重新排版，仍太寬才縮小
@@ -282,6 +325,11 @@ pub struct MarkdownPreview {
     pub(super) anchors: Vec<(usize, f32)>,
     /// 上次同步時的編輯區第一行；變動才同步，使用者仍能自由捲動預覽
     pub(super) synced_line: Option<usize>,
+    synced_fraction: f32,
+    /// 內容、縮放、面板寬度或圖片載入改變排版後，使用新量到的錨點再次同步。
+    sync_pending: bool,
+    #[cfg(test)]
+    pub(super) scroll_position: (f32, f32),
     /// 並排時上一幀預覽面板所在範圍（主視窗據此避免 Ctrl+滾輪同時縮放編輯區字級）
     pub(super) rect: egui::Rect,
 }
@@ -320,6 +368,8 @@ impl MarkdownPreview {
             built: None,
             items: Vec::new(),
             cache: CommonMarkCache::default(),
+            image_uris: Vec::new(),
+            source_lines: 0,
             zoom: 1.0,
             fit_width: true,
             placement: Placement::Window,
@@ -328,6 +378,10 @@ impl MarkdownPreview {
             avail_w: 0.0,
             anchors: Vec::new(),
             synced_line: None,
+            synced_fraction: 0.0,
+            sync_pending: true,
+            #[cfg(test)]
+            scroll_position: (0.0, 0.0),
             rect: egui::Rect::NOTHING,
         }
     }
@@ -365,17 +419,29 @@ impl MarkdownPreview {
             ..Default::default()
         };
         let mut items = Vec::new();
+        let source_lines = text.lines().count();
+        let mut image_uris = Vec::new();
+        let has_images = text.contains("![");
+        let definitions = if has_images { reference_definitions(&pulldown_cmark::Parser::new(text)) } else { String::new() };
         for piece in split_mermaid(text) {
             match piece.seg {
                 Segment::Markdown(m) => {
-                    let m = rewrite_image_paths(&m, key.base_dir.as_deref());
-                    for (off, block) in split_blocks(&m) {
-                        items.push(Item { line: piece.line + off, content: Content::Markdown(block) });
+                    let piece_end = piece.line + m.lines().count();
+                    let m = if definitions.is_empty() { m } else { format!("{m}\n\n{definitions}") };
+                    for (off, end, block) in split_blocks(&m) {
+                        // 先記錄原文行號再改寫圖片，參照標題中的換行不會改變同步位置。
+                        let block = if has_images && block.contains("![") {
+                            let (block, uris) = rewrite_image_paths(&block, key.base_dir.as_deref());
+                            image_uris.extend(uris);
+                            block
+                        } else { block };
+                        items.push(Item { line: piece.line + off, end_line: (piece.line + end).min(piece_end), content: Content::Markdown(block) });
                     }
                 }
                 Segment::Mermaid(src) => {
+                    let end_line = (piece.line + src.lines().count() + 2).min(source_lines);
                     if let Some(d) = diagrams.get(src.as_str()) {
-                        items.push(Item { line: piece.line, content: Content::Diagram(Arc::clone(d)) });
+                        items.push(Item { line: piece.line, end_line, content: Content::Diagram(Arc::clone(d)) });
                         continue;
                     }
                     let content = match fermaid::render(&src, &opts) {
@@ -395,7 +461,7 @@ impl MarkdownPreview {
                         }
                         Err(e) => Content::Error { message: format!("第 {} 行第 {} 欄：{}", e.line, e.column, e.message), source: src },
                     };
-                    items.push(Item { line: piece.line, content });
+                    items.push(Item { line: piece.line, end_line, content });
                 }
             }
         }
@@ -411,8 +477,19 @@ impl MarkdownPreview {
                 ctx.forget_image(&d.uri);
             }
         }
+        image_uris.sort();
+        image_uris.dedup();
+        for uri in &self.image_uris {
+            if image_uris.binary_search(uri).is_err() {
+                ctx.forget_image(uri);
+            }
+        }
+        self.image_uris = image_uris;
         self.items = items;
         self.built = Some(key);
+        self.source_lines = source_lines;
+        self.anchors.clear();
+        self.sync_pending = true;
     }
 
     /// 是否與編輯區並排（停靠在主視窗內）
@@ -428,10 +505,18 @@ impl MarkdownPreview {
         self.reset_size = self.docked();
     }
 
+    fn reload_images(&mut self, ctx: &egui::Context) {
+        for uri in &self.image_uris {
+            ctx.forget_image(uri);
+        }
+        self.sync_pending = true;
+        ctx.request_repaint();
+    }
+
     /// 工具列：縮放、符合寬度、並排顯示、同步捲動；回傳是否按下關閉
     fn toolbar(&mut self, ui: &mut egui::Ui) -> bool {
         let mut close = false;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("−").on_hover_text("縮小（Ctrl+滾輪）").clicked() {
                 self.zoom = (self.zoom / ZOOM_STEP).max(ZOOM_MIN);
             }
@@ -456,22 +541,46 @@ impl MarkdownPreview {
             }
             // 同步捲動只在並排時提供
             if self.docked() {
-                ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("預覽跟隨編輯區捲動");
+                if ui.checkbox(&mut self.sync_scroll, "同步捲動").on_hover_text("預覽跟隨編輯區捲動").changed() {
+                    self.synced_line = None;
+                }
                 // 並排時沒有視窗標題列可關，另給關閉按鈕
                 close = ui.button("×").on_hover_text("關閉預覽").clicked();
+            }
+            if !self.image_uris.is_empty() && ui.button("重新載入圖片").on_hover_text("圖片檔案更新或補回後，重新讀取圖片").clicked() {
+                self.reload_images(ui.ctx());
             }
         });
         close
     }
 
     /// 繪製預覽內容；`top_line` 是編輯區目前第一個可見的行（從 0 起算）
-    pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize) -> MdAction {
+    pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize, fraction: f32) -> MdAction {
         self.rect = ui.max_rect();
         // 獨立視窗才看視窗關閉與 Esc；並排時這些屬於主視窗與編輯區
         if !self.docked() && ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
             return MdAction::Close;
         }
-        let close = egui::Panel::top("md-preview-toolbar").show(ui, |ui| self.toolbar(ui)).inner;
+        let close = egui::Panel::top("md-preview-toolbar").show(ui, |ui| {
+            let close = self.toolbar(ui);
+            let errors: Vec<_> = self.image_uris.iter().filter_map(|uri| {
+                let message = if !uri.contains("://") && !uri.starts_with("data:") {
+                    Some("請先儲存文件，再載入相對路徑圖片。".to_string())
+                } else {
+                    ui.ctx().try_load_texture(uri, Default::default(), SizeHint::default()).err().map(|e| e.to_string())
+                };
+                message.map(|m| (uri, m))
+            }).collect();
+            if !errors.is_empty() {
+                ui.collapsing(RichText::new(format!("{} 張圖片載入失敗", errors.len())).color(Color32::LIGHT_RED), |ui| {
+                    for (uri, message) in errors {
+                        ui.label(uri);
+                        ui.label(message);
+                    }
+                });
+            }
+            close
+        }).inner;
         if close {
             return MdAction::Close;
         }
@@ -484,20 +593,22 @@ impl MarkdownPreview {
 
         // 編輯區第一行改變時，把預覽捲到對應位置
         let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
-        if self.sync_scroll && self.synced_line != Some(top_line) {
-            if let Some(y) = scroll_target(&self.anchors, top_line) {
+        if self.sync_scroll && (self.sync_pending || self.synced_line != Some(top_line) || self.synced_fraction != fraction) {
+            if let Some(y) = scroll_target(&self.anchors, top_line, fraction) {
                 area = area.vertical_scroll_offset(y);
                 self.synced_line = Some(top_line);
+                self.synced_fraction = fraction;
+                self.sync_pending = false;
             }
         }
 
         let zoom = self.zoom;
-        let mut anchors = Vec::with_capacity(self.items.len());
+        let mut anchors = Vec::with_capacity(self.items.len() * 2 + 1);
         let mut avail_w = self.avail_w;
         // 內容區自己鋪底色（獨立視窗沒有 CentralPanel，否則淺色模式下會露出深色的視窗底），並提高文字對比
         let dark = ui.visuals().dark_mode;
         let fill = egui::Frame::new().fill(if dark { Color32::BLACK } else { Color32::WHITE });
-        egui::CentralPanel::default().frame(fill).show(ui, |ui| area.show(ui, |ui| {
+        let output = egui::CentralPanel::default().frame(fill).show(ui, |ui| area.show(ui, |ui| {
             high_contrast(ui.visuals_mut());
             // 文字隨縮放放大（圖表另外依尺寸縮放）
             for ts in ui.style_mut().text_styles.values_mut() {
@@ -507,17 +618,17 @@ impl MarkdownPreview {
             let origin = ui.cursor().min.y;
             let mut prev_markdown = false;
             for item in &self.items {
+                // 區塊分開繪製後，補回原本的段落間距，再記錄實際起始位置。
+                if prev_markdown && matches!(item.content, Content::Markdown(_)) {
+                    ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
+                }
                 anchors.push((item.line, ui.cursor().min.y - origin));
                 match &item.content {
                     Content::Markdown(m) => {
-                        // 區塊分開繪製後要自己補上 egui_commonmark 原本在區塊間插入的空行
-                        if prev_markdown {
-                            ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
-                        }
                         // 每個區塊各自一個 id：egui_commonmark 的表格 id 只在單次 show 內遞增，
                         // 多個區塊共用同一個 ui id 時，不同表格會共用 Grid 欄寬而文字互相覆蓋
                         ui.push_id(item.line, |ui| {
-                            CommonMarkViewer::new().show(ui, &mut self.cache, m);
+                            CommonMarkViewer::new().explicit_image_uri_scheme(true).show(ui, &mut self.cache, m);
                         });
                     }
                     Content::Diagram(d) => {
@@ -549,9 +660,21 @@ impl MarkdownPreview {
                         ui.code(source);
                     }
                 }
+                anchors.push((item.end_line, ui.cursor().min.y - origin));
                 prev_markdown = matches!(item.content, Content::Markdown(_));
             }
+            if !self.items.is_empty() {
+                anchors.push((self.source_lines, ui.cursor().min.y - origin));
+            }
         }));
+        #[cfg(test)]
+        { self.scroll_position = (output.inner.state.clamped_offset().y, (output.inner.content_size.y - output.inner.inner_rect.height()).max(0.0)); }
+        #[cfg(not(test))]
+        let _ = output;
+        if anchors.len() != self.anchors.len() || anchors.iter().zip(&self.anchors).any(|(a, b)| a.0 != b.0 || (a.1 - b.1).abs() > 0.5) {
+            self.sync_pending = true;
+            if self.sync_scroll { ui.ctx().request_repaint(); }
+        }
         self.anchors = anchors;
         // 寬度或縮放改變會讓圖表排版寬度跨級，下一幀由 refresh 重建
         self.avail_w = avail_w;
@@ -815,23 +938,200 @@ mod tests {
     #[test]
     fn test_rewrite_relative_image_uses_document_dir() {
         let base = Path::new("/home/u/docs");
-        let out = rewrite_image_paths("看圖 ![圖](img/a.png \"標題\") 結束", Some(base));
+        let (out, _) = rewrite_image_paths("看圖 ![圖](img/a.png \"標題\") 結束", Some(base));
         assert_eq!(out, "看圖 ![圖](<file:///home/u/docs/img/a.png> \"標題\") 結束");
         // 已用角括號包起來的位址不會變成兩層
-        let out = rewrite_image_paths("![x](<pic 1.png>)", Some(base));
+        let (out, _) = rewrite_image_paths("![x](<pic 1.png>)", Some(base));
         assert_eq!(out, "![x](<file:///home/u/docs/pic 1.png>)");
     }
 
     #[test]
     fn test_rewrite_keeps_absolute_remote_and_unsaved() {
         let base = Path::new("/d");
-        for md in ["![a](/abs/a.png)", "![a](https://x.com/a.png)", "![a](file:///x.png)", "![a](data:image/png;base64,AAAA)", "![a](C:\\x.png)"] {
-            assert_eq!(rewrite_image_paths(md, Some(base)), md);
+        for md in ["![a](https://x.com/a.png)", "![a](file:///x.png)", "![a](data:image/png;base64,AAAA)"] {
+            assert_eq!(rewrite_image_paths(md, Some(base)).0, md);
         }
+        assert_eq!(rewrite_image_paths("![a](/abs/a.png)", Some(base)).1, vec!["file:///abs/a.png"]);
+        assert_eq!(rewrite_image_paths("![a](C:\\x.png)", Some(base)).1, vec!["file:///C:/x.png"]);
         // 尚未存檔：不改寫
-        assert_eq!(rewrite_image_paths("![a](a.png)", None), "![a](a.png)");
+        assert_eq!(rewrite_image_paths("![a](a.png)", None).0, "![a](a.png)");
         // 連結（非圖片）不受影響
-        assert_eq!(rewrite_image_paths("[a](a.md)", Some(base)), "[a](a.md)");
+        assert_eq!(rewrite_image_paths("[a](a.md)", Some(base)).0, "[a](a.md)");
+    }
+
+    #[test]
+    fn test_rewrite_reference_images_and_escaped_labels_without_changing_links() {
+        use pulldown_cmark::{Event, Parser, Tag};
+        for md in [
+            "![a](img/a.png \"img/a.png\")",
+            "![*粗體* `x]y` 和 [括號]](img/a.png)",
+            r"![a\]b](img/a\(1\).png)",
+            "![](img/a.png)",
+            "![  ](img/a.png)",
+            "![a][r]\n\n[r]: img/a.png \"標題\"\n\n[連結][r]",
+            "![r][]\n\n[r]: img/a.png",
+            "![r]\n\n[r]: img/a.png",
+        ] {
+            let image = |text: &str| Parser::new(text).find_map(|ev| match ev {
+                Event::Start(Tag::Image { dest_url, title, .. }) => Some((dest_url.to_string(), title.to_string())),
+                _ => None,
+            }).unwrap();
+            let (before_uri, before_title) = image(md);
+            let (out, uris) = rewrite_image_paths(md, Some(Path::new("/文件 空白")));
+            let (uri, title) = image(&out);
+            assert_eq!(uri, format!("file:///文件 空白/{before_uri}"), "{md} → {out}");
+            assert_eq!(title, before_title);
+            assert_eq!(uris, vec![uri]);
+            for ev in Parser::new(&out) {
+                if let Event::Start(Tag::Link { dest_url, .. }) = ev {
+                    assert_eq!(dest_url.as_ref(), "img/a.png", "共用參照定義的文字連結不能被改寫");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_reference_image_definition_across_mermaid_keeps_source_lines() {
+        let ctx = egui::Context::default();
+        let mut preview = MarkdownPreview::new();
+        let text = format!("![圖][r]\n\n{DIAGRAM_A}\n[r]: <中文 圖.png> \"標題\"\n");
+        preview.refresh(&ctx, &text, 0, false, Some(PathBuf::from("/文件")));
+        assert_eq!(preview.image_uris, vec!["file:///文件/中文 圖.png"]);
+        assert_eq!(preview.items.iter().find(|i| matches!(i.content, Content::Diagram(_))).unwrap().line, 2);
+        assert!(matches!(&preview.items[0].content, Content::Markdown(m) if m.contains("<file:///文件/中文 圖.png>")));
+    }
+
+    #[test]
+    fn test_reload_images_recovers_missing_file_and_reads_external_update() {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let dir = std::env::temp_dir().join(format!("madedit-images-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("中文 圖%25.png");
+        let mut preview = MarkdownPreview::new();
+        preview.refresh(&ctx, "![圖](<中文%20圖%2525.png>)", 0, false, Some(dir.clone()));
+        let uri = preview.image_uris[0].clone();
+        let load = || {
+            for _ in 0..200 {
+                match ctx.try_load_image(&uri, SizeHint::default()) {
+                    Ok(ImagePoll::Pending { .. }) => std::thread::sleep(std::time::Duration::from_millis(5)),
+                    result => return result,
+                }
+            }
+            panic!("圖片載入逾時");
+        };
+        assert!(load().is_err(), "缺少的圖片應回報錯誤");
+        for size in [[7, 9], [11, 13]] {
+            image::RgbaImage::from_pixel(size[0], size[1], image::Rgba([120, 80, 40, 255])).save(&path).unwrap();
+            preview.reload_images(&ctx);
+            let Ok(ImagePoll::Ready { image }) = load() else { panic!("重新載入失敗"); };
+            assert_eq!(image.size, [size[0] as usize, size[1] as usize]);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    struct PreviewTest {
+        preview: MarkdownPreview,
+        text: String,
+        version: u64,
+        top_line: usize,
+        fraction: f32,
+    }
+
+    fn preview_harness(text: String, top_line: usize) -> egui_kittest::Harness<'static, PreviewTest> {
+        let mut preview = MarkdownPreview::new();
+        preview.set_placement(Placement::Right);
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size([600.0, 500.0]).build_ui_state(|ui, s: &mut PreviewTest| {
+            s.preview.refresh(ui.ctx(), &s.text, s.version, false, None);
+            s.preview.ui(ui, s.top_line, s.fraction);
+        }, PreviewTest { preview, text, version: 0, top_line, fraction: 0.0 })
+    }
+
+    fn assert_preview_at_source_line(h: &egui_kittest::Harness<'_, PreviewTest>) {
+        let s = h.state();
+        let y = s.preview.anchors.iter().find(|a| a.0 == s.top_line).unwrap().1;
+        let (actual, max) = s.preview.scroll_position;
+        assert!((actual - y.min(max)).abs() < 1.0, "實際位置 {actual}，來源錨點 {y}，最大位置 {max}");
+    }
+
+    #[test]
+    fn test_scroll_resyncs_after_edit_zoom_resize_and_toggle() {
+        use egui_kittest::kittest::Queryable;
+        let text: String = (0..100).map(|i| format!("## 標題 {i}\n\n段落 {i}\n\n")).collect();
+        let mut h = preview_harness(text, 80);
+        h.run_steps(5);
+        assert_preview_at_source_line(&h);
+        let before = h.state().preview.scroll_position.0;
+        h.state_mut().text = h.state().text.replacen("段落 0", &"much longer text ".repeat(150), 1);
+        h.state_mut().version += 1;
+        h.run_steps(5);
+        assert_preview_at_source_line(&h);
+        assert!(h.state().preview.scroll_position.0 > before + 100.0);
+        h.state_mut().preview.zoom = 1.6;
+        h.run_steps(5);
+        assert_preview_at_source_line(&h);
+        h.set_size(egui::vec2(400.0, 500.0));
+        h.run_steps(5);
+        assert_preview_at_source_line(&h);
+        h.get_by_label("同步捲動").click();
+        h.run_steps(2);
+        h.state_mut().top_line = 120;
+        h.run_steps(3);
+        assert_eq!(h.state().preview.synced_line, None);
+        h.get_by_label("同步捲動").click();
+        h.run_steps(5);
+        assert_preview_at_source_line(&h);
+    }
+
+    #[test]
+    fn test_scroll_reaches_end_of_last_long_block() {
+        let text = format!("| 欄位 |\n|---|\n{}", "| 內容 |\n".repeat(150));
+        let mut h = preview_harness(text, 140);
+        h.run_steps(5);
+        let (actual, max) = h.state().preview.scroll_position;
+        assert!(actual > 1000.0, "不能停在最後一個區塊開頭：{actual}");
+        assert!((actual - max).abs() < 1.0, "接近文件末尾時應到達捲軸底端");
+    }
+
+    #[test]
+    fn test_scroll_uses_wrapped_progress_without_including_blank_lines() {
+        let mut h = preview_harness(format!("{}\n\nend\n", "long text ".repeat(1500)), 0);
+        h.run_steps(5);
+        h.state_mut().fraction = 0.5;
+        h.run_steps(5);
+        let pv = &h.state().preview;
+        let paragraph_end = pv.anchors.iter().find(|a| a.0 == 1).unwrap().1;
+        let (actual, max) = pv.scroll_position;
+        assert!(paragraph_end > 1000.0);
+        assert!((actual - (paragraph_end * 0.5).min(max)).abs() < 1.0, "長行走到一半時須對應段落一半，不能把段落後的空白行也算進去");
+    }
+
+    #[test]
+    fn test_scroll_resyncs_after_image_load_with_same_editor_line() {
+        use egui_kittest::kittest::Queryable;
+        let path = std::env::temp_dir().join(format!("madedit-image-reflow-{}.png", std::process::id()));
+        let uri = format!("file://{}", path.display());
+        let text = format!("![圖](<{uri}>)\n\n{}", (0..100).map(|i| format!("## 標題 {i}\n\n段落 {i}\n\n")).collect::<String>());
+        let mut h = preview_harness(text, 82);
+        h.run_steps(5);
+        assert_preview_at_source_line(&h);
+        let before = h.state().preview.scroll_position.0;
+        image::RgbaImage::from_pixel(400, 300, image::Rgba([120, 80, 40, 255])).save(&path).unwrap();
+        h.get_by_label("重新載入圖片").click();
+        h.run_steps(1);
+        let mut loaded = false;
+        for _ in 0..200 {
+            if matches!(h.ctx.try_load_image(&uri, SizeHint::default()), Ok(ImagePoll::Ready { .. })) {
+                loaded = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(loaded, "補回的圖片應能重新載入");
+        h.run_steps(5);
+        assert_preview_at_source_line(&h);
+        assert!(h.state().preview.scroll_position.0 > before + 200.0, "圖片高度改變後須重新同步");
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -840,8 +1140,9 @@ mod tests {
         let b = split_blocks(md);
         let lines: Vec<usize> = b.iter().map(|x| x.0).collect();
         assert_eq!(lines, vec![0, 2, 5, 8]);
-        assert_eq!(b[1].1, "段落一\n續行");
-        assert!(b[3].1.starts_with("```rust"));
+        assert_eq!(b[1].1, 4);
+        assert_eq!(b[1].2, "段落一\n續行");
+        assert!(b[3].2.starts_with("```rust"));
     }
 
     #[test]
@@ -849,27 +1150,28 @@ mod tests {
         let md = "| a | b |\n|---|---|\n| 1 | 2 |\n\n見 [文件][r]\n\n[r]: https://x.com \"標題\"\n";
         let b = split_blocks(md);
         assert_eq!(b.len(), 2, "{b:?}");
-        assert!(b[0].1.starts_with("| a | b |") && b[0].1.contains("| 1 | 2 |"));
-        assert!(b[1].1.contains("[r]: <https://x.com> \"標題\""), "{}", b[1].1);
+        assert!(b[0].2.starts_with("| a | b |") && b[0].2.contains("| 1 | 2 |"));
+        assert!(b[1].2.contains("[r]: <https://x.com> \"標題\""), "{}", b[1].2);
     }
 
     #[test]
     fn test_split_blocks_footnotes_not_split() {
         let md = "文字[^1]\n\n[^1]: 註腳\n";
-        assert_eq!(split_blocks(md), vec![(0, md.to_string())]);
+        assert_eq!(split_blocks(md), vec![(0, 3, md.to_string())]);
     }
 
     #[test]
     fn test_scroll_target_interpolates_between_anchors() {
         let a = [(0, 0.0), (10, 100.0), (20, 400.0)];
-        assert_eq!(scroll_target(&a, 0), Some(0.0));
-        assert_eq!(scroll_target(&a, 5), Some(50.0));
-        assert_eq!(scroll_target(&a, 15), Some(250.0));
+        assert_eq!(scroll_target(&a, 0, 0.0), Some(0.0));
+        assert_eq!(scroll_target(&a, 5, 0.0), Some(50.0));
+        assert_eq!(scroll_target(&a, 15, 0.0), Some(250.0));
+        assert_eq!(scroll_target(&a, 5, 0.5), Some(55.0));
         // 超過最後一個錨點就停在最後錨點
-        assert_eq!(scroll_target(&a, 99), Some(400.0));
-        assert_eq!(scroll_target(&[], 3), None);
-        // 第一個錨點之前（例如文件開頭是空行）沒有可用位置
-        assert_eq!(scroll_target(&[(2, 30.0)], 0), None);
+        assert_eq!(scroll_target(&a, 99, 0.0), Some(400.0));
+        assert_eq!(scroll_target(&[], 3, 0.0), None);
+        // 文件開頭的空白行回到頂端，不停留在上一個捲動位置。
+        assert_eq!(scroll_target(&[(2, 30.0)], 0, 0.0), Some(0.0));
     }
 
     #[test]

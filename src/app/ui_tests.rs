@@ -55,6 +55,16 @@ fn benchmark_markdown_preview_ui() {
         if sample >= 3 {
             edit.push(elapsed);
         }
+        // 選用的離屏截圖在計時完成後才執行，不將 GPU 初始化算入效能樣本。
+        if sample == 11 {
+            if let Some(out) = std::env::var_os("MADEDIT_MD_BENCH_SHOT") {
+                if let Ok(line) = std::env::var("MADEDIT_MD_BENCH_TOP_LINE").unwrap_or_default().parse::<usize>() {
+                    h.state_mut().tab_mut().view.top_row = line;
+                }
+                h.run_steps(5);
+                h.render().expect("預覽截圖失敗").save(out).unwrap();
+            }
+        }
     }
     let report = |name: &str, mut samples: Vec<Duration>| {
         samples.sort();
@@ -308,7 +318,32 @@ fn test_markdown_preview_follows_editor_scroll() {
     h.state_mut().tab_mut().view.top_row = 200;
     h.run_steps(5);
     assert_eq!(h.state_mut().tab_mut().md_preview.as_ref().unwrap().synced_line, Some(200));
+    let pv = h.state_mut().tab_mut().md_preview.as_ref().unwrap();
+    let expected = pv.anchors.iter().find(|a| a.0 == 200).unwrap().1;
+    assert!((pv.scroll_position.0 - expected.min(pv.scroll_position.1)).abs() < 1.0, "須實際捲到來源區塊，不能只更新同步行號");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_markdown_preview_scrolls_within_wrapped_editor_line() {
+    use super::mdpreview::Placement;
+    use crate::core::settings::WrapMode;
+    let mut h = harness();
+    h.state_mut().doc_mut().syntax = "Markdown".into();
+    h.state_mut().doc_mut().editor.set_text(&format!("{}\n\n結尾\n", "long text ".repeat(1000)));
+    h.state_mut().doc_mut().version += 1;
+    h.state_mut().settings.wrap_mode = WrapMode::ByWindow;
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Right);
+    h.run_steps(5);
+    h.state_mut().tab_mut().view.top_row = 10;
+    h.run_steps(5);
+    let tab = h.state_mut().tab_mut();
+    let (line, fraction) = tab.view.top_line(&tab.doc.editor);
+    assert_eq!(line, 0);
+    assert!(fraction > 0.0);
+    assert!(tab.md_preview.as_ref().unwrap().scroll_position.0 > 10.0, "同一邏輯行內的換行也須推進預覽");
 }
 
 /// Markdown 預覽：切成左右／上下並排時，面板固定為編輯區的一半，之後幾幀也不會彈回其他大小

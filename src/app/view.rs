@@ -298,13 +298,19 @@ impl ViewState {
         (line as usize, start as usize, end)
     }
 
-    /// 目前最上方可見的邏輯行（從 0 起算；自動換行時為該視覺列所屬的行）
-    pub fn top_line(&self, ed: &EditorState) -> usize {
+    /// 目前最上方可見的邏輯行與行內進度（行號從 0 起算；進度依自動換行的視覺列計算）。
+    pub fn top_line(&self, ed: &EditorState) -> (usize, f32) {
         let rows = self.row_count(ed);
         if rows == 0 {
-            return 0;
+            return (0, 0.0);
         }
-        self.row_info(ed, self.top_row.min(rows - 1)).0
+        let row = self.top_row.min(rows - 1);
+        let line = self.row_info(ed, row).0;
+        if !self.wrapped() { return (line, 0.0); }
+        // 同一個邏輯行可佔多個視覺列；傳遞其進度，預覽才不會在長行內停住。
+        let first = self.wrap.line_first_row[line] as usize;
+        let end = self.wrap.line_first_row.get(line + 1).map_or(rows, |r| *r as usize);
+        (line, (row - first) as f32 / (end - first).max(1) as f32)
     }
 
     /// 文字位置所在的視覺列
