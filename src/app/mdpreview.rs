@@ -497,7 +497,11 @@ impl MarkdownPreview {
                         if prev_markdown {
                             ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
                         }
-                        CommonMarkViewer::new().show(ui, &mut self.cache, m);
+                        // 每個區塊各自一個 id：egui_commonmark 的表格 id 只在單次 show 內遞增，
+                        // 多個區塊共用同一個 ui id 時，不同表格會共用 Grid 欄寬而文字互相覆蓋
+                        ui.push_id(item.line, |ui| {
+                            CommonMarkViewer::new().show(ui, &mut self.cache, m);
+                        });
                     }
                     Content::Diagram(d) => {
                         // 依縮放比例顯示；符合寬度時，仍比視窗寬才縮小
