@@ -54,6 +54,7 @@ MadEdit/
 │   └── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
 ├── scripts\
 │   ├── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
+│   ├── make_dmg.sh         # 產生 macOS 磁碟映像檔（.dmg，含 Applications 軟連結與簽章）
 │   ├── install_macos.sh    # 一鍵建置 MadEdit.app 並取代 /Applications 內的舊版
 │   └── make_linux_dist.sh  # 產生 Linux x86_64 發行壓縮檔（cargo-zigbuild，glibc 2.28）
 ├── src\
@@ -115,6 +116,10 @@ MadEdit/
 - **打包 macOS App**：
   ```bash
   cargo build --release && ./scripts/make_appbundle.sh
+  ```
+- **打包 macOS DMG**：
+  ```bash
+  ./scripts/make_dmg.sh
   ```
 - **建置並安裝到 /Applications**（自動刪除舊版）：
   ```bash
