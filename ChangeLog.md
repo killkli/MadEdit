@@ -6,12 +6,20 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-27
+
 ### 新增
 - 介面語言可跟隨系統，或改為 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。選單與選項對話框都會套用。
 - `Makefile` 統一開發與打包指令（`make check`、`make test`、`make dist`）。
 - Linux AppImage（x86_64 與 aarch64），內含執行檔與拼字字典。
 - Linux 壓縮檔與 Windows zip 可指定 `x86_64` 或 `aarch64`。
 - GitHub Actions：推上 `v*` 標籤時建置 Linux 壓縮檔、Linux AppImage、macOS DMG 與 Windows zip，並以本檔對應章節作為發行說明。Linux 與 Windows 含 x64 與 ARM；macOS 含 Apple Silicon 與 Intel。
+- Markdown 預覽支援雙向同步捲動，並排與獨立視窗預設開啟；預覽介面文字已翻譯。
+- Markdown 預覽重用未修改的 Mermaid 圖表，編輯內文時不再重新轉換。
+- `README.md` 改為英文，繁體中文版移至 `README_zh-TW.md`。
+
+### 修正
+- Markdown 預覽的並排尺寸、一般與參照式圖片（含中文、空白與百分比編碼檔名）載入。
 
 ## [0.5.24] - 2026-10-26
 
@@ -74,10 +82,11 @@
 ### 新增
 - 專案起步。Slint 時期完成編碼、自繪編輯區、大檔引擎、列塊選取、搜尋取代、語法突顯、跳行、換行格式、書籤、外部變更監控與經典介面。
 
-[Unreleased]: https://github.com/kuopinghsu/MadEdit/compare/v0.5.24...HEAD
-[0.5.24]: https://github.com/kuopinghsu/MadEdit/compare/v0.5.23...v0.5.24
-[0.5.23]: https://github.com/kuopinghsu/MadEdit/compare/v0.5.22...v0.5.23
-[0.5.22]: https://github.com/kuopinghsu/MadEdit/compare/v0.5.21...v0.5.22
-[0.5.21]: https://github.com/kuopinghsu/MadEdit/compare/v0.2.0...v0.5.21
-[0.2.0]: https://github.com/kuopinghsu/MadEdit/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/kuopinghsu/MadEdit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/tenyi/MadEdit/compare/v0.5.24...v0.6.0
+[0.5.24]: https://github.com/tenyi/MadEdit/compare/v0.5.23...v0.5.24
+[0.5.23]: https://github.com/tenyi/MadEdit/compare/v0.5.22...v0.5.23
+[0.5.22]: https://github.com/tenyi/MadEdit/compare/v0.5.21...v0.5.22
+[0.5.21]: https://github.com/tenyi/MadEdit/compare/v0.2.0...v0.5.21
+[0.2.0]: https://github.com/tenyi/MadEdit/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/tenyi/MadEdit/releases/tag/v0.1.0

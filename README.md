@@ -1,258 +1,268 @@
-# MadEdit Rust 重製版
+# MadEdit (Rust Rewrite)
 
-**以現代 Rust 與 egui 重新打造的跨平台、輕量、極速文字 / 列塊 / 十六進位編輯器**  
-*A modern, lightweight, cross-platform Text / Column / Hex editor inspired by classic MadEdit, written in pure Rust.*
+**A modern, lightweight, fast, cross-platform Text / Column / Hex editor, rebuilt with Rust and egui.**
 
----
-
-## 📖 專案背景與願景
-
-原版 C++ / wxWidgets 架構的 **MadEdit** 是許多開發者與資料處理人員心目中的經典工具（支援列塊編輯、Hex 檢視與多國語系編碼切換），但隨著時間推移，龐雜的 C++ 跨平台依賴與編譯鏈在現代 Windows、macOS 與 Linux 環境下日益難以維護。在下原本也由 MadEdit-Mod 的原始碼重新建置出 Mac 版本與 Linux 版本，但是速度慢，有許多功能在非Windows難以正常實現，尤其是字型顯示，修改後各平臺不一致，於是才使用 Rust 重製。
-
-**MadEdit** 以 **Rust (Edition 2024)** 與即時模式 GUI 框架 **[egui / eframe](https://github.com/emilk/egui)** 重新打造，遵循 **KISS (Keep It Simple, Stupid)** 設計原則，在零 C++ GUI 系統庫依賴的前提下，重現原版 MadEdit 的經典介面與命令集（依原版命令表實作 165 個命令）。
-
-> 介面曾以 Slint 實作，2026-10 改寫為 egui，以支援使用者任選系統字型（含比例字型）與更完整的輸入法處理，詳見 [ADR 0011](docs/adr/0011-egui-rewrite.md)。
+English | [繁體中文](README_zh-TW.md)
 
 ---
 
-## ✨ 核心功能特色
+## 📖 Background and Vision
 
-### 1. 三大編輯與檢視模式
-- **文字模式 (Text Mode)**：一般串流文字與程式碼編輯，支援智慧縮排行首 (`Home`)、整行上下移動、複製行與刪除行。
-- **列塊模式 (Column / Block Mode)**：
-  - 以視覺欄位（半形 1 欄、CJK 全形 2 欄、Tab 對齊）進行二維矩形選取。
-  - 支援工具列切換或按住 `Alt + 滑鼠拖曳` / `Alt + Shift + 方向鍵` 進行矩形選取。
-  - 支援**矩形區塊複製、剪下、列塊對齊貼上、多行同步打字輸入與區塊切除**（短行自動補齊空白）。
-- **十六進位模式 (Hex Mode)**：
-  - 經典三欄對照檢視：**位址偏移 (Offset)**、**十六進位位元組 (Hex Bytes)**、**ASCII 可視預覽**。
-  - 支援十六進位位移跳轉（如 `0x1A40`）與 Hex Byte Pattern 搜尋（如 `4D 5A 90`）。
+The original C++ / wxWidgets **MadEdit** is a classic tool for many developers and data workers (column editing, hex view, and switching between many character encodings). Over time, its heavy C++ cross-platform dependencies and build chain became hard to maintain on modern Windows, macOS and Linux. The author once rebuilt macOS and Linux versions from the MadEdit-Mod source, but they were slow, many features did not work properly outside Windows, and font rendering in particular was inconsistent across platforms after modification. That is why the project was rewritten in Rust.
 
-### 2. 字型與輸入法
-- 編輯區字型可任選系統字型與字級（含比例字型），CJK 字元自動以系統中日韓字型補字。
-- 支援 macOS 輸入法（注音、倉頡等）預編輯顯示與候選窗定位。
-- 介面語言可跟隨系統，或在「檢視 → 介面語言」與選項中改為 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。語言名稱一律用該語言自己的寫法。
+**MadEdit** is rebuilt with **Rust (Edition 2024)** and the immediate-mode GUI framework **[egui / eframe](https://github.com/emilk/egui)**. It follows the **KISS (Keep It Simple, Stupid)** principle and reproduces the classic MadEdit interface and command set (165 commands, following the original command table) with zero C++ GUI system library dependencies.
 
-### 3. 多語系編碼支援與防損毀保護
-- 整合 `encoding_rs` 與自訂 UTF-16 編解碼器，支援 **UTF-8、UTF-8 BOM、UTF-16LE、UTF-16BE、Big5、GB18030、Shift_JIS、EUC-KR、windows-1252、ISO-8859-1** 等編碼。
-- **智慧開檔偵測**：優先識別 BOM，無 BOM 時驗證嚴格 UTF-8，失敗則自動回退至 Big5。
-- **無損防呆機制**：檔案含有無法無損解碼的位元組時，狀態列警告並拒絕覆寫存檔，提供**「重新解碼」**與**「轉換編碼」**。
-
-### 4. 大檔案引擎
-- **Piece Table** 以定位讀取（pread）分頁快取原始檔案，不使用 mmap（避免檔案被外部截短時發生 SIGBUS）。
-- 超過門檻的大型檔案以十六進位模式開啟，資料留在磁碟上按需讀取。
-
-### 5. Markdown 預覽（含 Mermaid 圖表）
-- 從「檢視 → 預覽為 → 以 Markdown 預覽」或工具列預覽按鈕開啟，在 App 內直接繪製 Markdown（`egui_commonmark`）；目前檔案不是 Markdown 時按鈕停用。
-- ` ```mermaid ` 區塊以 [**fermaid**](https://github.com/tenyi/fermaid) 轉成圖表顯示，不需瀏覽器或 Node.js。
-  fermaid 是本專案作者為 Markdown 預覽特別開發的純 Rust Mermaid 繪製引擎，支援目前 Mermaid 的所有圖表類型，能快速產生預覽圖。
-- 相對路徑圖片以文件所在資料夾為基準，支援 PNG、JPEG、GIF、WebP 與 SVG。
-- 可切換**獨立視窗**、**左右並排**或**上下並排**；並排時與編輯區各佔一半，並可**同步捲動**跟隨編輯區。
-- 支援縮放（`Ctrl` / `⌘` + 滾輪或觸控板捏合）與圖表符合寬度；高對比配色（深色純黑底、淺色純白底）。
-- 預覽狀態隨分頁各自保存，切換分頁時同步切換。
-- 另可「以 HTML 預覽」交給系統瀏覽器開啟。
-
-### 6. 原版 MadEdit 命令集
-- **檔案**：多文件分頁、另存副本、全部儲存、最近檔案、唯讀旗標、列印與 App 內預覽列印（A4 分頁、翻頁、縮放）、工作階段保存。
-- **編輯**：書籤行操作、Hex 字串互轉、縮排、註解、大小寫、全半形、Tab 與空白互轉、遞增數字、排序、欄位對齊。
-- **搜尋**：純文字 / 大小寫 / 全字 / Regex / Hex 搜尋取代、在多個檔案中尋找／取代、跳至對應括號。
-- **檢視**：自動換行、行號、書籤欄、尺標、控制字元、目前行、欄位提示線、深淺色主題、Markdown／HTML 預覽。
-- **巨集與工具**：巨集錄製播放、快捷鍵重新指派、拼字檢查、字數統計、簡繁與日文漢字轉換、JSON／XML 格式化。
-
-### 7. macOS 原生整合
-- 支援 Finder「打開方式」與拖曳到 Dock 圖示開檔（含中文、空白、百分比檔名），執行中開檔會在同一個 App 新增分頁。
-- 系統選單與 Dock 的「結束」也會先確認未儲存的修改。
-- 快捷鍵依 macOS 慣例（⌘W、⌘Q、⌘⇧S、⌘⌥F、Control+Tab 等），⌘H、⌘M、⌘Tab 保留給系統。
+> The UI was first built with Slint and rewritten in egui in 2026-10, to let users pick any system font (including proportional fonts) and to handle input methods more completely. See [ADR 0011](docs/adr/0011-egui-rewrite.md).
 
 ---
 
-## 🏗️ 專案目錄結構
+## ✨ Key Features
+
+### 1. Three editing and viewing modes
+- **Text Mode**: ordinary text and code editing, with smart-indent Home (`Home`), moving lines up/down, duplicating lines and deleting lines.
+- **Column / Block Mode**:
+  - Two-dimensional rectangular selection by visual column (1 column for half-width characters, 2 for full-width CJK, tab-aligned).
+  - Toggle it from the toolbar, or hold `Alt + mouse drag` / `Alt + Shift + arrow keys` to select a rectangle.
+  - Supports **rectangular copy, cut, column-aligned paste, simultaneous multi-line typing and block deletion** (short lines are padded with spaces).
+- **Hex Mode**:
+  - Classic three-column view: **Offset**, **Hex Bytes** and **ASCII preview**.
+  - Supports jumping to a hex offset (such as `0x1A40`) and hex byte pattern search (such as `4D 5A 90`).
+
+### 2. Fonts and input methods
+- Pick any system font and size for the editor (proportional fonts included). CJK characters automatically fall back to a system CJK font.
+- Supports macOS input methods (Zhuyin, Cangjie, etc.) with preedit display and candidate window positioning.
+- The UI language follows the system, or can be set under "View → Interface Language" and in Options to English, 繁體中文, 简体中文, 日本語, 한국어, Deutsch, Español, Français, Italiano or Português. Language names are always written in their own language.
+
+### 3. Multi-encoding support and corruption protection
+- Built on `encoding_rs` plus a custom UTF-16 codec. Supports **UTF-8, UTF-8 BOM, UTF-16LE, UTF-16BE, Big5, GB18030, Shift_JIS, EUC-KR, windows-1252, ISO-8859-1** and more.
+- **Smart detection on open**: a BOM is recognized first; without a BOM, strict UTF-8 is tried, then it falls back to Big5.
+- **Lossless safeguard**: if a file contains bytes that cannot be decoded losslessly, the status bar warns and overwriting is refused. **Reinterpret** and **Convert Encoding** are available.
+
+### 4. Large file engine
+- A **Piece Table** reads the original file in cached pages with positioned reads (pread). It does not use mmap, to avoid SIGBUS when a file is truncated externally.
+- Files above a size threshold open in Hex Mode, with data staying on disk and read on demand.
+
+### 5. Markdown preview (with Mermaid diagrams)
+- Open it from "View → Preview As → Preview as Markdown" or the toolbar preview button. Markdown is rendered in-app (`egui_commonmark`); the button is disabled when the current file is not Markdown.
+- ` ```mermaid ` blocks are rendered as diagrams by [**fermaid**](https://github.com/tenyi/fermaid), with no browser or Node.js needed.
+  fermaid is a pure-Rust Mermaid rendering engine the author built specifically for the Markdown preview. It supports all current Mermaid diagram types and produces preview images quickly.
+- Relative image paths resolve against the document's folder. PNG, JPEG, GIF, WebP and SVG are supported.
+- Switch between a **separate window**, **side by side** or **top and bottom** layout. In split layouts the preview and editor each take half, and the preview can **scroll in sync** with the editor.
+- Zoom (`Ctrl` / `⌘` + scroll wheel or trackpad pinch) and fit diagrams to width; high-contrast colors (pure black background in dark mode, pure white in light mode).
+- Preview state is kept per tab and follows tab switches.
+- You can also "Preview as HTML", which hands the page to the system browser.
+
+### 6. The original MadEdit command set
+- **File**: multi-document tabs, save a copy, save all, recent files, read-only flag, printing and in-app print preview (A4 pages, paging, zoom), session persistence.
+- **Edit**: bookmark line operations, hex string conversion, indent, comment, change case, full/half width, tabs to spaces and back, increment numbers, sort, column alignment.
+- **Search**: plain text / case / whole word / Regex / Hex find and replace, find and replace in multiple files, jump to matching bracket.
+- **View**: word wrap, line numbers, bookmark gutter, ruler, control characters, current line, column guide lines, light/dark theme, Markdown / HTML preview.
+- **Macros and tools**: macro record and playback, shortcut reassignment, spell check, word count, Simplified/Traditional Chinese and Japanese Kanji conversion, JSON / XML formatting.
+
+### 7. macOS native integration
+- Supports Finder "Open With" and dropping files on the Dock icon (including names with CJK characters, spaces and percent-encoding). Opening a file while the app is running adds a tab in the same app.
+- Quit from the system menu or the Dock also asks about unsaved changes first.
+- Shortcuts follow macOS conventions (⌘W, ⌘Q, ⌘⇧S, ⌘⌥F, Control+Tab, etc.); ⌘H, ⌘M and ⌘Tab are left to the system.
+
+---
+
+## 🏗️ Project Structure
 
 ```text
 MadEdit/
 ├── Cargo.toml / Cargo.lock
-├── Makefile                # 開發、打包與發行說明指令
-├── ChangeLog.md            # 變更紀錄；GitHub Release 說明取自對應版本章節
-├── build.rs                # Windows 執行檔圖示嵌入
-├── .github/workflows/release.yml  # 標籤發行：Linux、AppImage、macOS DMG、Windows
-├── assets/                 # 應用程式圖示、工具列圖示（取自原版）、拼字字典
+├── Makefile                # Development, packaging and release-notes commands
+├── ChangeLog.md            # Change log; GitHub Release notes come from the matching version section
+├── build.rs                # Embeds the icon into the Windows executable
+├── .github/workflows/release.yml  # Tag release: Linux, AppImage, macOS DMG, Windows
+├── assets/                 # App icons, toolbar icons (from the original), spelling dictionaries
 ├── scripts/
-│   ├── make_appbundle.sh   # 產生 macOS MadEdit.app
-│   ├── make_dmg.sh         # 產生 macOS DMG
-│   ├── install_macos.sh    # 建置並安裝 MadEdit.app 到 /Applications
-│   ├── test_macos_bundle.sh / test_macos_runtime.py  # macOS 打包與原生執行回歸測試
-│   ├── make_linux_dist.sh  # 產生 Linux 發行壓縮檔（x86_64 / aarch64）
-│   ├── make_appimage.sh    # 產生 Linux AppImage（x86_64 / aarch64）
-│   ├── install_linux.sh    # 建置並安裝到本機 ~/.local
-│   ├── make_windows_dist.ps1 # 產生 Windows 發行壓縮檔（x86_64 / aarch64）
-│   └── changelog_notes.sh  # 從 ChangeLog.md 取出指定版本的發行說明
+│   ├── make_appbundle.sh   # Build the macOS MadEdit.app
+│   ├── make_dmg.sh         # Build the macOS DMG
+│   ├── install_macos.sh    # Build and install MadEdit.app into /Applications
+│   ├── test_macos_bundle.sh / test_macos_runtime.py  # macOS packaging and native runtime regression tests
+│   ├── make_linux_dist.sh  # Build the Linux archive (x86_64 / aarch64)
+│   ├── make_appimage.sh    # Build the Linux AppImage (x86_64 / aarch64)
+│   ├── install_linux.sh    # Build and install to ~/.local
+│   ├── make_windows_dist.ps1 # Build the Windows archive (x86_64 / aarch64)
+│   └── changelog_notes.sh  # Extract the release notes of a version from ChangeLog.md
 ├── src/
-│   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
-│   ├── macos.rs            # macOS Finder／Dock 開檔與結束事件橋接
-│   ├── app/                # egui 介面層（選單、工具列、自繪編輯區、Hex 檢視、Markdown 預覽、對話框、命令表）
-│   └── core/               # 與 UI 無關的核心邏輯（文件、編碼、Piece Table、搜尋、語法、設定）
-├── vendor/accesskit_macos/ # 回補 Touch Bar 退出崩潰修正的 AccessKit（見 vendor/README.md）
-├── docs/                   # 架構決策紀錄 (ADR)、領域文件與 macOS 驗證紀錄
-├── GLOSSARY.md             # 專案領域詞彙表
-└── AGENTS.md               # AI 協作與開發指南
+│   ├── main.rs             # Entry point: parse the command line, create the window, start eframe
+│   ├── macos.rs            # macOS Finder / Dock open-file and quit event bridge
+│   ├── app/                # egui UI layer (menus, toolbar, custom editor, Hex view, Markdown preview, dialogs, command table)
+│   └── core/               # UI-independent core logic (document, encoding, Piece Table, search, syntax, settings)
+├── vendor/accesskit_macos/ # AccessKit with the Touch Bar quit-crash fix backported (see vendor/README.md)
+├── docs/                   # Architecture decision records (ADR), domain docs and macOS validation notes
+├── GLOSSARY.md             # Project domain glossary
+└── AGENTS.md               # Guide for AI collaboration and development
 ```
 
 ---
 
-## 🚀 建置與執行指南
+## 🚀 Build and Run
 
-### 環境需求
-- **Rust 工具鏈**：Rust `1.95` 或以上版本（egui / eframe 0.37 的最低需求）
-- 支援平台：**Windows**、**macOS**、**Linux**
+### Requirements
+- **Rust toolchain**: Rust `1.95` or newer (the minimum for egui / eframe 0.37)
+- Supported platforms: **Windows**, **macOS**, **Linux**
 
-### 開發與測試指令
+### Development and test commands
 
 ```bash
 make check             # cargo check
-make test              # 單元測試與 egui_kittest 介面互動測試
-make run               # 啟動開發版
-make build             # 編譯最佳化正式版（cargo build --release --locked）
+make test              # unit tests and egui_kittest UI interaction tests
+make run               # run the development build
+make build             # optimized release build (cargo build --release --locked)
 ```
 
-`make help` 會列出全部目標。`cargo check`、`cargo test`、`cargo run` 仍然可以直接使用。
+`make help` lists all targets. `cargo check`, `cargo test` and `cargo run` still work directly.
 
-編譯完成後，可於 `target/release/MadEdit`（Windows 為 `target/release/MadEdit.exe`）取得獨立執行檔。
+After building, the standalone executable is at `target/release/MadEdit` (`target/release/MadEdit.exe` on Windows).
 
-### macOS 建置
+### Building on macOS
 
-macOS 上的 GUI 程式需放在 `.app` bundle 內，才能正確顯示 Dock 圖示、選單列名稱並與系統互動。
+A GUI program on macOS must live inside an `.app` bundle to show the Dock icon and menu bar name correctly and to interact with the system.
 
-1. 安裝 Xcode Command Line Tools（提供 `sips`、`iconutil`、`codesign`）：
+1. Install the Xcode Command Line Tools (they provide `sips`, `iconutil` and `codesign`):
    ```bash
    xcode-select --install
    ```
-2. 編譯並產生 App 與 DMG：
+2. Build the app and the DMG:
    ```bash
    make dist-macos
    ```
-   等同於 `./scripts/make_appbundle.sh` 之後再執行 `./scripts/make_dmg.sh`。
-3. 產物位於 `dist/MadEdit.app`（已含圖示與拼字字典，並以 ad-hoc 簽章）與 `dist/MadEdit-<版本>-macOS-<架構>.dmg`，可直接開啟或拖進「應用程式」資料夾：
+   This is the same as running `./scripts/make_appbundle.sh` and then `./scripts/make_dmg.sh`.
+3. The outputs are `dist/MadEdit.app` (with icon and spelling dictionaries, ad-hoc signed) and `dist/MadEdit-<version>-macOS-<arch>.dmg`. Open the app directly or drag it into the Applications folder:
    ```bash
    open dist/MadEdit.app
    ```
 
-腳本會自動建置本機架構（Apple Silicon 或 Intel），支援 Cargo 自訂的 target-dir／build.target。
-如已建好 universal binary，可用 `MADEDIT_BIN=/path/to/MadEdit ./scripts/make_appbundle.sh` 打包。
-App 內含圖示與字典；打包、簽章及驗證全部完成後才取代舊版。
+The scripts build for the local architecture (Apple Silicon or Intel) and support a custom Cargo target-dir / build.target.
+If you already have a universal binary, package it with `MADEDIT_BIN=/path/to/MadEdit ./scripts/make_appbundle.sh`.
+The app contains the icon and dictionaries; the old version is replaced only after packaging, signing and verification all succeed.
 
-安裝到 `/Applications`：`./scripts/install_macos.sh`；也可用
-`DEST="$HOME/Applications/MadEdit.app" ./scripts/install_macos.sh` 指定安裝位置。
+To install into `/Applications`, run `./scripts/install_macos.sh`; use
+`DEST="$HOME/Applications/MadEdit.app" ./scripts/install_macos.sh` to choose another location.
 
-支援 Finder「打開方式」、拖曳檔案至 Dock 圖示，以及
-`open -a "$PWD/dist/MadEdit.app" 檔案.txt`。已啟動時會在同一個 App 開啟新分頁。
-常用快捷鍵為 ⌘W 關閉分頁、⌘Q 結束（未儲存時先確認）、⌘⇧S 另存新檔、⌘⌥F 取代、
-⌘/ 註解、Control+Tab 切換分頁；Option+方向鍵移動字詞、⌘+方向鍵移到行首尾／文件頭尾。
-⌘H、⌘M、⌘Tab 保留給系統。
+Finder "Open With", dropping files on the Dock icon, and
+`open -a "$PWD/dist/MadEdit.app" file.txt` are supported. If the app is already running, the file opens in a new tab.
+Common shortcuts: ⌘W closes a tab, ⌘Q quits (asking first if there are unsaved changes), ⌘⇧S Save As, ⌘⌥F Replace,
+⌘/ comment, Control+Tab switches tabs; Option+arrows move by word, ⌘+arrows jump to line start/end or document start/end.
+⌘H, ⌘M and ⌘Tab are left to the system.
 
-macOS 打包回歸測試：`./scripts/test_macos_bundle.sh`（不覆寫已安裝的 App）。
-在已登入的 macOS 桌面執行 `python3 scripts/test_macos_runtime.py`，會連續啟動正式 App，
-驗證文字／二進位文件繪製與正常退出，截圖與記錄留在 `dist/validation/runtime/`。
-本次平台、測試結果與驗證範圍見 [macOS 移植驗證](docs/macos-validation.md)。
-設定預設存於 `~/Library/Application Support/MadEdit/settings.json`；可用環境變數
-`MADEDIT_CONFIG_DIR` 指定獨立設定目錄。`--screenshot 輸出.png` 使用預設設定並自動離開，
-不讀寫日常工作階段，可供原生視窗驗證使用。
+macOS packaging regression test: `./scripts/test_macos_bundle.sh` (does not overwrite an installed app).
+On a logged-in macOS desktop, `python3 scripts/test_macos_runtime.py` launches the real app repeatedly,
+verifies text / binary document rendering and a clean exit, and keeps screenshots and logs in `dist/validation/runtime/`.
+See [macOS port validation](docs/macos-validation.md) for the platforms, results and scope of validation.
+Settings are stored by default in `~/Library/Application Support/MadEdit/settings.json`; set the environment variable
+`MADEDIT_CONFIG_DIR` to use a separate settings directory. `--screenshot out.png` uses default settings and exits automatically,
+without reading or writing your everyday session, which is useful for native window verification.
 
-> 由於未經 Apple 公證，從網路下載的 App 第一次開啟時可能被 Gatekeeper 阻擋，
-> 請在 Finder 中按右鍵選「打開」，或執行 `xattr -cr MadEdit.app` 移除隔離屬性。
+> Because the app is not notarized by Apple, a downloaded copy may be blocked by Gatekeeper the first time you open it.
+> Right-click it in Finder and choose "Open", or run `xattr -cr MadEdit.app` to remove the quarantine attribute.
 
-### 下載發行檔
+### Downloads
 
-正式發行檔在 [Releases](https://github.com/kuopinghsu/MadEdit/releases)。檔名裡的 `<版本>` 與 `Cargo.toml` 的 `version` 相同。
+Release builds are on the [Releases](https://github.com/tenyi/MadEdit/releases) page. `<version>` in the file names matches `version` in `Cargo.toml`.
 
-| 平台 | 檔名 |
+| Platform | File name |
 | :--- | :--- |
-| Linux x86_64 | `MadEdit-<版本>-linux-x86_64.tar.gz` |
-| Linux ARM | `MadEdit-<版本>-linux-aarch64.tar.gz` |
-| Linux AppImage x86_64 | `MadEdit-<版本>-linux-x86_64.AppImage` |
-| Linux AppImage ARM | `MadEdit-<版本>-linux-aarch64.AppImage` |
-| macOS Apple Silicon | `MadEdit-<版本>-macOS-arm64.dmg` |
-| macOS Intel | `MadEdit-<版本>-macOS-x86_64.dmg` |
-| Windows x64 | `MadEdit-<版本>-windows-x86_64.zip` |
-| Windows ARM | `MadEdit-<版本>-windows-aarch64.zip` |
+| Linux x86_64 | `MadEdit-<version>-linux-x86_64.tar.gz` |
+| Linux ARM | `MadEdit-<version>-linux-aarch64.tar.gz` |
+| Linux AppImage x86_64 | `MadEdit-<version>-linux-x86_64.AppImage` |
+| Linux AppImage ARM | `MadEdit-<version>-linux-aarch64.AppImage` |
+| macOS Apple Silicon | `MadEdit-<version>-macOS-arm64.dmg` |
+| macOS Intel | `MadEdit-<version>-macOS-x86_64.dmg` |
+| Windows x64 | `MadEdit-<version>-windows-x86_64.zip` |
+| Windows ARM | `MadEdit-<version>-windows-aarch64.zip` |
 
-每個發行檔旁有同名 `.sha256`。Linux 壓縮檔解壓後可執行 `./MadEdit`，或 `./install.sh` 安裝到 `~/.local`。AppImage 加上執行權限後直接執行，需要系統上的 Vulkan 或 OpenGL 驅動。Windows 解壓後執行 `MadEdit.exe`。macOS 打開 DMG，把 `MadEdit.app` 拖進「應用程式」。
+Each release file has a matching `.sha256` next to it. After extracting a Linux archive, run `./MadEdit`, or `./install.sh` to install into `~/.local`. Make an AppImage executable and run it; it needs a Vulkan or OpenGL driver on the system. On Windows, extract and run `MadEdit.exe`. On macOS, open the DMG and drag `MadEdit.app` into Applications.
 
-### Windows 自行打包
+### Packaging for Windows
 
-在 Windows 上（x64 或 ARM 會依本機架構命名）：
+On Windows (x64 or ARM, named after the local architecture):
 
 ```powershell
 make dist-windows
 ```
 
-或：
+Or:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1 -Arch aarch64
 ```
 
-### Linux 自行打包
+### Packaging for Linux
 
-使用 [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) 鎖定 glibc 2.28，讓同一個執行檔可在較舊的發行版（如 Ubuntu 20.04）上執行：
+Use [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) to pin glibc 2.28, so the same executable runs on older distributions (such as Ubuntu 20.04):
 
 ```bash
 cargo install cargo-zigbuild
-# 安裝 zig 0.16（可用系統套件管理員，或 uv tool install ziglang）
-make dist-linux       # tar.gz，架構為本機
-make dist-appimage    # AppImage，並一併產生 tar.gz
+# Install zig 0.16 (via the system package manager, or uv tool install ziglang)
+make dist-linux       # tar.gz, local architecture
+make dist-appimage    # AppImage, plus a tar.gz
 make dist-linux ARCH=aarch64
 make dist-appimage ARCH=x86_64
 ```
 
-`./scripts/make_linux_dist.sh [輸出目錄] [架構]` 與 `./scripts/make_appimage.sh` 是上面兩個目標的底層腳本。架構為 `x86_64` 或 `aarch64`。
+`./scripts/make_linux_dist.sh [output-dir] [arch]` and `./scripts/make_appimage.sh` are the underlying scripts of those two targets. The architecture is `x86_64` or `aarch64`.
 
-### 發行步驟
+### Releasing
 
-變更紀錄寫在 [ChangeLog.md](ChangeLog.md)。推上版本標籤後，[`.github/workflows/release.yml`](.github/workflows/release.yml) 會建置上表的全部檔案，並把該版本章節原文設為 GitHub Release 說明。標籤含連字號（例如 `v0.6.0-rc.1`）時標成預發行。
+Changes are recorded in [ChangeLog.md](ChangeLog.md). After a version tag is pushed, [`.github/workflows/release.yml`](.github/workflows/release.yml) builds every file in the table above and uses that version's section verbatim as the GitHub Release notes. A tag containing a hyphen (such as `v0.6.0-rc.1`) is marked as a pre-release.
 
-1. 在 `ChangeLog.md` 把 `## [Unreleased]` 裡的條目移到新章節，標題格式為 `## [x.y.z] - YYYY-MM-DD`。章節不能是空的。
-2. 把 `Cargo.toml` 的 `version` 改成同一個 `x.y.z`，並更新 `Cargo.lock`（`cargo check` 會改寫鎖定檔）。
-3. 確認說明可以單獨取出（把 `0.6.0` 換成這次的版本）：
+1. In `ChangeLog.md`, move the entries under `## [Unreleased]` into a new section titled `## [x.y.z] - YYYY-MM-DD`. The section must not be empty.
+2. Set `version` in `Cargo.toml` to the same `x.y.z` and update `Cargo.lock` (`cargo check` rewrites the lock file).
+3. Check that the notes can be extracted on their own (replace `0.6.0` with this release's version):
    ```bash
    make release-notes VERSION=0.6.0
    ```
-4. 提交後打上標籤並推送：
+4. Commit, tag and push:
    ```bash
    git tag v0.6.0
    git push origin main
    git push origin v0.6.0
    ```
-   標籤版本必須與 `Cargo.toml` 相同（`v0.6.0` 對應 `0.6.0`）。不一致，或 ChangeLog 沒有該章節時，工作流程會在開始打包前停止。
-5. Actions 完成後，Release 頁會出現 Linux（x64 / ARM 的 tar.gz 與 AppImage）、macOS DMG（Apple Silicon 與 Intel）與 Windows zip（x64 / ARM），說明文字就是 ChangeLog 的該章節。
+   The tag version must equal `Cargo.toml` (`v0.6.0` for `0.6.0`). If it does not, or ChangeLog has no such section, the workflow stops before packaging.
+5. When Actions finishes, the Release page shows Linux (x64 / ARM tar.gz and AppImage), macOS DMG (Apple Silicon and Intel) and Windows zip (x64 / ARM), with the ChangeLog section as the notes.
 
-只想試打包、不建立 Release 時，可在 GitHub 的 Actions 頁手動執行 Release workflow。產物會留在該次執行的 artifact，不會發佈。
+To try packaging without creating a Release, run the Release workflow manually from the GitHub Actions page. The outputs stay in that run's artifacts and are not published.
 
 ---
 
-## 🛠️ 核心技術棧
+## 🛠️ Tech Stack
 
-| 領域 | 套件 / 技術 | 用途 |
+| Area | Crate / Technology | Purpose |
 | :--- | :--- | :--- |
-| **GUI 框架** | [`eframe` / `egui`](https://github.com/emilk/egui) (`v0.37`) | 即時模式 GUI、自繪編輯區與 Hex 檢視、輸入法事件 |
-| **系統字型** | [`fontique`](https://crates.io/crates/fontique) | 列舉並載入系統字型 |
-| **Markdown 預覽** | [`egui_commonmark`](https://crates.io/crates/egui_commonmark) | 在 App 內繪製 Markdown |
-| **Mermaid 圖表** | [`fermaid`](https://github.com/tenyi/fermaid) + [`resvg`](https://crates.io/crates/resvg) | 自製純 Rust Mermaid 引擎，支援所有 Mermaid 圖表類型，轉為 SVG 並點陣化 |
-| **macOS 整合** | [`objc2`](https://crates.io/crates/objc2) | Finder／Dock 開檔與結束事件 |
-| **字元編碼** | [`encoding_rs`](https://crates.io/crates/encoding_rs) | 多語系字元編碼轉換與無損驗證 |
-| **語法突顯** | [`syntect`](https://crates.io/crates/syntect) | Sublime Text 語法定義與主題 |
-| **正規表達式** | [`regex`](https://crates.io/crates/regex) | 正規表達式搜尋與群組取代 |
-| **拼字檢查** | [`spellbook`](https://crates.io/crates/spellbook) | Hunspell 字典拼字檢查 |
-| **系統對話框** | [`rfd`](https://crates.io/crates/rfd) | 原生開啟舊檔與儲存檔案對話框 |
-| **剪貼簿** | [`arboard`](https://crates.io/crates/arboard) | 跨平台系統剪貼簿 |
+| **GUI framework** | [`eframe` / `egui`](https://github.com/emilk/egui) (`v0.37`) | Immediate-mode GUI, custom editor and Hex view, input method events |
+| **System fonts** | [`fontique`](https://crates.io/crates/fontique) | Enumerate and load system fonts |
+| **Markdown preview** | [`egui_commonmark`](https://crates.io/crates/egui_commonmark) | Render Markdown in-app |
+| **Mermaid diagrams** | [`fermaid`](https://github.com/tenyi/fermaid) + [`resvg`](https://crates.io/crates/resvg) | In-house pure-Rust Mermaid engine supporting all Mermaid diagram types, converted to SVG and rasterized |
+| **macOS integration** | [`objc2`](https://crates.io/crates/objc2) | Finder / Dock open-file and quit events |
+| **Character encoding** | [`encoding_rs`](https://crates.io/crates/encoding_rs) | Multi-encoding conversion and lossless verification |
+| **Syntax highlighting** | [`syntect`](https://crates.io/crates/syntect) | Sublime Text syntax definitions and themes |
+| **Regular expressions** | [`regex`](https://crates.io/crates/regex) | Regex search and group replacement |
+| **Spell check** | [`spellbook`](https://crates.io/crates/spellbook) | Hunspell dictionary spell checking |
+| **System dialogs** | [`rfd`](https://crates.io/crates/rfd) | Native open and save file dialogs |
+| **Clipboard** | [`arboard`](https://crates.io/crates/arboard) | Cross-platform system clipboard |
 
 ---
 
-## 🙏 致謝
+## 🌐 Documentation Languages
 
-感謝原版 **MadEdit** 作者 Alston Chen，以及 **MadEdit-Mod** 維護者 Minggang Li 與所有貢獻者。本專案的圖示、工具列圖示、簡繁對照表與拼字字典皆取自原版，沒有他們多年的心血就沒有這個重製版。
+- [English](README.md) (primary)
+- [繁體中文](README_zh-TW.md)
+
+`README.md` is the source of truth. When it changes, update every translated README in the same commit.
 
 ---
 
-## 📄 授權條款 (License)
+## 🙏 Acknowledgements
 
-本專案採用與原版開源精神一致之自由開源授權，歡迎提交 Issue 與 Pull Request！
+Thanks to Alston Chen, the author of the original **MadEdit**, to Minggang Li, the maintainer of **MadEdit-Mod**, and to all contributors. The icons, toolbar icons, Simplified/Traditional Chinese tables and spelling dictionaries in this project all come from the original. This rewrite would not exist without their years of work.
+
+---
+
+## 📄 License
+
+This project uses a free and open-source license in keeping with the spirit of the original. Issues and Pull Requests are welcome!

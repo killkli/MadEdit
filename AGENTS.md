@@ -1,339 +1,341 @@
-# MadEdit 專案指南 (AGENTS.md)
+# MadEdit Project Guide (AGENTS.md)
 
-本文件專為接手本專案的 AI 代理人撰寫，旨在提供完整的專案背景、架構設計、當前進度與後續開發指引。
-
----
-
-## 1. 專案背景與願景
-
-- **原版痛點**：原本 C++ / wxWidgets 版本的 MadEdit 在 Linux 與 macOS 平台上面臨依賴過於龐雜、編譯鏈難以維護且容易產生環境衝突等問題。
-- **重製目標**：使用現代 Rust 重製 MadEdit，打造一個輕量、極速、低系統依賴且能在 Windows、macOS 與 Linux 跨平台順暢運行的專業文字與十六進位編輯器。
-- **核心特色（目標，非現況；現況見第 5 節）**：
-  1. 文字編輯模式 (Text Mode)
-  2. 列塊選取模式 (Column / Block Mode)
-  3. 十六進位模式 (Hex Mode，三欄對照：Offset、Hex、ASCII)
-  4. 多語系編碼支援 (UTF-8, UTF-16, Big5, GB18030, Shift-JIS 等)
-  5. 支援超大檔案 (GB 級) 快速開啟與隨機存取
+This document is written for AI agents taking over the project. It gives the full project background, architecture, current progress and guidance for further development.
 
 ---
 
-## 2. 核心技術選型
+## 1. Background and Vision
 
-- **程式語言**：Rust (Edition 2024，egui / eframe 0.37 需 Rust 1.95 以上)
-- **GUI 框架**：[eframe / egui](https://github.com/emilk/egui) (v0.37)，2026-10 由 Slint 改寫（見 [ADR 0011](docs/adr/0011-egui-rewrite.md)）
-  - 選用理由：可逐字量測字寬，支援使用者任選系統字型（含比例字型）；輸入法事件（`Event::Ime`）直接交給自繪編輯區處理。
-  - 編輯區、十六進位檢視、捲軸、尺標皆為自繪（`src/app/view.rs`、`src/app/hexview.rs`）。
-- **系統字型**：`fontique` 列舉並載入系統字型，CJK 字元自動以系統中日韓字型補字。
-- **Markdown 預覽**：`egui_commonmark` 繪製 Markdown；`fermaid`（純 Rust）把 ```mermaid 區塊轉成 SVG，以 `Palette` 直接輸出實際顏色（resvg 不支援 CSS 變數）後以自訂載入器（`mdpreview::DiagramLoader`，resvg 字型資料庫只放一個 CJK 字型，不載入全部系統字型）點陣化顯示；`egui_extras` 只開 `svg`，不開 `svg_text`（會載入全部系統字型）。
-- **版本對齊**：`fontique` 須與 eframe 內部使用的版本一致（目前 0.11.1），否則 Linux 上 fontconfig feature 衝突無法編譯。
-- **系統剪貼簿**：`arboard`；**語法突顯**：`syntect`；**拼字檢查**：`spellbook`（Hunspell 字典）。
-- **檔案對話框**：`rfd` (Rust File Dialog) - 支援跨平台原生系統視窗。
-- **編碼轉換**：`encoding_rs` - 高效能多字元編碼支援。
-- **大檔讀取**：Piece Table 以定位讀取（pread）分頁快取原始檔案，不使用 mmap（避免檔案被外部截短時 SIGBUS）。
-- **應用程式圖示**：`embed-resource`（build-dependency） - 僅於 Windows 目標平台啟用，將 `assets/madedit-icon.ico` 嵌入 `.exe` 資源；其他平台為空操作。
-- **設計哲學**：**KISS 原則 (Keep It Simple, Stupid)**，避免過度抽象與過早最佳化；核心資料邏輯（`src/core/`）與 UI 展現層（`src/app/`）保持分離。
+- **Pain points of the original**: The C++ / wxWidgets MadEdit was hard to maintain on Linux and macOS: too many dependencies, a build chain that is hard to keep working, and frequent environment conflicts.
+- **Goal of the rewrite**: Rebuild MadEdit in modern Rust as a lightweight, very fast, low-dependency professional text and hex editor that runs smoothly on Windows, macOS and Linux.
+- **Core features (goals, not the current state; see section 5 for the current state)**:
+  1. Text Mode
+  2. Column / Block Mode
+  3. Hex Mode (three columns: Offset, Hex, ASCII)
+  4. Multi-encoding support (UTF-8, UTF-16, Big5, GB18030, Shift-JIS, etc.)
+  5. Very large files (GB scale) with fast open and random access
 
 ---
 
-## 3. 專案目錄結構
+## 2. Core Technology Choices
+
+- **Language**: Rust (Edition 2024; egui / eframe 0.37 needs Rust 1.95 or newer)
+- **GUI framework**: [eframe / egui](https://github.com/emilk/egui) (v0.37), rewritten from Slint in 2026-10 (see [ADR 0011](docs/adr/0011-egui-rewrite.md))
+  - Why: it can measure width per character and supports any system font the user picks (proportional fonts included); input method events (`Event::Ime`) go straight to the custom-drawn editor.
+  - The editor, hex view, scrollbars and ruler are all custom-drawn (`src/app/view.rs`, `src/app/hexview.rs`).
+- **System fonts**: `fontique` enumerates and loads system fonts; CJK characters automatically fall back to a system CJK font.
+- **Markdown preview**: `egui_commonmark` renders Markdown. `fermaid` (pure Rust) turns ```mermaid blocks into SVG, written with the actual colors from `Palette` (resvg does not support CSS variables), then rasterized through a custom loader (`mdpreview::DiagramLoader`; the resvg font database holds a single CJK font and does not load all system fonts) for display. `egui_extras` enables only `svg`, not `svg_text` (which would load all system fonts).
+- **Version alignment**: `fontique` must match the version eframe uses internally (currently 0.11.1); otherwise the fontconfig features conflict on Linux and the build fails.
+- **System clipboard**: `arboard`; **syntax highlighting**: `syntect`; **spell check**: `spellbook` (Hunspell dictionaries).
+- **File dialogs**: `rfd` (Rust File Dialog), with native cross-platform dialogs.
+- **Encoding conversion**: `encoding_rs`, high-performance multi-encoding support.
+- **Large file reads**: the Piece Table reads the original file in cached pages with positioned reads (pread). It does not use mmap (to avoid SIGBUS when a file is truncated externally).
+- **App icon**: `embed-resource` (build-dependency), enabled only for Windows targets; it embeds `assets/madedit-icon.ico` into the `.exe` resources and is a no-op on other platforms.
+- **Design philosophy**: **KISS (Keep It Simple, Stupid)**. Avoid over-abstraction and premature optimization; keep core data logic (`src/core/`) separate from the UI layer (`src/app/`).
+
+---
+
+## 3. Project Layout
 
 ```text
 MadEdit/
-├── Cargo.toml              # 專案相依性與套件設定
-├── Cargo.lock              # 相依性鎖定檔（需納入版控）
-├── Makefile                # 開發、打包與從 ChangeLog.md 取出發行說明
-├── ChangeLog.md            # 變更紀錄；GitHub Release 說明取自對應版本章節
-├── build.rs                # Windows 圖示資源嵌入
-├── .github/workflows/release.yml # 標籤發行（Linux、AppImage、macOS DMG、Windows）
+├── Cargo.toml              # Dependencies and package settings
+├── Cargo.lock              # Dependency lock file (must be committed)
+├── Makefile                # Development, packaging, and extracting release notes from ChangeLog.md
+├── ChangeLog.md            # Change log; GitHub Release notes come from the matching version section
+├── README.md               # English README (source of truth for all READMEs)
+├── README_zh-TW.md         # Traditional Chinese README (translation of README.md)
+├── build.rs                # Windows icon resource embedding
+├── .github/workflows/release.yml # Tag release (Linux, AppImage, macOS DMG, Windows)
 ├── .gitignore
-├── assets\                 # 圖示資產與桌面整合檔
-│   ├── madedit-icon.png    # 視窗與 macOS 圖示（沿用原版 madedit-mod.png，include_bytes 內嵌）
-│   ├── madedit-icon.ico    # Windows 執行檔圖示資源（沿用原版 images/Mad2.ico）
-│   ├── madedit.desktop     # Linux 桌面整合項目
-│   ├── icons-src\          # 原版 MadEdit 工具列圖示來源（XPM，勿手動修改）
-│   │   └── README.md       # 圖示來源與 GNU GPL 授權說明
-│   ├── icons\              # 由 icons-src 轉換而來的 PNG（勿手動修改）
-│   ├── make_toolbar_icons.py # XPM → PNG 轉換腳本（純標準函式庫）
-│   ├── dictionaries\      # Hunspell 拼字字典（en_US 內嵌於執行檔，其餘執行時載入）
-│   └── i18n\              # 介面譯文（messages.tsv；繁體中文以程式原文為準）
+├── assets\                 # Icon assets and desktop integration files
+│   ├── madedit-icon.png    # Window and macOS icon (reused from the original madedit-mod.png, embedded with include_bytes)
+│   ├── madedit-icon.ico    # Windows executable icon resource (reused from the original images/Mad2.ico)
+│   ├── madedit.desktop     # Linux desktop entry
+│   ├── icons-src\          # Original MadEdit toolbar icon sources (XPM, do not edit by hand)
+│   │   └── README.md       # Icon sources and GNU GPL license notes
+│   ├── icons\              # PNGs converted from icons-src (do not edit by hand)
+│   ├── make_toolbar_icons.py # XPM → PNG conversion script (standard library only)
+│   ├── dictionaries\      # Hunspell spelling dictionaries (en_US embedded in the executable, others loaded at runtime)
+│   └── i18n\              # UI translations (messages.tsv; Traditional Chinese uses the original program text)
 ├── scripts\
-│   ├── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
-│   ├── make_dmg.sh         # 產生 macOS 磁碟映像檔（.dmg，含 Applications 軟連結與簽章）
-│   ├── install_macos.sh    # 一鍵建置 MadEdit.app 並取代 /Applications 內的舊版
-│   ├── make_linux_dist.sh  # 產生 Linux 發行壓縮檔（x86_64 / aarch64，glibc 2.28）
-│   ├── make_appimage.sh    # 產生 Linux AppImage（x86_64 / aarch64）
-│   ├── install_linux.sh    # 一鍵建置並安裝到 ~/.local
-│   ├── make_windows_dist.ps1 # 產生 Windows 發行壓縮檔（x86_64 / aarch64）
-│   └── changelog_notes.sh  # 從 ChangeLog.md 取出指定版本的發行說明
+│   ├── make_appbundle.sh   # Build the macOS MadEdit.app (with icon and dictionaries)
+│   ├── make_dmg.sh         # Build the macOS disk image (.dmg, with Applications symlink and signature)
+│   ├── install_macos.sh    # Build MadEdit.app in one step and replace the old one in /Applications
+│   ├── make_linux_dist.sh  # Build the Linux archive (x86_64 / aarch64, glibc 2.28)
+│   ├── make_appimage.sh    # Build the Linux AppImage (x86_64 / aarch64)
+│   ├── install_linux.sh    # Build and install to ~/.local in one step
+│   ├── make_windows_dist.ps1 # Build the Windows archive (x86_64 / aarch64)
+│   └── changelog_notes.sh  # Extract the release notes of a version from ChangeLog.md
 ├── src\
-│   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
-│   ├── app\                # egui 介面層
-│   │   ├── mod.rs          # App 狀態、分頁、存檔／關閉流程、狀態列、主迴圈
-│   │   ├── commands.rs     # 命令表（依原版 CommandTable，165 個命令，另加 Ctrl/⌘+1～9 切換分頁）與快捷鍵解析
-│   │   ├── i18n.rs         # 介面語言：跟隨系統或手動選擇，查 messages.tsv
-│   │   ├── actions.rs      # 所有命令的實作（App::run）
-│   │   ├── menus.rs        # 選單列與工具列
-│   │   ├── dialogs.rs      # 選項、字型、排序、遞增數字、在檔案中尋找等對話框與確認視窗
-│   │   ├── view.rs         # 自繪文字編輯區（格網／比例排版、換行、輸入法、拼字底線）
-│   │   ├── hexview.rs      # 自繪十六進位檢視
-│   │   ├── find.rs         # 搜尋／取代列與跳行列
-│   │   ├── findfiles.rs    # 在多個檔案中尋找／取代（背景執行緒）
-│   │   ├── macros.rs       # 巨集錄製與播放（JSON 步驟清單）
-│   │   ├── print.rs        # 列印內容模型與 HTML 列印（交給瀏覽器）
-│   │   ├── preview.rs      # App 內預覽列印視窗（A4 分頁、翻頁、縮放）
-│   │   ├── mdpreview.rs    # App 內 Markdown 預覽視窗（egui_commonmark + fermaid 繪製 ```mermaid 圖表；縮放、符合寬度、相對路徑圖片；可切換獨立視窗、左右並排或上下並排，並排時各佔一半並跟隨編輯區捲動）
-│   │   ├── fonts.rs        # 系統字型列舉與 egui 字型鏈
-│   │   ├── ui_tests.rs     # egui_kittest 鍵盤／輸入法互動測試
-│   │   └── visual_tests.rs # 離屏繪製截圖（預設略過）
-│   └── core\               # 與 UI 無關的核心邏輯
-│       ├── document.rs     # 單一文件：檔案 I/O、編碼、復原／重做、十六進位模式
-│       ├── editor.rs       # 行陣列、游標、選取（含矩形）、字元格網
-│       ├── piece_table.rs  # 十六進位模式與大檔用的 Piece Table（定位讀取分頁快取）
-│       ├── hexbuf.rs       # 十六進位編輯緩衝區
-│       ├── encoding.rs     # 編碼偵測、解碼與編碼
-│       ├── search.rs       # 搜尋引擎（純文字／Regex／Hex）
-│       ├── syntax.rs       # syntect 語法突顯與主題
-│       ├── settings.rs     # 設定檔（JSON）、歷史紀錄、工作階段
-│       ├── textops.rs      # 文字轉換（大小寫、全半形、排序、格式化 JSON/XML 等）
-│       ├── chinese.rs      # 簡繁／日文漢字轉換（對照表 chinese_tables.rs 取自原版）
-│       ├── spell.rs        # 拼字檢查
-│       └── model.rs        # EditMode、NewLineFormat
+│   ├── main.rs             # Entry point: parse the command line, create the window, start eframe
+│   ├── app\                # egui UI layer
+│   │   ├── mod.rs          # App state, tabs, save / close flow, status bar, main loop
+│   │   ├── commands.rs     # Command table (from the original CommandTable, 165 commands, plus Ctrl/⌘+1–9 tab switching) and shortcut parsing
+│   │   ├── i18n.rs         # UI language: follow the system or choose manually, looks up messages.tsv
+│   │   ├── actions.rs      # Implementation of every command (App::run)
+│   │   ├── menus.rs        # Menu bar and toolbar
+│   │   ├── dialogs.rs      # Options, font, sort, increment numbers, find in files and confirmation dialogs
+│   │   ├── view.rs         # Custom-drawn text editor (grid / proportional layout, wrapping, input method, spelling underline)
+│   │   ├── hexview.rs      # Custom-drawn hex view
+│   │   ├── find.rs         # Find / replace bar and go-to-line bar
+│   │   ├── findfiles.rs    # Find / replace in multiple files (background thread)
+│   │   ├── macros.rs       # Macro recording and playback (JSON step list)
+│   │   ├── print.rs        # Print content model and HTML printing (handed to the browser)
+│   │   ├── preview.rs      # In-app print preview window (A4 pages, paging, zoom)
+│   │   ├── mdpreview.rs    # In-app Markdown preview window (egui_commonmark + fermaid for ```mermaid diagrams; zoom, fit width, relative-path images; switchable between a separate window, side by side or top and bottom, each taking half in split layouts and following the editor scroll)
+│   │   ├── fonts.rs        # System font enumeration and the egui font chain
+│   │   ├── ui_tests.rs     # egui_kittest keyboard / input method interaction tests
+│   │   └── visual_tests.rs # Offscreen rendering screenshots (skipped by default)
+│   └── core\               # UI-independent core logic
+│       ├── document.rs     # A single document: file I/O, encoding, undo / redo, hex mode
+│       ├── editor.rs       # Line array, cursor, selection (including rectangular), character grid
+│       ├── piece_table.rs  # Piece Table for hex mode and large files (positioned-read page cache)
+│       ├── hexbuf.rs       # Hex editing buffer
+│       ├── encoding.rs     # Encoding detection, decoding and encoding
+│       ├── search.rs       # Search engine (plain text / Regex / Hex)
+│       ├── syntax.rs       # syntect syntax highlighting and themes
+│       ├── settings.rs     # Settings file (JSON), history, session
+│       ├── textops.rs      # Text transforms (case, full/half width, sort, format JSON/XML, etc.)
+│       ├── chinese.rs      # Simplified/Traditional Chinese and Japanese Kanji conversion (tables in chinese_tables.rs, from the original)
+│       ├── spell.rs        # Spell check
+│       └── model.rs        # EditMode, NewLineFormat
 ├── docs\
-│   └── adr\                # 架構決策紀錄 (ADR)
-└── AGENTS.md               # 專案交接與開發指引文件（本檔案）
+│   └── adr\                # Architecture decision records (ADR)
+└── AGENTS.md               # Project handover and development guide (this file)
 ```
 
 ---
 
-## 4. 常用開發指令
+## 4. Common Development Commands
 
-請在專案根目錄下執行（Windows 環境使用 PowerShell，macOS / Linux 環境使用 bash 或 zsh）：
+Run them from the project root (use PowerShell on Windows; bash or zsh on macOS / Linux):
 
-- **語法與型別檢查**：
+- **Syntax and type check**:
   ```powershell
   make check
   ```
-- **執行單元測試**（含 egui_kittest 互動測試）：
+- **Run unit tests** (including egui_kittest interaction tests):
   ```powershell
   make test
   ```
-- **離屏截圖**（無法開視窗時檢查畫面）：
+- **Offscreen screenshot** (to check the UI when no window can be opened):
   ```bash
-  MADEDIT_SHOT_OUT=out.png MADEDIT_SHOT_FILE=檔案 MADEDIT_SHOT_CMDS=menuHexMode cargo test shot -- --ignored
+  MADEDIT_SHOT_OUT=out.png MADEDIT_SHOT_FILE=file MADEDIT_SHOT_CMDS=menuHexMode cargo test shot -- --ignored
   ```
-- **打包 macOS App 與 DMG**：
+- **Package the macOS App and DMG**:
   ```bash
   make dist-macos
   ```
-- **打包 Linux 發行檔與 AppImage**（需 `cargo-zigbuild` 與 zig；`ARCH=x86_64` 或 `aarch64`）：
+- **Package the Linux archive and AppImage** (needs `cargo-zigbuild` and zig; `ARCH=x86_64` or `aarch64`):
   ```bash
   make dist-appimage
   ```
-- **建置並安裝到 /Applications**（自動刪除舊版）：
+- **Build and install into /Applications** (removes the old version automatically):
   ```bash
   ./scripts/install_macos.sh
   ```
-- **建置並安裝到本機 Linux**（Arch / Omarchy；安裝到 `~/.local`，啟動器即可找到）：
+- **Build and install on the local Linux machine** (Arch / Omarchy; installs to `~/.local`, so the launcher finds it):
   ```bash
   ./scripts/install_linux.sh
   ```
-- **打包 Windows 發行檔**（輸出至 `dist/`；`-Arch aarch64` 可指定 ARM）：
+- **Package the Windows archive** (outputs to `dist/`; `-Arch aarch64` selects ARM):
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1
   ```
-- **取出 ChangeLog 發行說明**（GitHub Release 使用同一腳本）：
+- **Extract release notes from ChangeLog** (GitHub Release uses the same script):
   ```bash
   make release-notes VERSION=0.5.24
   ```
-- **啟動應用程式**：
+- **Run the application**:
   ```powershell
   cargo run
   ```
-- **重新產生工具列圖示**（修改 `assets/icons-src/*.xpm` 後執行）：
+- **Regenerate the toolbar icons** (run after editing `assets/icons-src/*.xpm`):
   ```bash
   python3 assets/make_toolbar_icons.py
   ```
 
 ---
 
-## 5. 當前完成進度
+## 5. Current Progress
 
-> **2026-10-23 起介面已改寫為 egui**（[ADR 0011](docs/adr/0011-egui-rewrite.md)）。以下 Phase 1–10 為 Slint 時期的歷程紀錄，
-> 其中提到的 `.slint` 檔、`buffer.rs`、`hex.rs`、`memmap2` 已移除；功能皆已在 egui 版重新實作。
+> **Since 2026-10-23 the UI has been rewritten in egui** ([ADR 0011](docs/adr/0011-egui-rewrite.md)). Phases 1–10 below are the history of the Slint era.
+> The `.slint` files, `buffer.rs`, `hex.rs` and `memmap2` mentioned there have been removed; their features were reimplemented in the egui version.
 
-- [x] **Markdown 預覽重用未修改的 Mermaid 圖表**：修改內文、移動圖表或另存到其他資料夾時，沿用上一版原始碼相同的圖表；修改圖表、切換主題或跨越排版寬度級距時重新轉換，移除的圖表仍會釋放。維持現有完整排版，分段繪製留待下一階段評估。
-  - 可設定 `MADEDIT_MD_BENCH_FILE`，執行 `cargo test --release benchmark_ -- --ignored --nocapture --test-threads=1` 比較內容重建與含開檔、字型、圖表點陣化的預覽排版耗時；後者不含原生視窗與 GPU 呈現，量測時以 `MADEDIT_CONFIG_DIR` 隔離設定。
-- [x] **Markdown 預覽捲動與圖片改善**：區塊起訖及文件結尾皆記錄來源行號與顯示位置；編輯、縮放、面板寬度或圖片載入改變排版後重新同步，長行自動換行時傳遞行內進度，重新勾選同步立即對準編輯區。
-  - 同步捲動支援雙向：捲動預覽或拖曳預覽捲軸會依既有錨點反向移動編輯區，保留游標與選取。並排與獨立視窗皆預設開啟，可取消勾選各自閱讀；預覽主導時保留精確來源進度，避免整列取整誤差造成互相拉回，排版重算也不回送為手動捲動。
-  - 並排分隔線保留完整拖曳範圍，避免編輯區的垂直／水平捲軸搶走事件；切換並排時各佔一半，手動調整後保留尺寸。互動測試涵蓋實際點選切換、分隔線中央雙向拖曳、放開及內容更新後不彈回。
-  - 預覽內容不再把自身所需寬度回寫成面板尺寸；原生視窗關閉後主視窗尺寸延後更新時，仍維持各半。快速拖曳的移動與放開同幀時也保存最後尺寸，並驗證手動調整後縮放主視窗不會強制改回一半。
-  - 一般及參照式圖片皆依文件資料夾解析，參照定義可跨 Mermaid 區塊；保留替代文字格式與共用定義的文字連結。支援中文、空白與百分比編碼檔名，提供載入失敗原因及「重新載入圖片」，用於缺圖補回或外部更新後重讀。
-  - 未儲存文件的相對路徑圖片會提示先存檔，不再誤用程式工作目錄。HTTP 圖片仍未啟用網路載入；本機圖片外部變更由使用者按鈕重新載入，不逐幀檢查磁碟。
-- [x] **發行打包**：`Makefile`、`ChangeLog.md` 與 `.github/workflows/release.yml`。
-  Linux（tar.gz 與 AppImage）和 Windows 各建 x86_64 與 aarch64；macOS 各建 Apple Silicon 與 Intel DMG。
-  推上 `v*` 標籤時，Release 說明取自 ChangeLog 的對應章節。
-- [x] **egui 全面改寫與原版功能補齊**（feat/egui-rewrite）：
-  - 多文件分頁、復原／重做、系統剪貼簿、設定檔與工作階段保存（最近檔案、游標位置、視窗尺寸）。
-  - 使用者可選系統字型與字級（含比例字型）、CJK 自動補字、行距、深淺色主題與語法主題選擇。
-  - macOS 輸入法（注音、倉頡等）預編輯顯示與候選窗定位；⌘ 與 Option 快捷鍵依 macOS 慣例。
-  - 依原版命令表補齊 165 個命令：檔案（另存副本、全部儲存、關閉左／右／其他、唯讀旗標、最近檔案清單、列印與預覽）、
-    編輯（剪下整行、合併行、刪除空行與行尾空白、書籤行操作、Hex 字串互轉、縮排、註解、大小寫、全半形、Tab 與空白互轉、
-    遞增數字、排序、欄位對齊、日期時間）、搜尋（在多個檔案中尋找／取代、跳至對應括號、上一個／下一個位置）、
-    檢視（自動換行三種模式、行號、書籤欄、尺標、控制字元、目前行、欄位提示線、打字機模式、RTL 鏡像、Markdown／HTML 預覽）、
-    巨集（錄製、播放、多次播放、存檔、暫存巨集）、工具（選項、快捷鍵重新指派、拼字檢查與個人字典、字數統計、
-    簡繁與日文漢字轉換、JSON／XML 格式化、Markdown 轉 HTML、HTML 轉純文字、AStyle 格式化）、視窗（視窗清單、全螢幕、置頂；另新增原版沒有的 Ctrl/⌘+1～8 切換至第 N 個分頁、+9 切至最後一個，僅綁快捷鍵、不列入選單）。
-  - 修正 problem.md 的 P0–P3 項目（輸入法、深色模式配色、CJK 補字、Hex 搜尋 panic、編碼損毀、大檔編輯與搜尋、
-    存檔失敗清空內容、狀態訊息不顯示、外部變更橫幅、取代不更新書籤、存檔前檢查外部修改、mmap SIGBUS、暫存檔名、emoji 寬度、
-    視窗尺寸未傳入可視範圍）。
-  - 改寫期間另修：主題目前行底色與註解同色導致文字看不見、程式字型把 `->` `=>` 連字、第一幀字型家族未註冊造成 panic。
-  - 介面語言：跟隨系統，或 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。譯文在 `assets/i18n/messages.tsv`，繁體中文仍以程式裡的原文為準。
-- [x] 專案基礎骨架與 Git 版本控制初始化。
-- [x] 專案正式更名為 MadEdit（移除 `-Rust` 套件後綴）：
-  - `Cargo.toml` 套件名 `MadEdit-Rust` → `MadEdit`，建置產出的執行檔命名為 `MadEdit`（Windows 為 `MadEdit.exe`）。
-  - Slint 主視窗標題同步改為 `MadEdit`；專案目錄更名為 `MadEdit`。
-  - 全面同步 `AGENTS.md`、`GLOSSARY.md`、ADR 與 `.scratch/` specs 中的專案名稱。
-- [x] 應用程式圖示與工作列整合：
-  - 圖示沿用原版 MadEdit（madedit-mod）：`madedit-icon.png` 取自 `madedit-mod.png`（視窗圖示與 macOS icns 來源），`madedit-icon.ico` 取自 `images/Mad2.ico`（Windows 執行檔圖示）。
-  - Slint `Window` 設定 `icon` 屬性，工作列 / 標題列顯示專屬圖示。
-  - `build.rs` 於 Windows 目標平台透過 `embed-resource` 將 `.ico` 嵌入 `.exe` 資源（缺少 RC.EXE / windres 時僅發警告、不中斷建置）；其他平台空操作。
-  - 提供 `assets/madedit.desktop` 供 Linux 桌面環境（啟動器 / 工作列）整合。
-- [x] Slint UI 整合（視窗、工具列按鈕、文字編輯區、狀態列）。
-- [x] 原生跨平台「開啟舊檔」與「儲存檔案」對話框。
-- [x] 模式切換 UI（文字 / 列塊 / 十六進位按鈕與狀態）。
-- [x] 列塊模式 (Column/Block Mode) 與矩形選取（Phase 4 完成）：
-  - 引入 `SelectionKind`（Stream 與 Block）與二維視覺矩形模型，基於固定字元格網以 Visual Column（全形 2 欄、Tab 對齊 4 欄）進行幾何矩形切割與高亮。
-  - 支援工具列「列塊模式」切換與文字模式下 Alt+滑鼠拖曳 / Alt+Shift+方向鍵 觸發矩形選取。
-  - 支援矩形選取複製（Ctrl+C）、剪下（Ctrl+X）、列塊對齊貼上（Ctrl+V）、多行同步打字與 Backspace/Delete 區塊切除，短行自動補齊與防越界安全防護。
-  - 狀態列即時顯示矩形維度（如 `Block: 3x4`）。
-- [x] 搜尋與取代引擎及內嵌式面板（Phase 5 完成）：
-  - 實作核心搜尋引擎（`src/core/search.rs`），支援純文字、區分大小寫 (Match Case)、全字匹配 (Whole Word)、正規表達式 (Regex) 以及十六進位位元組 (Hex Byte Pattern) 搜尋。
-  - 實作環狀循環導覽（`find_next`、`find_prev`）與單次/全部取代（`replace_current`、`replace_all`），自動高亮選取並捲動可視範圍，精確統計取代計數。
-  - 在 Slint UI 實作編輯區頂部內嵌式可收合面板，包含搜尋框、取代框、核取方塊、即時匹配統計（如 `3/15`）、上一個/下一個、取代/全部取代與關閉按鈕。
-  - 支援全套快捷鍵：`Ctrl+F`（開啟搜尋列並自動帶入選取文字與聚焦）、`Ctrl+H`（開啟搜尋與取代列）、`Esc`（收合面板）、`F3`（尋找下一個）、`Shift+F3`（尋找上一個）。
-- [x] 語法突顯 (Syntax Highlighting)（Phase 6 完成）：
-  - 整合 `syntect` 語法引擎（支援 Rust, C/C++, Python, JavaScript, TypeScript, JSON, Markdown, HTML, CSS, XML, YAML, SQL 等 30+ 種主流語言）與 `InspiredGitHub` 淺色主題。
-  - 實作副檔名語言自動識別與「純文字 (Plain Text)」回退模式。
-  - 可見行資料結構引入 `HighlightSpan`（`text` 與 `color`），在 Slint 自繪編輯器頂層實現文字分段多色著色渲染，幾何選取圖層與色彩層徹底解耦。
-  - 工具列提供語言切換下拉選單，狀態列即時顯示當前語法名稱。
-- [x] 列號跳轉與編輯增強 (Go to Line & Editing Enhancements)（Phase 7 完成）：
-  - 實作頂部內嵌可收合指定行號與欄位跳轉面板（支援 `Ctrl+G` 開啟、`Enter` 跳轉、`Esc` 取消收合）。
-  - 支援 `line` 與 `line:col` 語法，超出範圍自動 Clamp 邊界防護；在十六進位模式下自動切換為 Offset 跳轉（支援 `0x` 與十六進位位移解析，超大檔案零拷貝隨機分頁跳轉）。
-  - 實作常用行級編輯操作（`Alt+Up` / `Alt+Down` 整行上下移動、`Ctrl+Shift+D` 複製行、`Ctrl+Shift+K` 刪除整行、`Home` 智慧縮排首字元與行首切換）。
-  - `DocumentBuffer` 統一封裝行編輯與跳轉操作，自動同步底層緩衝區與 UI 渲染。
-- [x] 十六進位 Dump 顯示（Offset 欄、Hex Byte 欄、ASCII 預覽欄）。
-  - 已優化：直接自 Piece Table 隨機讀取前 1MB 預覽，無全檔記憶體拷貝。
-- [x] 換行格式轉換與書籤功能 (Line Endings Conversion & Bookmarks)（Phase 8 完成）：
-  - 支援 CRLF (Windows)、LF (Unix/macOS)、CR (Classic Mac) 換行格式切換、雙向轉換與原子存檔。
-  - 工具列提供換行格式下拉選單，狀態列即時顯示當前格式名稱。
-  - 實作基於 `BTreeSet` 之編輯器行書籤系統，支援切換書籤（`Ctrl+F2`）、跳至下一個書籤（`F2`）、跳至上一個書籤（`Shift+F2`）與清除全部書籤（`Ctrl+Shift+F2`）。
-  - 在左側行號欄（Gutter）繪製醒目的藍色小圓點標記，並在行插入、移動、複製與刪除操作中精確維護書籤座標不變量。
-- [x] 外部檔案變更監控與重新載入 (File Watcher & Auto Reload)（Phase 9 完成）：
-  - `DocumentBuffer` 追蹤磁碟時間戳記（`last_modified`），實作零依賴、純標準庫之 `mtime` 比對機制（`check_external_change`、`reload_file`、`ignore_external_change`）。
-  - 修復 Windows 平台小型檔案（<=512KB）因記憶體對映持有控制代碼導致外部寫入衝突（Win32 1224）之問題，小檔案自動轉為記憶體 PieceTable，徹底釋放檔案鎖定。
-  - 於 Slint 主迴圈配置每 1.5 秒之輕量定時檢查，在編輯區頂部顯示醒目非侵入式琥珀黃色通知橫幅（`⚠️ 檔案已被外部程式修改。`），若有未儲存修改則加註深紅警示，支援「重新載入」與「忽略」。
-  - 重新載入時自動保留游標行欄與書籤集合，並執行邊界自動防護。
-- [x] 編輯器焦點輸入修復與原版 MadEdit 經典專業 UI（Phase 10 完成）：
-  - 將 `editor-focus := FocusScope` 提升至外層常駐並配置 `focus-editor()`，徹底修復點擊工具列或編輯區後無法打字輸入的焦點遺失問題。
-  - 實作深淺色雙主題系統（預設跟隨作業系統 `Palette.color-scheme`，支援一鍵切換），`syntect` 語法引擎同步切換深色（`base16-ocean.dark`）與淺色（`InspiredGitHub`）主題，並擴充 C# (`.cs`)、Java、Go、TOML、Shell 語法識別。
-  - 實作原版 MadEdit 四大經典介面元素：頂部主選單列 + 緊湊型工具列（含字級縮放與內嵌快速搜尋框）、檔案分頁標籤列 + 水平欄位尺標（Column Ruler `0..10..20..`）、游標所在行外框高亮 + 可視控制字元（空白 `·`、Tab `»`、行尾綠色 `↵`）、以及底部 5 格專業狀態列（含 `Insert` / `Overwrite` 插入覆寫模式切換）。
-- [x] 多編碼支援與自動偵測（Phase 1 完成）：
-  - 開檔優先識別 BOM（UTF-8 / UTF-16LE / UTF-16BE），無 BOM 時先驗證嚴格 UTF-8，否則自動 fallback 至 Big5。
-  - 工具列提供 10 種常用編碼選單與「重新解碼（Reinterpret）」、「轉換編碼（Convert）」按鈕。
-  - 修正無法無損解碼時默默存檔毀損資料之問題（`has_decode_error` 防護）。
-  - 修正 UTF-16LE / UTF-16BE 存檔變成 UTF-8 與遺失 BOM 之問題（自行實作 16-bit 編碼與 BOM 保留）。
-- [x] 自繪編輯器元件（Phase 2 完成）：
-  - 採用 Slint 宣告式可見行虛擬渲染（`for line in visible-lines`）結合 `FocusScope` 與 `TouchArea`，完全取代內建 `TextEdit`。
-  - 實作固定字元格網（Character Cell Grid：半形 1 欄、CJK 全形 2 欄、Tab 展開對齊 4 欄），徹底解決跨平台等寬字型游標漂移問題。
-  - 支援左側行號欄（Gutter）、方向鍵導覽、Shift 擴展選取、滑鼠點擊/拖曳選取、滾輪捲動、文字增刪、剪貼簿快捷鍵（Ctrl+C/X/V/A）與狀態列即時 `Ln X, Col Y` 顯示。
-- [x] 大檔案與核心緩衝區最佳化（Phase 3 完成）：
-  - 引入 `memmap2` 唯讀記憶體對映，實現大檔案秒級開啟與零拷貝隨機分頁讀取。
-  - 實作 Piece Table（Original Buffer + Add Buffer + Piece 列表）與輕量 `LineIndex`（換行位移二分搜尋索引）。
-  - 存檔直接透過 Piece 清單串流寫出，徹底消除全檔記憶體佔用與按鍵重複全篇編碼之負擔。
-- [x] 狀態列即時顯示（長度、修改狀態標記、解碼警告、模式、換行與編碼）。
-- [x] 單元測試涵蓋（Hex 轉換、換行偵測、Buffer 同步、自動編碼偵測、UTF-16 往返、防損毀存檔保護、重新解碼與轉換編碼、字元格網計算、游標選取導覽與編輯、Piece Table 編輯/刪除、LineIndex 按需讀取與 CR/LF/CRLF 支援、大檔 mmap 秒開、大檔編輯與原子存檔測試、相容性查詢介面、字元格網視覺切片提取、矩形選取高亮渲染、列塊複製/剪下/貼上/多行同步打字、Buffer 列塊模式渲染測試）。
-- [x] 經典 MadEdit 風格介面重塑（Phase 10 完成）：
-  - 新增 `ui/theme.slint` 經典樣式元件庫（配色、`ClassicToolButton`、`ClassicButton`、`ClassicLineEdit`、`ClassicCheckBox`、`ToolbarSeparator`、自繪提示框）。
-  - 新增 `ui/menubar.slint` 經典選單列與彈出選單（`MenuItemDef` / `MenuDef` 資料模型、分隔線、核取記號、快捷鍵、停用項灰顯、單一共用 `PopupWindow` + `open-index`）。
-  - 重寫 `ui/appwindow.slint`：經典選單列 → 原版圖示工具列（6 組 21 個圖示）→ 分頁列 → 搜尋／跳轉／外部變更橫幅 → 編輯區 → 六欄位狀態列（Ln / CharPos / SelSize / 編碼.DOS / 唯讀 / INS）。
-  - `src/main.rs` 依原版 `CommandTable` 建構 7 個頂層選單（檔案／編輯／搜尋／檢視／工具／視窗／說明），以 Rust 端計算選單寬度、x-offset 與彈出選單尺寸，並以 `menu-action(string)` 回呼統一派送動作。
-  - 語法突顯／字元編碼／換行格式／重新解碼／轉換編碼改置於選單，點選後開啟通用可捲動選擇面板。
-  - 新增 `assets/icons-src/`（38 個原版 XPM 來源 + GPL 授權說明）與 `assets/make_toolbar_icons.py`（純標準函式庫 XPM→PNG 轉換器）。
-  - 併入另一條並行 Phase 10 路線的完整功能（見 [ADR 0010](docs/adr/0010-classic-ui-consolidation.md)）：
-    - 深色／淺色主題（`Theme.is-dark` 統一管理色票，預設跟隨系統配色，工具列可切換）。
-    - 水平欄位尺標（與水平捲軸同步位移）、右側垂直捲軸與底部水平捲軸（滑塊拖曳 + 按鈕微調）。
-    - 控制字元顯示（空白 `·`、Tab `»`、行尾 `↵`）與游標所在行外框高亮。
-    - 插入／覆寫模式（`EditorState::overwrite_mode`，`Insert` 鍵切換，狀態列顯示 `INS`／`OVR`）。
-    - 常駐 `FocusScope` 承接鍵盤事件並於開檔、存檔、切換模式後自動回復焦點（焦點修復）。
-    - 新增 C#、Java、Go、Shell、TOML 語法辨識；`MadEdit <檔案>` 命令列開檔。
+- [x] **Markdown preview reuses unchanged Mermaid diagrams**: when you edit text, move a diagram or save to another folder, diagrams whose source is identical to the previous version are reused. A diagram is converted again when it changes, when the theme changes or when the layout width crosses a bucket; removed diagrams are still released. The full layout is kept as is; segmented drawing is left for the next phase to evaluate.
+  - Set `MADEDIT_MD_BENCH_FILE` and run `cargo test --release benchmark_ -- --ignored --nocapture --test-threads=1` to compare content rebuild time with preview layout time including file open, fonts and diagram rasterization. The latter excludes the native window and GPU presentation; isolate settings with `MADEDIT_CONFIG_DIR` when measuring.
+- [x] **Markdown preview scrolling and image improvements**: block start/end and the document end record the source line and display position; the view resynchronizes after edits, zoom, panel width or image loading change the layout, passes in-line progress when long lines wrap, and re-enabling sync aligns with the editor immediately.
+  - Sync scrolling works both ways: scrolling the preview or dragging its scrollbar moves the editor back along the existing anchors, preserving the cursor and selection. Both the side-by-side and separate-window layouts have it on by default and it can be unchecked to read independently. While the preview leads it keeps the exact source progress, so whole-line rounding does not make the two pull on each other, and layout recalculation is not sent back as a manual scroll.
+  - The side-by-side splitter keeps its full drag range, so the editor's vertical / horizontal scrollbars cannot steal its events. Switching to side by side gives each half the space and manual resizing is kept afterward. Interaction tests cover real clicks to switch, two-way drag through the middle of the splitter, release, and no snapping back after content updates.
+  - The preview no longer writes its own required width back as the panel size; when the main window size update is delayed after the native window closes, each side still keeps half. The last size is also saved when a fast drag's move and release land in the same frame, and tests verify that resizing the main window after manual adjustment does not force it back to half.
+  - Ordinary and reference-style images both resolve against the document folder, and reference definitions can span Mermaid blocks. Alt-text formatting and text links that share definitions are preserved. File names with CJK characters, spaces and percent-encoding are supported; load failures show the reason, and "Reload images" rereads them after a missing image is restored or changed externally.
+  - Relative-path images in an unsaved document prompt you to save first instead of wrongly using the program's working directory. HTTP images are still not loaded over the network; local image changes are reloaded by the user's button rather than by checking the disk every frame.
+- [x] **Release packaging**: `Makefile`, `ChangeLog.md` and `.github/workflows/release.yml`.
+  Linux (tar.gz and AppImage) and Windows are built for x86_64 and aarch64; macOS builds Apple Silicon and Intel DMGs.
+  When a `v*` tag is pushed, the Release notes come from the matching ChangeLog section.
+- [x] **Full egui rewrite and restoration of original features** (feat/egui-rewrite):
+  - Multi-document tabs, undo / redo, system clipboard, settings and session persistence (recent files, cursor positions, window size).
+  - User-selectable system fonts and sizes (proportional fonts included), CJK fallback, line spacing, light/dark theme and syntax theme selection.
+  - macOS input methods (Zhuyin, Cangjie, etc.) with preedit display and candidate window positioning; ⌘ and Option shortcuts follow macOS conventions.
+  - 165 commands restored from the original command table: File (save a copy, save all, close left / right / others, read-only flag, recent files list, printing and preview), Edit (cut whole line, join lines, delete empty lines and trailing whitespace, bookmark line operations, hex string conversion, indent, comment, case, full/half width, tabs ⇄ spaces, increment numbers, sort, column alignment, date/time), Search (find / replace in multiple files, jump to matching bracket, previous / next position), View (three word-wrap modes, line numbers, bookmark gutter, ruler, control characters, current line, column guide lines, typewriter mode, RTL mirroring, Markdown / HTML preview), Macro (record, play, play multiple times, save, temporary macro), Tools (options, shortcut reassignment, spell check and personal dictionary, word count, Simplified/Traditional Chinese and Japanese Kanji conversion, JSON / XML formatting, Markdown to HTML, HTML to plain text, AStyle formatting), Window (window list, full screen, always on top; plus Ctrl/⌘+1–8 to switch to the Nth tab and +9 for the last tab, which the original did not have; these are shortcuts only and not listed in menus).
+  - Fixed the P0–P3 items in problem.md (input method, dark mode colors, CJK fallback, Hex search panic, encoding corruption, large file editing and search, save failure emptying content, status messages not shown, external change banner, replace not updating bookmarks, check for external modification before save, mmap SIGBUS, temp file names, emoji width, window size not passed into the visible area).
+  - Also fixed during the rewrite: current-line background in themes having the same color as comments so text was invisible, programming fonts ligating `->` `=>`, and a panic from the font family not being registered on the first frame.
+  - UI language: follow the system, or English, 繁體中文, 简体中文, 日本語, 한국어, Deutsch, Español, Français, Italiano, Português. Translations are in `assets/i18n/messages.tsv`; Traditional Chinese still uses the original text in the program.
+- [x] Project skeleton and Git version control initialized.
+- [x] Project officially renamed to MadEdit (the `-Rust` package suffix removed):
+  - Package name in `Cargo.toml` changed from `MadEdit-Rust` to `MadEdit`; the built executable is named `MadEdit` (`MadEdit.exe` on Windows).
+  - The Slint main window title was changed to `MadEdit` as well; the project directory was renamed to `MadEdit`.
+  - The project name was synchronized across `AGENTS.md`, `GLOSSARY.md`, the ADRs and the `.scratch/` specs.
+- [x] Application icon and taskbar integration:
+  - The icons reuse the original MadEdit (madedit-mod): `madedit-icon.png` comes from `madedit-mod.png` (source of the window icon and macOS icns), and `madedit-icon.ico` from `images/Mad2.ico` (Windows executable icon).
+  - The Slint `Window` sets the `icon` property so the taskbar / title bar show the dedicated icon.
+  - On Windows targets `build.rs` embeds the `.ico` into the `.exe` resources through `embed-resource` (only a warning, not a build failure, when RC.EXE / windres is missing); it is a no-op on other platforms.
+  - `assets/madedit.desktop` is provided for Linux desktop environments (launcher / taskbar).
+- [x] Slint UI integration (window, toolbar buttons, text editing area, status bar).
+- [x] Native cross-platform "Open" and "Save" file dialogs.
+- [x] Mode switching UI (Text / Column / Hex buttons and state).
+- [x] Column / Block Mode and rectangular selection (Phase 4 done):
+  - Introduced `SelectionKind` (Stream and Block) and a two-dimensional visual rectangle model; geometric rectangle slicing and highlighting are based on a fixed character grid with Visual Column (full-width = 2 columns, tab aligned to 4 columns).
+  - Supports the toolbar "Column Mode" toggle and, in text mode, Alt+mouse drag / Alt+Shift+arrow keys to trigger rectangular selection.
+  - Supports rectangular copy (Ctrl+C), cut (Ctrl+X), column-aligned paste (Ctrl+V), simultaneous multi-line typing and Backspace/Delete block removal, with short-line padding and out-of-bounds safeguards.
+  - The status bar shows the rectangle size live (such as `Block: 3x4`).
+- [x] Search and replace engine with inline panel (Phase 5 done):
+  - Implemented the core search engine (`src/core/search.rs`) supporting plain text, Match Case, Whole Word, regular expressions (Regex) and hex byte (Hex Byte Pattern) search.
+  - Implemented circular navigation (`find_next`, `find_prev`) and single / all replace (`replace_current`, `replace_all`), with automatic highlight, scrolling into view and exact replace counts.
+  - Implemented a collapsible inline panel at the top of the editing area in Slint, with find box, replace box, checkboxes, live match count (such as `3/15`), previous / next, replace / replace all and close buttons.
+  - Full shortcut set: `Ctrl+F` (open the find bar, prefill the selected text and focus), `Ctrl+H` (open find and replace), `Esc` (collapse the panel), `F3` (find next), `Shift+F3` (find previous).
+- [x] Syntax highlighting (Phase 6 done):
+  - Integrated the `syntect` engine (30+ major languages including Rust, C/C++, Python, JavaScript, TypeScript, JSON, Markdown, HTML, CSS, XML, YAML, SQL) with the `InspiredGitHub` light theme.
+  - Automatic language detection by extension, with a "Plain Text" fallback.
+  - Visible-line data introduced `HighlightSpan` (`text` and `color`); the Slint custom editor renders multi-colored text segments, fully decoupling the selection geometry layer from the color layer.
+  - The toolbar offers a language drop-down and the status bar shows the current syntax name live.
+- [x] Go to Line and editing enhancements (Phase 7 done):
+  - Implemented a collapsible inline panel for jumping to a line and column (`Ctrl+G` to open, `Enter` to jump, `Esc` to cancel and collapse).
+  - Supports `line` and `line:col` syntax with automatic clamping to bounds; in hex mode it switches to Offset jumping (supports `0x` and hexadecimal offset parsing, with zero-copy random page jumps in very large files).
+  - Implemented common line editing operations (`Alt+Up` / `Alt+Down` move whole lines, `Ctrl+Shift+D` duplicate line, `Ctrl+Shift+K` delete whole line, `Home` toggling between first non-blank character and line start).
+  - `DocumentBuffer` wraps line editing and jumping in one place, keeping the underlying buffer and the UI rendering in sync.
+- [x] Hex dump display (Offset column, Hex Byte column, ASCII preview column).
+  - Optimized: reads the first 1 MB preview at random directly from the Piece Table, with no whole-file memory copy.
+- [x] Line ending conversion and bookmarks (Phase 8 done):
+  - Supports switching and two-way conversion between CRLF (Windows), LF (Unix/macOS) and CR (Classic Mac), with atomic save.
+  - The toolbar offers a line ending drop-down and the status bar shows the current format name live.
+  - Implemented a `BTreeSet`-based line bookmark system with toggle (`Ctrl+F2`), next bookmark (`F2`), previous bookmark (`Shift+F2`) and clear all (`Ctrl+Shift+F2`).
+  - Draws a prominent blue dot marker in the left line-number gutter and maintains the bookmark coordinate invariants precisely across line insert, move, copy and delete.
+- [x] External file change monitoring and reload (File Watcher & Auto Reload) (Phase 9 done):
+  - `DocumentBuffer` tracks the on-disk timestamp (`last_modified`) and implements a dependency-free, standard-library-only `mtime` comparison (`check_external_change`, `reload_file`, `ignore_external_change`).
+  - Fixed a Windows issue where small files (<=512 KB) held a memory-mapping handle and caused external write conflicts (Win32 1224): small files are converted to an in-memory PieceTable, which releases the file lock entirely.
+  - A lightweight check every 1.5 seconds runs in the Slint main loop and shows a prominent, non-intrusive amber banner at the top of the editing area (`⚠️ The file was modified by another program.`), with an extra dark-red warning if there are unsaved changes; "Reload" and "Ignore" are supported.
+  - Reloading preserves the cursor line / column and the bookmark set and applies automatic bounds protection.
+- [x] Editor focus input fix and the classic original MadEdit UI (Phase 10 done):
+  - Hoisted `editor-focus := FocusScope` to the outer level and added `focus-editor()`, fully fixing the loss of focus that prevented typing after clicking the toolbar or the editing area.
+  - Implemented a light/dark dual theme system (follows the OS `Palette.color-scheme` by default, switchable with one click); the `syntect` engine switches between the dark (`base16-ocean.dark`) and light (`InspiredGitHub`) themes in step, and C# (`.cs`), Java, Go, TOML and Shell syntax detection was added.
+  - Implemented the four classic original MadEdit interface elements: a top main menu bar plus a compact toolbar (with font size zoom and an inline quick find box), a file tab bar plus a horizontal column ruler (`0..10..20..`), current-line outline highlight plus visible control characters (space `·`, Tab `»`, green end-of-line `↵`), and a 5-cell professional status bar at the bottom (with an `Insert` / `Overwrite` mode toggle).
+- [x] Multi-encoding support and auto detection (Phase 1 done):
+  - On open, a BOM (UTF-8 / UTF-16LE / UTF-16BE) is recognized first; without a BOM, strict UTF-8 is verified, otherwise it falls back to Big5.
+  - The toolbar offers a menu of 10 common encodings plus "Reinterpret" and "Convert" buttons.
+  - Fixed silently corrupting data on save when lossless decoding was impossible (`has_decode_error` guard).
+  - Fixed UTF-16LE / UTF-16BE being saved as UTF-8 with the BOM lost (own 16-bit encoding and BOM preservation).
+- [x] Custom editor component (Phase 2 done):
+  - Uses Slint declarative visible-line virtual rendering (`for line in visible-lines`) with `FocusScope` and `TouchArea`, fully replacing the built-in `TextEdit`.
+  - Implemented a fixed Character Cell Grid (half-width 1 column, CJK full-width 2 columns, tab expansion aligned to 4 columns), fully solving cursor drift with monospace fonts across platforms.
+  - Supports the left line-number gutter, arrow-key navigation, Shift selection extension, mouse click / drag selection, wheel scrolling, text insert and delete, clipboard shortcuts (Ctrl+C/X/V/A) and a live `Ln X, Col Y` display in the status bar.
+- [x] Large file and core buffer optimization (Phase 3 done):
+  - Introduced `memmap2` read-only memory mapping for opening large files in seconds with zero-copy random page reads.
+  - Implemented the Piece Table (Original Buffer + Add Buffer + Piece list) and a lightweight `LineIndex` (newline offset binary search index).
+  - Saving streams directly through the piece list, removing whole-file memory use and the cost of re-encoding the whole text on every keystroke.
+- [x] Live status bar (length, modified marker, decode warning, mode, line ending and encoding).
+- [x] Unit test coverage (hex conversion, line ending detection, Buffer sync, auto encoding detection, UTF-16 round trip, corruption-proof save guard, reinterpret and convert encoding, character grid computation, cursor selection navigation and editing, Piece Table edit / delete, LineIndex on-demand reads and CR/LF/CRLF support, large file mmap instant open, large file edit and atomic save tests, compatibility query interface, character grid visual slice extraction, rectangular selection highlight rendering, column copy / cut / paste / multi-line simultaneous typing, Buffer column mode rendering tests).
+- [x] Classic MadEdit style UI redesign (Phase 10 done):
+  - Added `ui/theme.slint`, a classic-style component library (colors, `ClassicToolButton`, `ClassicButton`, `ClassicLineEdit`, `ClassicCheckBox`, `ToolbarSeparator`, custom-drawn tooltips).
+  - Added `ui/menubar.slint`, the classic menu bar and popup menus (`MenuItemDef` / `MenuDef` data model, separators, check marks, shortcuts, grayed-out disabled items, a single shared `PopupWindow` + `open-index`).
+  - Rewrote `ui/appwindow.slint`: classic menu bar → original icon toolbar (6 groups, 21 icons) → tab bar → find / go-to / external change banner → editing area → six-field status bar (Ln / CharPos / SelSize / encoding.DOS / read-only / INS).
+  - `src/main.rs` builds 7 top-level menus (File / Edit / Search / View / Tools / Window / Help) from the original `CommandTable`, computes menu widths, x-offsets and popup sizes on the Rust side, and dispatches actions through a single `menu-action(string)` callback.
+  - Syntax highlighting / character encoding / line ending / reinterpret / convert encoding moved into menus, opening a generic scrollable selection panel when clicked.
+  - Added `assets/icons-src/` (38 original XPM sources + GPL license notes) and `assets/make_toolbar_icons.py` (a standard-library-only XPM→PNG converter).
+  - Merged the complete features of another parallel Phase 10 track (see [ADR 0010](docs/adr/0010-classic-ui-consolidation.md)):
+    - Dark / light themes (`Theme.is-dark` manages the palette in one place; follows the system color scheme by default and can be toggled from the toolbar).
+    - Horizontal column ruler (shifts in sync with the horizontal scrollbar), right vertical scrollbar and bottom horizontal scrollbar (thumb dragging + button nudging).
+    - Control character display (space `·`, Tab `»`, end-of-line `↵`) and current-line outline highlight.
+    - Insert / overwrite mode (`EditorState::overwrite_mode`, toggled with the `Insert` key, shown as `INS` / `OVR` in the status bar).
+    - A resident `FocusScope` handles keyboard events and automatically restores focus after open, save and mode switches (focus fix).
+    - Added C#, Java, Go, Shell and TOML syntax detection; `MadEdit <file>` command-line opening.
 
-### 已知問題（優先處理）
+### Known Issues (handle first)
 
-- macOS 移植：新增 Finder／Dock 開檔 Apple Event 橋接（`src/macos.rs`），不取代 winit delegate；補齊 ⌘W／⌘Q／⌘⇧S 等平台快捷鍵與行首刪除，保留 ⌘H／⌘M／⌘Tab 系統操作。
-- macOS 打包與安裝會先完成簽章驗證再取代舊 App，支援 Cargo 自訂產物位置；`scripts/test_macos_bundle.sh` 驗證資源、簽章與失敗保護。`MADEDIT_CONFIG_DIR` 可隔離原生測試設定，`--screenshot` 不讀寫使用者工作階段。
-- 原生系統選單／Dock 的結束請求經過 App 未儲存確認；結束時保留分頁直到最後保存工作階段，取消結束不再提前關掉乾淨文件。`python3 scripts/test_macos_runtime.py` 在已登入的桌面驗證正式 App 文字／Hex 繪製與正常退出。
-- Touch Bar Mac 的退出崩潰：`vendor/accesskit_macos` 回補上游 [AccessKit #835](https://github.com/AccessKit/accesskit/pull/835)，修正無障礙轉接器釋放時覆蓋 AppKit KVO 子類別的問題。保留無障礙支援；來源、授權、測試與移除條件見 `vendor/README.md`。另執行 `cargo test -p accesskit_macos --test integration` 驗證八項 KVO／釋放回歸情境。
-- 對外散佈目前使用 ad-hoc 簽章，尚無 Developer ID／Apple 公證；本機建置可執行。Intel 與其他 macOS 版本仍需各自驗證，不能以 Apple Silicon 本機測試推論所有版本皆通過。
+- macOS port: added a Finder / Dock open-file Apple Event bridge (`src/macos.rs`) that does not replace the winit delegate; filled in platform shortcuts such as ⌘W / ⌘Q / ⌘⇧S and delete-to-line-start, keeping ⌘H / ⌘M / ⌘Tab as system operations.
+- macOS packaging and installation finish signature verification before replacing the old App, and support custom Cargo output locations; `scripts/test_macos_bundle.sh` verifies resources, signature and failure protection. `MADEDIT_CONFIG_DIR` isolates settings for native testing, and `--screenshot` does not read or write the user session.
+- Quit requests from the native system menu / Dock go through the App's unsaved-changes confirmation; on quit, tabs are kept until the session is finally saved, and cancelling quit no longer closes clean documents early. `python3 scripts/test_macos_runtime.py` verifies text / hex rendering and a normal exit of the real App on a logged-in desktop.
+- Touch Bar Mac quit crash: `vendor/accesskit_macos` backports upstream [AccessKit #835](https://github.com/AccessKit/accesskit/pull/835), fixing the accessibility adapter overwriting the AppKit KVO subclass on release. Accessibility support is kept; see `vendor/README.md` for the source, license, tests and removal conditions. Also run `cargo test -p accesskit_macos --test integration` to verify the eight KVO / release regression scenarios.
+- Public distribution currently uses an ad-hoc signature, with no Developer ID / Apple notarization yet; local builds run. Intel and other macOS versions still need their own verification; a pass on a local Apple Silicon machine cannot be taken to mean every version passes.
 
-1. ~~**非 UTF-8 檔案存檔即損毀**~~（已於 Phase 1 修正：當 `has_decode_error` 為真時拒絕存檔，並支援重新解碼與轉換編碼）。
-2. ~~**UTF-16 存檔會變成 UTF-8**~~（已於 Phase 1 修正：已自行實作 UTF-16LE/BE 位元組編碼與 BOM 保留）。
-3. ~~**大檔記憶體與效能**~~（已於 Phase 3 修正：引入 Piece Table + `memmap2` 記憶體對映，大檔秒開與串流存檔，不再全檔重複分配與全篇編碼）。
+1. ~~**Saving a non-UTF-8 file corrupts it**~~ (fixed in Phase 1: saving is refused when `has_decode_error` is true, and reinterpret and convert encoding are supported).
+2. ~~**UTF-16 saves become UTF-8**~~ (fixed in Phase 1: own UTF-16LE/BE byte encoding and BOM preservation implemented).
+3. ~~**Large file memory and performance**~~ (fixed in Phase 3: Piece Table + `memmap2` memory mapping, instant open of large files and streaming save, no more whole-file reallocation or whole-text re-encoding).
 
 ---
 
-## 6. 後續開發路線圖 (Roadmap for Next Agent)
+## 6. Roadmap for the Next Agent
 
-接手的 Agent 可依據以下優先順序進行開發：
+The next agent can develop in the following order of priority:
 
-### Phase 1: 多編碼切換與轉換 (Encoding Support) - [已完成]
-- 已完成字元編碼偵測、轉換、防毀損存檔保護與工具列操作整合。
+### Phase 1: Multi-encoding switching and conversion (Encoding Support) - [Done]
+- Character encoding detection, conversion, corruption-proof save and toolbar integration are done.
 
-### Phase 2: 自繪編輯器元件 (Custom Editor View) - [已完成]
-- 已完成 Slint 可見行虛擬渲染、固定字元格網、行號欄、游標/選取與鍵盤滑鼠互動。
+### Phase 2: Custom editor component (Custom Editor View) - [Done]
+- Slint visible-line virtual rendering, fixed character grid, line-number gutter, cursor / selection and keyboard / mouse interaction are done.
 
-### Phase 3: 大檔案與核心緩衝區最佳化 (Large File Engine) - [已完成]
-- 已完成 Piece Table 資料結構、`memmap2` 大檔零拷貝開啟、`LineIndex` 行索引與串流存檔。
+### Phase 3: Large file and core buffer optimization (Large File Engine) - [Done]
+- The Piece Table data structure, `memmap2` zero-copy large file open, `LineIndex` and streaming save are done.
 
-### Phase 4: 列塊模式 (Column/Block Mode) 與游標系統 - [已完成]
-- 已完成二維視覺矩形選取模型、字元格網視覺切片、列塊剪貼簿（複製/剪下/貼上）、多行同步輸入與刪除、以及 Slint UI Alt 鍵拖曳整合。
+### Phase 4: Column mode (Column/Block Mode) and cursor system - [Done]
+- The two-dimensional visual rectangle selection model, character grid visual slices, column clipboard (copy / cut / paste), multi-line simultaneous input and delete, and Slint UI Alt-drag integration are done.
 
-### Phase 5: 搜尋與取代 (Find & Replace) - [已完成]
-- 已完成核心搜尋引擎（純文字/大小寫/全字/Regex/Hex Byte）、環狀循環導覽、取代與全部取代。
-- 已完成 Slint 內嵌可收合面板、即時進度（`3/15`）、快捷鍵（Ctrl+F、Ctrl+H、Esc、F3、Shift+F3）與自動聚焦。
+### Phase 5: Find and replace (Find & Replace) - [Done]
+- The core search engine (plain text / case / whole word / Regex / Hex Byte), circular navigation, replace and replace all are done.
+- The collapsible inline Slint panel, live progress (`3/15`), shortcuts (Ctrl+F, Ctrl+H, Esc, F3, Shift+F3) and auto focus are done.
 
-### Phase 6: 語法突顯 (Syntax Highlighting) - [已完成]
-- 已整合 `syntect` 語法引擎（30+ 種主流語言與 InspiredGitHub 主題）。
-- 已完成開檔自動識別、工具列語言切換選單、可見行多色文字分段渲染與狀態列顯示。
+### Phase 6: Syntax highlighting (Syntax Highlighting) - [Done]
+- The `syntect` engine (30+ major languages and the InspiredGitHub theme) is integrated.
+- Automatic detection on open, the toolbar language switch menu, multi-colored visible-line segment rendering and status bar display are done.
 
-### Phase 7: 列號跳轉與編輯增強 (Go to Line & Editing Enhancements) - [已完成]
-- 已完成指定行號/欄位跳轉內嵌面板與 Hex Offset 隨機跳轉支援（Ctrl+G）。
-- 已完成常用程式碼行編輯操作（Alt+Up/Down 整行上下移動、Ctrl+Shift+D 複製行、Ctrl+Shift+K 刪除整行、Home 智慧行首）。
+### Phase 7: Go to Line and editing enhancements (Go to Line & Editing Enhancements) - [Done]
+- The go-to line / column inline panel and Hex Offset random jumping (Ctrl+G) are done.
+- Common code line operations (Alt+Up/Down move lines, Ctrl+Shift+D duplicate line, Ctrl+Shift+K delete line, smart Home) are done.
 
-### Phase 8: 換行格式轉換與書籤功能 (Line Endings Conversion & Bookmarks) - [已完成]
-- 已完成 CRLF、LF、CR 換行格式雙向轉換、工具列選單與存檔同步。
-- 已完成編輯器行書籤（Ctrl+F2 切換、F2 / Shift+F2 環狀導覽、Ctrl+Shift+F2 全清除、Gutter 藍點標記與行編輯座標維護）。
+### Phase 8: Line ending conversion and bookmarks (Line Endings Conversion & Bookmarks) - [Done]
+- Two-way CRLF, LF, CR conversion, toolbar menu and save sync are done.
+- Editor line bookmarks (Ctrl+F2 toggle, F2 / Shift+F2 circular navigation, Ctrl+Shift+F2 clear all, gutter blue dot marker and coordinate maintenance across line edits) are done.
 
-### Phase 9: 外部檔案變更監控 (File Watcher & Auto Reload) - [已完成]
-- 已完成檔案時間戳記 (`mtime`) 比對、Windows 記憶體對映解鎖、Slint 定時器、頂部內嵌黃色通知橫幅與游標/書籤智慧保留重新載入。
+### Phase 9: External file change monitoring (File Watcher & Auto Reload) - [Done]
+- File timestamp (`mtime`) comparison, Windows memory-map unlocking, the Slint timer, the amber banner at the top and cursor / bookmark-preserving reload are done.
 
-### Phase 11: egui 全面改寫與原版功能補齊 - [已完成]
-- 見第 5 節與 [ADR 0011](docs/adr/0011-egui-rewrite.md)。未實作項目：單一執行個體、檔案關聯、真正的 bidi、
-  語法配色逐項自訂、跨行 Regex、Python 巨集（改為 JSON 步驟清單）。
+### Phase 11: Full egui rewrite and restoration of original features - [Done]
+- See section 5 and [ADR 0011](docs/adr/0011-egui-rewrite.md). Not implemented: single instance, file associations, true bidi,
+  per-item syntax color customization, multi-line Regex, Python macros (replaced by a JSON step list).
 
-### Phase 10: 經典 MadEdit 風格介面重塑 (Classic UI Redesign) - [已完成]
-- 已完成經典 Windows 風格選單列、彈出選單、原版圖示工具列、分頁列與六欄位狀態列。
-- 已完成選單模型與核心狀態雙向同步（編輯模式核取記號、停用／啟用狀態、寬度與位置計算）。
-- 已完成原版 MadEdit XPM 圖示沿用與標準函式庫 PNG 轉換工具鏈。
-- 已完成與另一條並行 Phase 10 路線的整合：深淺色主題、欄位尺標、垂直／水平捲軸、控制字元、
-  插入／覆寫模式、焦點修復與多語法支援（詳見 [ADR 0010](docs/adr/0010-classic-ui-consolidation.md)）。
+### Phase 10: Classic MadEdit style UI redesign (Classic UI Redesign) - [Done]
+- The classic Windows-style menu bar, popup menus, original icon toolbar, tab bar and six-field status bar are done.
+- Two-way sync between the menu model and core state (edit mode check marks, disabled / enabled state, width and position computation) is done.
+- Reuse of the original MadEdit XPM icons and the standard-library PNG conversion toolchain are done.
+- Integration with the other parallel Phase 10 track (dark/light themes, column ruler, vertical / horizontal scrollbars, control characters,
+  insert / overwrite mode, focus fix and multi-syntax support) is done (see [ADR 0010](docs/adr/0010-classic-ui-consolidation.md)).
 
 ---
 
-## 7. 給接手 Agent 的協作原則
+## 7. Collaboration Principles for the Next Agent
 
-1. **嚴格遵循 KISS 原則**：不引進不必要的複雜抽象，每個功能以最直覺、最易維護的方式實作。
-2. **一律使用繁體中文**：溝通、文件與程式碼註解皆使用 `zh-TW` 繁體中文，註解需詳細說明意圖。
-3. **保持測試完整性**：新增核心邏輯時務必加入對應單元測試，並確保 `cargo test` 與 `cargo check` 零 Warning 通過。
-4. **Git 規範**：
-   - 主分支為 `main`；新功能請開 `feat/<名稱>` 分支開發。
-   - Commit 遵循 Conventional Commits (例如 `feat: ...`, `fix: ...`, `refactor: ...`)。
-5. **文件同步**：完成功能或發現新限制時，同步更新本檔第 5 節進度與已知問題。
+1. **Follow the KISS principle strictly**: do not introduce unnecessary complexity or abstraction; implement each feature in the most direct and maintainable way.
+2. **Language**:
+   - Write `AGENTS.md`, `README.md`, commit messages, PR titles / descriptions and new documents in **English**.
+   - Write new code comments in **English** and explain intent in detail. Existing Traditional Chinese (`zh-TW`) comments are left as they are; do not translate or rewrite them unless the surrounding code changes anyway.
+   - Reply to the maintainer in the language they use.
+3. **Keep the tests complete**: add unit tests for new core logic and make sure `cargo test` and `cargo check` pass with zero warnings.
+4. **Git conventions**:
+   - The main branch is `main`; develop new features on a `feat/<name>` branch.
+   - Commit messages are written in **English** and follow Conventional Commits (for example `feat: ...`, `fix: ...`, `refactor: ...`).
+5. **Documentation sync**: when a feature is completed or a new limitation is found, update section 5 (progress and known issues) of this file.
+6. **README sync**: `README.md` (English) is the source of truth.
+   - Whenever `README.md` changes, update every translated README in the same commit (currently `README_zh-TW.md`).
+   - When adding a new translation, name it `README_<locale>.md` (for example `README_ja.md`, `README_zh-CN.md`), and add it to the language list at the bottom of every README.
+   - Translations must keep the same section structure as `README.md`.
