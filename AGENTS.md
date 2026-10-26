@@ -41,7 +41,10 @@
 MadEdit/
 ├── Cargo.toml              # 專案相依性與套件設定
 ├── Cargo.lock              # 相依性鎖定檔（需納入版控）
+├── Makefile                # 開發、打包與從 ChangeLog.md 取出發行說明
+├── ChangeLog.md            # 變更紀錄；GitHub Release 說明取自對應版本章節
 ├── build.rs                # Windows 圖示資源嵌入
+├── .github/workflows/release.yml # 標籤發行（Linux、AppImage、macOS DMG、Windows）
 ├── .gitignore
 ├── assets\                 # 圖示資產與桌面整合檔
 │   ├── madedit-icon.png    # 視窗與 macOS 圖示（沿用原版 madedit-mod.png，include_bytes 內嵌）
@@ -56,7 +59,11 @@ MadEdit/
 │   ├── make_appbundle.sh   # 產生 macOS MadEdit.app（含圖示與字典）
 │   ├── make_dmg.sh         # 產生 macOS 磁碟映像檔（.dmg，含 Applications 軟連結與簽章）
 │   ├── install_macos.sh    # 一鍵建置 MadEdit.app 並取代 /Applications 內的舊版
-│   └── make_linux_dist.sh  # 產生 Linux x86_64 發行壓縮檔（cargo-zigbuild，glibc 2.28）
+│   ├── make_linux_dist.sh  # 產生 Linux 發行壓縮檔（x86_64 / aarch64，glibc 2.28）
+│   ├── make_appimage.sh    # 產生 Linux AppImage（x86_64 / aarch64）
+│   ├── install_linux.sh    # 一鍵建置並安裝到 ~/.local
+│   ├── make_windows_dist.ps1 # 產生 Windows 發行壓縮檔（x86_64 / aarch64）
+│   └── changelog_notes.sh  # 從 ChangeLog.md 取出指定版本的發行說明
 ├── src\
 │   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
 │   ├── app\                # egui 介面層
@@ -103,39 +110,39 @@ MadEdit/
 
 - **語法與型別檢查**：
   ```powershell
-  cargo check
+  make check
   ```
 - **執行單元測試**（含 egui_kittest 互動測試）：
   ```powershell
-  cargo test
+  make test
   ```
 - **離屏截圖**（無法開視窗時檢查畫面）：
   ```bash
   MADEDIT_SHOT_OUT=out.png MADEDIT_SHOT_FILE=檔案 MADEDIT_SHOT_CMDS=menuHexMode cargo test shot -- --ignored
   ```
-- **打包 macOS App**：
+- **打包 macOS App 與 DMG**：
   ```bash
-  cargo build --release && ./scripts/make_appbundle.sh
+  make dist-macos
   ```
-- **打包 macOS DMG**：
+- **打包 Linux 發行檔與 AppImage**（需 `cargo-zigbuild` 與 zig；`ARCH=x86_64` 或 `aarch64`）：
   ```bash
-  ./scripts/make_dmg.sh
+  make dist-appimage
   ```
 - **建置並安裝到 /Applications**（自動刪除舊版）：
   ```bash
   ./scripts/install_macos.sh
   ```
-- **打包 Linux 發行檔**（需 `cargo-zigbuild` 與 zig，輸出至 `dist/`）：
-  ```bash
-  ./scripts/make_linux_dist.sh
-  ```
 - **建置並安裝到本機 Linux**（Arch / Omarchy；安裝到 `~/.local`，啟動器即可找到）：
   ```bash
   ./scripts/install_linux.sh
   ```
-- **打包 Windows 發行檔**（輸出至 `dist/`）：
+- **打包 Windows 發行檔**（輸出至 `dist/`；`-Arch aarch64` 可指定 ARM）：
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1
+  ```
+- **取出 ChangeLog 發行說明**（GitHub Release 使用同一腳本）：
+  ```bash
+  make release-notes VERSION=0.5.24
   ```
 - **啟動應用程式**：
   ```powershell
@@ -153,6 +160,9 @@ MadEdit/
 > **2026-10-23 起介面已改寫為 egui**（[ADR 0011](docs/adr/0011-egui-rewrite.md)）。以下 Phase 1–10 為 Slint 時期的歷程紀錄，
 > 其中提到的 `.slint` 檔、`buffer.rs`、`hex.rs`、`memmap2` 已移除；功能皆已在 egui 版重新實作。
 
+- [x] **發行打包**：`Makefile`、`ChangeLog.md` 與 `.github/workflows/release.yml`。
+  Linux（tar.gz 與 AppImage）和 Windows 各建 x86_64 與 aarch64；macOS 各建 Apple Silicon 與 Intel DMG。
+  推上 `v*` 標籤時，Release 說明取自 ChangeLog 的對應章節。
 - [x] **egui 全面改寫與原版功能補齊**（feat/egui-rewrite）：
   - 多文件分頁、復原／重做、系統剪貼簿、設定檔與工作階段保存（最近檔案、游標位置、視窗尺寸）。
   - 使用者可選系統字型與字級（含比例字型）、CJK 自動補字、行距、深淺色主題與語法主題選擇。

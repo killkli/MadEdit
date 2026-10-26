@@ -69,15 +69,21 @@
 ```text
 MadEdit/
 ├── Cargo.toml / Cargo.lock
+├── Makefile                # 開發、打包與發行說明指令
+├── ChangeLog.md            # 變更紀錄；GitHub Release 說明取自對應版本章節
 ├── build.rs                # Windows 執行檔圖示嵌入
+├── .github/workflows/release.yml  # 標籤發行：Linux、AppImage、macOS DMG、Windows
 ├── assets/                 # 應用程式圖示、工具列圖示（取自原版）、拼字字典
 ├── scripts/
 │   ├── make_appbundle.sh   # 產生 macOS MadEdit.app
+│   ├── make_dmg.sh         # 產生 macOS DMG
 │   ├── install_macos.sh    # 建置並安裝 MadEdit.app 到 /Applications
 │   ├── test_macos_bundle.sh / test_macos_runtime.py  # macOS 打包與原生執行回歸測試
-│   ├── make_linux_dist.sh  # 產生 Linux 發行壓縮檔
+│   ├── make_linux_dist.sh  # 產生 Linux 發行壓縮檔（x86_64 / aarch64）
+│   ├── make_appimage.sh    # 產生 Linux AppImage（x86_64 / aarch64）
 │   ├── install_linux.sh    # 建置並安裝到本機 ~/.local
-│   └── make_windows_dist.ps1 # 產生 Windows 發行壓縮檔
+│   ├── make_windows_dist.ps1 # 產生 Windows 發行壓縮檔（x86_64 / aarch64）
+│   └── changelog_notes.sh  # 從 ChangeLog.md 取出指定版本的發行說明
 ├── src/
 │   ├── main.rs             # 進入點：解析命令列、建立視窗、啟動 eframe
 │   ├── macos.rs            # macOS Finder／Dock 開檔與結束事件橋接
@@ -100,11 +106,13 @@ MadEdit/
 ### 開發與測試指令
 
 ```bash
-cargo check            # 檢查語法與型別
-cargo test             # 單元測試與 egui_kittest 介面互動測試
-cargo run              # 啟動開發版
-cargo build --release  # 編譯最佳化正式版
+make check             # cargo check
+make test              # 單元測試與 egui_kittest 介面互動測試
+make run               # 啟動開發版
+make build             # 編譯最佳化正式版（cargo build --release --locked）
 ```
+
+`make help` 會列出全部目標。`cargo check`、`cargo test`、`cargo run` 仍然可以直接使用。
 
 編譯完成後，可於 `target/release/MadEdit`（Windows 為 `target/release/MadEdit.exe`）取得獨立執行檔。
 
@@ -116,11 +124,12 @@ macOS 上的 GUI 程式需放在 `.app` bundle 內，才能正確顯示 Dock 圖
    ```bash
    xcode-select --install
    ```
-2. 編譯並產生 App：
+2. 編譯並產生 App 與 DMG：
    ```bash
-   ./scripts/make_appbundle.sh
+   make dist-macos
    ```
-3. 產物位於 `dist/MadEdit.app`（已含圖示與拼字字典，並以 ad-hoc 簽章），可直接開啟或拖進「應用程式」資料夾：
+   等同於 `./scripts/make_appbundle.sh` 之後再執行 `./scripts/make_dmg.sh`。
+3. 產物位於 `dist/MadEdit.app`（已含圖示與拼字字典，並以 ad-hoc 簽章）與 `dist/MadEdit-<版本>-macOS-<架構>.dmg`，可直接開啟或拖進「應用程式」資料夾：
    ```bash
    open dist/MadEdit.app
    ```
@@ -149,30 +158,73 @@ macOS 打包回歸測試：`./scripts/test_macos_bundle.sh`（不覆寫已安裝
 > 由於未經 Apple 公證，從網路下載的 App 第一次開啟時可能被 Gatekeeper 阻擋，
 > 請在 Finder 中按右鍵選「打開」，或執行 `xattr -cr MadEdit.app` 移除隔離屬性。
 
-### Windows 發行檔
+### 下載發行檔
 
-可直接從 [Releases](https://github.com/tenyi/MadEdit/releases) 下載 `MadEdit-<版本>-windows-x86_64.zip`，解壓縮後執行 `MadEdit.exe`。
-自行打包（輸出至 `dist/`）：
+正式發行檔在 [Releases](https://github.com/kuopinghsu/MadEdit/releases)。檔名裡的 `<版本>` 與 `Cargo.toml` 的 `version` 相同。
+
+| 平台 | 檔名 |
+| :--- | :--- |
+| Linux x86_64 | `MadEdit-<版本>-linux-x86_64.tar.gz` |
+| Linux ARM | `MadEdit-<版本>-linux-aarch64.tar.gz` |
+| Linux AppImage x86_64 | `MadEdit-<版本>-linux-x86_64.AppImage` |
+| Linux AppImage ARM | `MadEdit-<版本>-linux-aarch64.AppImage` |
+| macOS Apple Silicon | `MadEdit-<版本>-macOS-arm64.dmg` |
+| macOS Intel | `MadEdit-<版本>-macOS-x86_64.dmg` |
+| Windows x64 | `MadEdit-<版本>-windows-x86_64.zip` |
+| Windows ARM | `MadEdit-<版本>-windows-aarch64.zip` |
+
+每個發行檔旁有同名 `.sha256`。Linux 壓縮檔解壓後可執行 `./MadEdit`，或 `./install.sh` 安裝到 `~/.local`。AppImage 加上執行權限後直接執行，需要系統上的 Vulkan 或 OpenGL 驅動。Windows 解壓後執行 `MadEdit.exe`。macOS 打開 DMG，把 `MadEdit.app` 拖進「應用程式」。
+
+### Windows 自行打包
+
+在 Windows 上（x64 或 ARM 會依本機架構命名）：
+
+```powershell
+make dist-windows
+```
+
+或：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1 -Arch aarch64
 ```
 
-### Linux 發行檔
+### Linux 自行打包
 
-可直接從 [Releases](https://github.com/tenyi/MadEdit/releases) 下載 `MadEdit-<版本>-linux-x86_64.tar.gz`，
-解壓縮後執行 `./MadEdit`，或執行 `./install.sh` 安裝到 `~/.local`（含應用程式選單項目與圖示）。
-
-自行打包時使用 [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) 鎖定 glibc 2.28，
-讓同一個執行檔可在較舊的發行版（如 Ubuntu 20.04）上執行：
+使用 [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) 鎖定 glibc 2.28，讓同一個執行檔可在較舊的發行版（如 Ubuntu 20.04）上執行：
 
 ```bash
 cargo install cargo-zigbuild
-# 安裝 zig（可用 uv tool install ziglang 或系統套件管理員）
-./scripts/make_linux_dist.sh
+# 安裝 zig 0.16（可用系統套件管理員，或 uv tool install ziglang）
+make dist-linux       # tar.gz，架構為本機
+make dist-appimage    # AppImage，並一併產生 tar.gz
+make dist-linux ARCH=aarch64
+make dist-appimage ARCH=x86_64
 ```
 
-產物位於 `dist/MadEdit-<版本>-linux-x86_64.tar.gz`（含執行檔、拼字字典、`.desktop`、圖示與 `install.sh`）。
+`./scripts/make_linux_dist.sh [輸出目錄] [架構]` 與 `./scripts/make_appimage.sh` 是上面兩個目標的底層腳本。架構為 `x86_64` 或 `aarch64`。
+
+### 發行步驟
+
+變更紀錄寫在 [ChangeLog.md](ChangeLog.md)。推上版本標籤後，[`.github/workflows/release.yml`](.github/workflows/release.yml) 會建置上表的全部檔案，並把該版本章節原文設為 GitHub Release 說明。標籤含連字號（例如 `v0.6.0-rc.1`）時標成預發行。
+
+1. 在 `ChangeLog.md` 把 `## [Unreleased]` 裡的條目移到新章節，標題格式為 `## [x.y.z] - YYYY-MM-DD`。章節不能是空的。
+2. 把 `Cargo.toml` 的 `version` 改成同一個 `x.y.z`，並更新 `Cargo.lock`（`cargo check` 會改寫鎖定檔）。
+3. 確認說明可以單獨取出（把 `0.6.0` 換成這次的版本）：
+   ```bash
+   make release-notes VERSION=0.6.0
+   ```
+4. 提交後打上標籤並推送：
+   ```bash
+   git tag v0.6.0
+   git push origin main
+   git push origin v0.6.0
+   ```
+   標籤版本必須與 `Cargo.toml` 相同（`v0.6.0` 對應 `0.6.0`）。不一致，或 ChangeLog 沒有該章節時，工作流程會在開始打包前停止。
+5. Actions 完成後，Release 頁會出現 Linux（x64 / ARM 的 tar.gz 與 AppImage）、macOS DMG（Apple Silicon 與 Intel）與 Windows zip（x64 / ARM），說明文字就是 ChangeLog 的該章節。
+
+只想試打包、不建立 Release 時，可在 GitHub 的 Actions 頁手動執行 Release workflow。產物會留在該次執行的 artifact，不會發佈。
 
 ---
 
