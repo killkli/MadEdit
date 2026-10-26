@@ -326,12 +326,16 @@ impl App {
         }
     }
 
-    /// 去除檔名前後的空白（使用者在另存對話框誤輸入的空白），目錄部分不動
+    /// 清理另存對話框的檔名：去除前後空白，以及結尾多餘的 `.`（目錄部分不動）。
+    /// macOS 連按兩下空白鍵會自動輸入「. 」；Windows 會悄悄剝掉結尾的點與空白，
+    /// 造成實際檔名與畫面不一致，因此統一在此清掉。清理後若為空則維持原樣。
     pub fn trim_file_name(p: PathBuf) -> PathBuf {
-        match p.file_name().and_then(|n| n.to_str()) {
-            Some(n) if n.trim() != n && !n.trim().is_empty() => p.with_file_name(n.trim()),
-            _ => p,
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else { return p };
+        let clean = name.trim().trim_end_matches(|c: char| c == '.' || c.is_whitespace());
+        if clean.is_empty() || clean == name {
+            return p;
         }
+        p.with_file_name(clean)
     }
 
     /// 存檔（必要時詢問路徑或確認）；`as_new` 為真時一律詢問路徑

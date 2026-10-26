@@ -363,3 +363,15 @@ fn test_markdown_preview_only_for_markdown() {
     assert!(h.state_mut().tab_mut().md_preview.is_some(), "Markdown 檔應開啟預覽");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn 另存檔名去除前後空白與結尾句點() {
+    use std::path::PathBuf;
+    let t = |s: &str| App::trim_file_name(PathBuf::from(s));
+    assert_eq!(t("/a/ b.txt"), PathBuf::from("/a/b.txt"));
+    assert_eq!(t("/a/b.txt "), PathBuf::from("/a/b.txt"));
+    assert_eq!(t("/a/b. "), PathBuf::from("/a/b"));
+    assert_eq!(t("/a/ b . . "), PathBuf::from("/a/b"));
+    assert_eq!(t("/a/.hidden"), PathBuf::from("/a/.hidden"));
+    assert_eq!(t("/a /b.txt"), PathBuf::from("/a /b.txt"));
+}
