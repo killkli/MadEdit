@@ -3,6 +3,7 @@
 
 mod app;
 mod core;
+mod single_instance;
 #[cfg(target_os = "macos")]
 mod macos;
 
@@ -17,7 +18,7 @@ fn main() -> eframe::Result {
     // 命令列：MadEdit [檔案...] [--screenshot <輸出.png>]（截圖供自動化測試使用）
     let mut files = Vec::new();
     let mut screenshot = None;
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args_os().skip(1);
     while let Some(a) = args.next() {
         if a == "--screenshot" {
             screenshot = args.next().map(PathBuf::from);
@@ -25,6 +26,20 @@ fn main() -> eframe::Result {
             files.push(PathBuf::from(a));
         }
     }
+
+    // 截圖測試獨立執行，避免把測試檔案送進使用者正在編輯的視窗。
+    let instance = if screenshot.is_none() {
+        let directory = core::settings::Settings::path()
+            .and_then(|p| p.parent().map(PathBuf::from))
+            .ok_or_else(|| eframe::Error::AppCreation(Box::new(std::io::Error::other("找不到 MadEdit 設定目錄"))))?;
+        match single_instance::Instance::start(&directory, files.clone())
+            .map_err(|e| eframe::Error::AppCreation(Box::new(e)))? {
+            Some(instance) => Some(instance),
+            None => return Ok(()),
+        }
+    } else {
+        None
+    };
 
     let size = core::settings::Settings::load().window_size.unwrap_or((1200.0, 780.0));
     let mut viewport = egui::ViewportBuilder::default()
@@ -47,7 +62,14 @@ fn main() -> eframe::Result {
             desc
         });
     }
-    eframe::run_native("MadEdit", options, Box::new(|cc| Ok(Box::new(app::App::new(cc, files, screenshot)))))
+    eframe::run_native("MadEdit", options, Box::new(|cc| {
+        let mut app = app::App::new(cc, files, screenshot);
+        if let Some(instance) = instance {
+            instance.attach_context(&cc.egui_ctx);
+            app.instance = Some(instance);
+        }
+        Ok(Box::new(app))
+    }))
 }
 
 #[cfg(test)]

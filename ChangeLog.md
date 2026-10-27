@@ -1,100 +1,103 @@
-# 變更紀錄
+# Changelog
 
-本檔是使用者可見變更的來源。GitHub Release 的說明直接取自對應的 `## [版本]` 章節（見 README 的發行步驟）。
+This file is the source of user-visible changes. GitHub Release notes are taken directly from the matching `## [version]` section (see the release instructions in README).
 
-格式依 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，版本號遵循 [語意化版本](https://semver.org/lang/zh-TW/)。
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### 修正
-- 開啟不存在的檔案時改為詢問「是否要建立新的檔案」（比照 Notepad），不再直接顯示開啟失敗；選擇建立後存檔會寫回同一個檔案。確認訊息已加入多語系介面文字。
+### Added
+- Single instance: launching again or opening files from File Explorer sends files to the existing window, opens them in tabs, and restores and focuses the window. Reopening a file selects its existing tab. Different configuration directories remain independent, and screenshot tests run separately.
+
+### Fixed
+- Opening a nonexistent file now asks whether to create it, as Notepad does, instead of immediately reporting an open failure. If created, saving writes to the same path. The confirmation message is translated into all supported UI languages.
 
 ## [0.6.2] - 2026-10-27
 
-### 變更
+### Changed
 
-- 預設編碼改為 UTF-8，並新增「備援編碼」選項（預設 Big5），僅在內容不是合法 UTF-8 時使用；舊設定的預設編碼會自動移到備援編碼。
+- The default encoding is now UTF-8. A new fallback encoding option (Big5 by default) is used only when the content is not valid UTF-8. The default encoding from legacy settings is automatically migrated to the fallback encoding.
 
 ## [0.6.1] - 2026-10-27
 
-### 修正
-- Linux AppImage 打包因暫存桌面檔缺少 `.desktop` 副檔名而失敗。
+### Fixed
+- Linux AppImage packaging failed because the temporary desktop file lacked the `.desktop` extension.
 
 ## [0.6.0] - 2026-10-27
 
-### 新增
-- 介面語言可跟隨系統，或改為 English、繁體中文、简体中文、日本語、한국어、Deutsch、Español、Français、Italiano、Português。選單與選項對話框都會套用。
-- `Makefile` 統一開發與打包指令（`make check`、`make test`、`make dist`）。
-- Linux AppImage（x86_64 與 aarch64），內含執行檔與拼字字典。
-- Linux 壓縮檔與 Windows zip 可指定 `x86_64` 或 `aarch64`。
-- GitHub Actions：推上 `v*` 標籤時建置 Linux 壓縮檔、Linux AppImage、macOS DMG 與 Windows zip，並以本檔對應章節作為發行說明。Linux 與 Windows 含 x64 與 ARM；macOS 含 Apple Silicon 與 Intel。
-- Markdown 預覽支援雙向同步捲動，並排與獨立視窗預設開啟；預覽介面文字已翻譯。
-- Markdown 預覽重用未修改的 Mermaid 圖表，編輯內文時不再重新轉換。
-- `README.md` 改為英文，繁體中文版移至 `README_zh-TW.md`。
+### Added
+- The UI language can follow the system or be set to English, Traditional Chinese, Simplified Chinese, Japanese, Korean, German, Spanish, French, Italian or Portuguese. The selection applies to menus and the Options dialog.
+- `Makefile` provides unified development and packaging commands (`make check`, `make test`, `make dist`).
+- Linux AppImage packages for x86_64 and aarch64, including the executable and spelling dictionaries.
+- Linux archives and Windows zip packages can target `x86_64` or `aarch64`.
+- GitHub Actions builds Linux archives, Linux AppImages, macOS DMGs and Windows zip packages when a `v*` tag is pushed, using the matching section in this file as release notes. Linux and Windows include x64 and ARM builds; macOS includes Apple Silicon and Intel builds.
+- Markdown preview supports two-way synchronized scrolling, enabled by default in side-by-side and separate-window layouts. Preview UI text is translated.
+- Markdown preview reuses unchanged Mermaid diagrams instead of converting them again when body text is edited.
+- `README.md` is now in English; the Traditional Chinese version has moved to `README_zh-TW.md`.
 
-### 修正
-- Markdown 預覽的並排尺寸、一般與參照式圖片（含中文、空白與百分比編碼檔名）載入。
+### Fixed
+- Markdown preview sizing in side-by-side layouts and loading of ordinary and reference-style images, including file names with CJK characters, spaces and percent-encoding.
 
 ## [0.5.24] - 2026-10-26
 
-### 新增
-- macOS 原生整合：Finder「打開方式」與拖曳到 Dock 開檔，系統選單與 Dock 的結束會先確認未儲存修改。
-- macOS App 打包改為簽章驗證完成後才取代舊版，並提供 `scripts/make_dmg.sh` 產生磁碟映像檔。
+### Added
+- macOS native integration: Finder "Open With" and dropping files on the Dock icon. Quitting from the system menu or Dock asks about unsaved changes first.
+- macOS App packaging now verifies the signature before replacing the old version. Added `scripts/make_dmg.sh` to create disk images.
 
-### 修正
-- Touch Bar Mac 結束時的崩潰（保留無障礙支援）。
-- 另存新檔與另存副本時去除檔名前後空白，以及結尾多餘的句點與空白。
+### Fixed
+- Crash when quitting on Touch Bar Macs, while preserving accessibility support.
+- Save As and Save a Copy now trim leading and trailing whitespace from file names, along with extra trailing periods and spaces.
 
 ## [0.5.23] - 2026-10-26
 
-### 新增
-- App 內 Markdown 預覽（`egui_commonmark`），` ```mermaid ` 圖表由純 Rust 的 fermaid 繪製。
-- 預覽可縮放、圖表符合寬度、相對路徑圖片、左右或上下並排，並在並排時跟隨編輯區捲動。
-- 預覽狀態依分頁各自保存；不是 Markdown 的檔案無法開啟預覽。
-- App 內預覽列印視窗（A4 分頁、翻頁、縮放）。
-- Windows 發行壓縮檔腳本，以及 Linux 一鍵安裝到 `~/.local`。
+### Added
+- In-app Markdown preview (`egui_commonmark`), with ` ```mermaid ` diagrams rendered by the pure-Rust fermaid library.
+- Preview zoom, fit-to-width diagrams, relative-path images, side-by-side and top-and-bottom layouts, and synchronized scrolling with the editor in split layouts.
+- Preview state is saved per tab; preview cannot be opened for non-Markdown files.
+- In-app print preview with A4 pages, paging and zoom.
+- Windows release archive script and one-step Linux installation to `~/.local`.
 
-### 修正
-- 升級 egui / eframe 至 0.37。
-- 多個 Markdown 表格共用欄寬導致文字重疊。
-- 淺色模式預覽黑底；並排配置改為與編輯區各佔一半。
-- 自動換行時刪除多行選取造成 panic。
-- 存檔、另存副本與背景取代改為原子寫入；設定檔損毀時備份為 `.bak`。
-- 關閉時若存檔還需確認，會接續完成關閉流程。
-- 快捷鍵擷取不再綁走 Enter、Backspace 等編輯鍵。
+### Fixed
+- Upgraded egui / eframe to 0.37.
+- Text overlap caused by multiple Markdown tables sharing column widths.
+- Black preview background in light mode; split layouts now give the preview and editor half the space each.
+- Panic when deleting a multiline selection with word wrap enabled.
+- Saving, Save a Copy and background replacement now use atomic writes. Corrupt settings files are backed up as `.bak`.
+- Closing now resumes correctly when saving requires an additional confirmation.
+- Shortcut capture no longer binds editing keys such as Enter and Backspace.
 
 ## [0.5.22] - 2026-10-23
 
-### 新增
-- Linux 發行壓縮檔（cargo-zigbuild，glibc 2.28）與安裝到 `~/.local` 的腳本。
-- macOS 一鍵建置並安裝到 `/Applications`。
-- `Ctrl` / `⌘` + `1`～`9` 切換分頁。
+### Added
+- Linux release archives (cargo-zigbuild, glibc 2.28) and an installation script targeting `~/.local`.
+- One-step macOS build and installation to `/Applications`.
+- `Ctrl` / `⌘` + `1`–`9` tab switching.
 
-### 修正
-- 舊版 Mesa 軟體繪製下無法啟動。
-- Linux 圖示安裝到 `48x48`，程式執行中也可以升級。
+### Fixed
+- Startup failure with older Mesa software rendering.
+- Linux icons are installed to `48x48`; the application can also be upgraded while running.
 
 ## [0.5.21] - 2026-10-23
 
-### 新增
-- 視窗與工具列改用原版 MadEdit 圖示。
+### Added
+- The window and toolbar now use the original MadEdit icons.
 
-### 修正
-- 對話框第一次出現時置中。
-- 編輯區改用中日韓字型時，介面字型仍保留 CJK 補字。
+### Fixed
+- Dialogs are centered when first opened.
+- UI fonts retain CJK fallback when the editor uses a CJK font.
 
 ## [0.2.0] - 2026-10-23
 
-### 新增
-- 介面由 Slint 改寫為 egui / eframe，編輯區、十六進位檢視、捲軸與尺標改為自繪。
-- 可選擇系統字型（含比例字型），CJK 自動補字，macOS 輸入法可預編輯並定位候選窗。
-- 依原版命令表實作 165 個命令：多文件分頁、復原／重做、搜尋取代、列塊模式、書籤、編碼、巨集、拼字、列印與選項。
-- 大檔改以定位讀取的 Piece Table 開啟，不再使用 mmap。
+### Added
+- Rewrote the UI from Slint to egui / eframe, with custom-drawn text and hex views, scrollbars and ruler.
+- User-selectable system fonts, including proportional fonts, automatic CJK fallback, and macOS input method preedit and candidate window positioning.
+- Implemented 165 commands from the original command table: multi-document tabs, undo / redo, find and replace, column mode, bookmarks, encodings, macros, spelling, printing and options.
+- Large files now open through a Piece Table with positioned reads instead of mmap.
 
 ## [0.1.0] - 2026-10-21
 
-### 新增
-- 專案起步。Slint 時期完成編碼、自繪編輯區、大檔引擎、列塊選取、搜尋取代、語法突顯、跳行、換行格式、書籤、外部變更監控與經典介面。
+### Added
+- Initial project. The Slint version implemented encoding support, a custom-drawn editor, a large-file engine, rectangular selection, find and replace, syntax highlighting, go-to-line, line endings, bookmarks, external change monitoring and the classic UI.
 
 [Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.2...HEAD
 [0.6.2]: https://github.com/tenyi/MadEdit/compare/v0.6.1...v0.6.2

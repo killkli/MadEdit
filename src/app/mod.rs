@@ -85,6 +85,7 @@ pub enum Confirm {
 }
 
 pub struct App {
+    pub instance: Option<crate::single_instance::Instance>,
     pub settings: Settings,
     pub tabs: Vec<Tab>,
     pub active: usize,
@@ -138,6 +139,7 @@ impl App {
             Settings::load_checked()
         };
         let mut app = Self {
+            instance: None,
             settings,
             tabs: Vec::new(),
             active: 0,
@@ -214,6 +216,15 @@ impl App {
     }
 
     // ── 文件與分頁 ──────────────────────────────────────────────
+
+    fn open_external_files(&mut self, ctx: &egui::Context, files: Vec<PathBuf>) {
+        for path in files {
+            self.open_path(&path);
+        }
+        self.focus_editor = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
 
     pub fn doc(&self) -> &Document {
         &self.tabs[self.active].doc
@@ -1069,6 +1080,14 @@ fn egui_extras_style(ctx: &egui::Context) {
 }
 
 impl eframe::App for App {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // 最小化時 eframe 不呼叫 ui；開檔與還原必須在仍會執行的 logic 處理。
+        let requests = self.instance.as_ref().map(|instance| instance.requests()).unwrap_or_default();
+        for files in requests {
+            self.open_external_files(ctx, files);
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 

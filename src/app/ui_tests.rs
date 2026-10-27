@@ -24,6 +24,55 @@ fn text(h: &mut Harness<'static, App>) -> String {
     h.state_mut().doc().editor.lines.join("\n")
 }
 
+#[test]
+fn test_instance_request_restores_window_without_running_ui() {
+    let dir = std::env::temp_dir().join(format!("madedit-hidden-instance-{}", std::process::id()));
+    let instance = crate::single_instance::Instance::start(&dir, vec![]).unwrap().unwrap();
+    let file = dir.join("external.txt");
+    std::fs::write(&file, "external document").unwrap();
+    let mut h = harness();
+    h.state_mut().instance = Some(instance);
+    assert!(crate::single_instance::Instance::start(&dir, vec![file]).unwrap().is_none());
+    let ctx = eframe::egui::Context::default();
+    let mut frame = eframe::Frame::_new_kittest();
+    // 模擬最小化時只有邏輯回呼的情況，不能依賴 ui 才取出要求。
+    let output = ctx.run_logic(&Default::default(), |ctx| {
+        eframe::App::logic(h.state_mut(), ctx, &mut frame);
+    });
+    assert_eq!(text(&mut h), "external document");
+    let commands: Vec<_> = output.viewport_commands.iter().flat_map(|(_, commands)| commands).collect();
+    assert!(commands.iter().any(|cmd| matches!(cmd, eframe::egui::ViewportCommand::Minimized(false))));
+    assert!(commands.iter().any(|cmd| matches!(cmd, eframe::egui::ViewportCommand::Focus)));
+    drop(h.state_mut().instance.take());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn test_external_open_reuses_tabs_and_preserves_unsaved_text() {
+    let dir = std::env::temp_dir().join(format!("madedit-external-open-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let first = dir.join("中文 空白.txt");
+    let second = dir.join("second.txt");
+    std::fs::write(&first, "first").unwrap();
+    std::fs::write(&second, "second").unwrap();
+    let mut h = harness();
+    type_text(&mut h, "尚未儲存");
+    let unsaved_id = h.state().doc().id;
+    let ctx = eframe::egui::Context::default();
+    h.state_mut().open_external_files(&ctx, vec![first.clone(), second.clone()]);
+    assert_eq!(h.state().tabs.len(), 3);
+    assert_eq!(h.state().doc().path.as_ref(), Some(&second.canonicalize().unwrap()));
+    h.state_mut().open_external_files(&ctx, vec![first.clone(), first]);
+    assert_eq!(h.state().tabs.len(), 3);
+    assert_eq!(text(&mut h), "first");
+    h.state_mut().open_external_files(&ctx, vec![]);
+    assert_eq!(h.state().tabs.len(), 3);
+    let unsaved = h.state().tabs.iter().find(|t| t.doc.id == unsaved_id).unwrap();
+    assert_eq!(unsaved.doc.editor.lines.join("\n"), "尚未儲存");
+    assert!(unsaved.doc.is_modified());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// 以指定文件量測開檔到並排預覽排版完成，以及輸入文字後的更新；不含原生視窗與 GPU 呈現。
 /// 執行：MADEDIT_MD_BENCH_FILE=文件 cargo test --release benchmark_markdown_preview_ui -- --ignored --nocapture
 #[test]

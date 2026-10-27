@@ -53,6 +53,7 @@ The original C++ / wxWidgets **MadEdit** is a classic tool for many developers a
 - You can also "Preview as HTML", which hands the page to the system browser.
 
 ### 6. The original MadEdit command set
+- **Single instance**: launching MadEdit again sends files to the existing window and brings it forward. Files open in tabs; reopening a file selects its existing tab. Launching without files restores the existing window. Instances using different `MADEDIT_CONFIG_DIR` directories remain independent.
 - **File**: multi-document tabs, save a copy, save all, recent files, read-only flag, printing and in-app print preview (A4 pages, paging, zoom), session persistence.
 - **Edit**: bookmark line operations, hex string conversion, indent, comment, change case, full/half width, tabs to spaces and back, increment numbers, sort, column alignment.
 - **Search**: plain text / case / whole word / Regex / Hex find and replace, find and replace in multiple files, jump to matching bracket.

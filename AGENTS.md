@@ -2,6 +2,10 @@
 
 This document is written for AI agents taking over the project. It gives the full project background, architecture, current progress and guidance for further development.
 
+## Documentation Language
+
+- Write all content in `ChangeLog.md` in English, including headings and release entries. GitHub Release notes are extracted directly from this file.
+
 ---
 
 ## 1. Background and Vision
