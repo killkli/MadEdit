@@ -275,6 +275,8 @@ pub struct EditorState {
     pub clipboard_is_block: bool,
     pub bookmarks: BTreeSet<usize>,
     pub overwrite_mode: bool,
+    /// 狀態列數值快取：(錨點, 游標, 文件版本, Tab 寬) → (視覺欄, 字元位置, 選取字數)
+    status_cache: Option<((TextPosition, TextPosition, u64, usize), (usize, usize, usize))>,
 }
 
 impl Default for EditorState {
@@ -287,6 +289,7 @@ impl Default for EditorState {
             clipboard_is_block: false,
             bookmarks: BTreeSet::new(),
             overwrite_mode: false,
+            status_cache: None,
         }
     }
 }
@@ -353,6 +356,24 @@ impl EditorState {
             count += line.chars().count() + 1;
         }
         count + self.line_char_count(end_line).min(pos.col)
+    }
+
+    /// 狀態列顯示值（視覺欄位、游標自文件頭起算的字元位置、選取字元數）
+    ///
+    /// 游標與文件版本不變時直接沿用快取，避免每幀對超長文件重掃字數。
+    pub fn status_info(&mut self, doc_version: u64) -> (usize, usize, usize) {
+        let key = (self.selection.anchor, self.selection.head, doc_version, tab_size());
+        if let Some((k, v)) = &self.status_cache
+            && *k == key
+        {
+            return *v;
+        }
+        let head = self.selection.head;
+        let line_text = self.lines.get(head.line).map(|s| s.as_str()).unwrap_or("");
+        let vcol = char_col_to_visual_col(line_text, head.col);
+        let info = (vcol, self.char_pos(head), self.selection_char_count());
+        self.status_cache = Some((key, info));
+        info
     }
 
     /// 目前選取範圍的字元數（不含換行字元）
@@ -1781,5 +1802,26 @@ mod tests {
         editor.selection = Selection::block(TextPosition::new(1, 0), TextPosition::new(2, 0), 0, 0);
         editor.delete_backspace();
         assert_eq!(editor.lines, vec!["a", "eh", "il"]);
+    }
+
+    #[test]
+    fn test_status_info_tracks_caret_and_version() {
+        let mut editor = EditorState::from_text("hello\nworld!");
+        editor.set_caret(1, 3);
+        let (vcol, char_pos, sel) = editor.status_info(0);
+        assert_eq!((vcol, char_pos, sel), (3, 9, 0), "前一行 5 字 + 1 換行 + 行內 3");
+
+        // 同一游標與版本：沿用快取值
+        assert_eq!(editor.status_info(0), (3, 9, 0));
+
+        // 版本改變（內容可能變動）：必須重算
+        editor.lines[0] = "hello!!".into();
+        let (_, char_pos, _) = editor.status_info(1);
+        assert_eq!(char_pos, 11);
+
+        // 選取改變：SelSize 必須更新
+        editor.select_range(TextPosition::new(0, 0), TextPosition::new(1, 2));
+        let (_, _, sel) = editor.status_info(1);
+        assert_eq!(sel, 9, "hello!!(7) + wo(2) 不含換行");
     }
 }

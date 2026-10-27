@@ -4,6 +4,7 @@
 //! - 預覽列印則由 App 內的獨立視窗自行分頁繪製（見 `preview.rs`）。
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crate::core::document::Document;
 use crate::core::hexbuf::BYTES_PER_ROW;
@@ -146,13 +147,18 @@ pub fn build_content(doc: &Document, opts: &PrintOptions) -> PrintContent {
             let spans = if opts.syntax_colors {
                 cache.highlight(lines, i, 1, &doc.syntax, theme, false).pop().unwrap_or_default()
             } else {
-                Vec::new()
+                Rc::new(Vec::new())
             };
             if spans.is_empty() {
                 line.push_body(text, None, opts);
             } else {
-                for sp in spans {
-                    line.push_body(&sp.text, Some(sp.color_rgb), opts);
+                for sp in spans.iter() {
+                    // 空白文字區段代表整行同色（純文字檔的快取表示法）
+                    if sp.text.is_empty() {
+                        line.push_body(text, Some(sp.color_rgb), opts);
+                    } else {
+                        line.push_body(&sp.text, Some(sp.color_rgb), opts);
+                    }
                 }
             }
             if opts.end_of_line {

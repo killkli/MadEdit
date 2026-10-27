@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 use syntect::highlighting::{
@@ -17,6 +18,9 @@ const CHECKPOINT_INTERVAL: usize = 32;
 
 /// 需要往前補解析的行數超過此值時，改從目標行附近重新起算（避免大檔跳轉時長時間卡住）
 const MAX_CATCH_UP_LINES: usize = 20_000;
+
+/// 超長行只解析此前綴（位元組）；超過的部分以前景色顯示，避免每次編輯都對整行跑 syntect
+const MAX_PARSE_LINE_BYTES: usize = 64 * 1024;
 
 /// 單一語法突顯區段
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,7 +177,7 @@ pub struct SyntaxCache {
     is_dark: bool,
     /// checkpoints[i] 為第 i * CHECKPOINT_INTERVAL 行開頭的解析狀態
     checkpoints: Vec<(ParseState, HighlightState)>,
-    lines: HashMap<usize, Vec<HighlightSpan>>,
+    lines: HashMap<usize, Rc<Vec<HighlightSpan>>>,
 }
 
 impl Default for SyntaxCache {
@@ -220,7 +224,7 @@ impl SyntaxCache {
         syntax_name: &str,
         theme_name: &str,
         is_dark: bool,
-    ) -> Vec<Vec<HighlightSpan>> {
+    ) -> Vec<Rc<Vec<HighlightSpan>>> {
         if self.syntax_name != syntax_name || self.theme_name != theme_name || self.is_dark != is_dark {
             self.syntax_name = syntax_name.to_string();
             self.theme_name = theme_name.to_string();
@@ -233,13 +237,16 @@ impl SyntaxCache {
         }
         let fg = self.default_fg();
         let Some(syntax) = find_syntax(syntax_name) else {
-            return lines[first..end]
-                .iter()
-                .map(|l| vec![HighlightSpan::plain(l.clone(), fg)])
-                .collect();
+            // 純文字：以空白文字區段代表整行前景色，並快取起來避免每幀複製整行
+            let mut out = Vec::with_capacity(end - first);
+            for l in first..end {
+                let cached = self.lines.entry(l).or_insert_with(|| Rc::new(vec![HighlightSpan::plain(String::new(), fg)]));
+                out.push(Rc::clone(cached));
+            }
+            return out;
         };
         if (first..end).all(|l| self.lines.contains_key(&l)) {
-            return (first..end).map(|l| self.lines[&l].clone()).collect();
+            return (first..end).map(|l| Rc::clone(&self.lines[&l])).collect();
         }
 
         // 逐行結果快取只需涵蓋最近看過的範圍，過大時清空避免記憶體無限成長
@@ -285,7 +292,16 @@ impl SyntaxCache {
                 self.checkpoints.push((parse.clone(), hl.clone()));
             }
             let text = &lines[line_no];
-            let with_nl = format!("{}\n", text);
+            // 超長行只解析前綴（在 UTF-8 字元邊界截斷），其餘字元沿用前景色
+            let with_nl = if text.len() <= MAX_PARSE_LINE_BYTES {
+                format!("{}\n", text)
+            } else {
+                let mut cut = MAX_PARSE_LINE_BYTES;
+                while !text.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                format!("{}\n", &text[..cut])
+            };
             let ops = parse.parse_line(&with_nl, ps).unwrap_or_default();
             if line_no >= first {
                 let mut spans = Vec::new();
@@ -303,9 +319,11 @@ impl SyntaxCache {
                     });
                 }
                 if spans.is_empty() {
-                    spans.push(HighlightSpan::plain(text.clone(), fg));
+                    // 全行同色：空白文字代表「整行以前景色顯示」
+                    spans.push(HighlightSpan::plain(String::new(), fg));
                 }
-                self.lines.insert(line_no, spans.clone());
+                let spans = Rc::new(spans);
+                self.lines.insert(line_no, Rc::clone(&spans));
                 out.push(spans);
             } else {
                 // 只推進突顯狀態，不產生區段
@@ -327,6 +345,34 @@ mod tests {
         assert_eq!(detect_syntax(Path::new("a.py"), ""), "Python");
         assert_eq!(detect_syntax(Path::new("script"), "#!/bin/bash"), "Bourne Again Shell (bash)");
         assert_eq!(detect_syntax(Path::new("notes.unknownext"), "hello"), PLAIN_TEXT);
+    }
+
+    #[test]
+    fn test_long_line_only_parses_prefix() {
+        // 超過 MAX_PARSE_LINE_BYTES 的行只解析前綴，不應 panic，且區段文字總長不超過行長
+        let long = format!("let s = \"{}\";", "x".repeat(MAX_PARSE_LINE_BYTES * 2));
+        let lines = vec!["fn main() {".to_string(), long, "}".to_string()];
+        let mut cache = SyntaxCache::default();
+        let out = cache.highlight(&lines, 0, 3, "Rust", "InspiredGitHub", false);
+        assert_eq!(out.len(), 3);
+        let text_chars: usize = out[1].iter().map(|s| s.text.chars().count()).sum();
+        assert!(text_chars <= MAX_PARSE_LINE_BYTES, "超長行只突顯前綴");
+        assert!(text_chars <= lines[1].chars().count());
+    }
+
+    #[test]
+    fn test_plain_text_spans_are_cached_and_empty() {
+        let lines = vec!["just text".to_string(), "更多文字".to_string()];
+        let mut cache = SyntaxCache::default();
+        let first = cache.highlight(&lines, 0, 2, PLAIN_TEXT, "InspiredGitHub", false);
+        assert_eq!(first.len(), 2);
+        for line in &first {
+            assert_eq!(line.len(), 1);
+            assert!(line[0].text.is_empty(), "純文字以空白區段代表整行前景色");
+        }
+        // 第二次呼叫走快取，結果一致
+        let again = cache.highlight(&lines, 0, 2, PLAIN_TEXT, "InspiredGitHub", false);
+        assert_eq!(first, again);
     }
 
     #[test]
