@@ -1207,7 +1207,7 @@ mod tests {
     fn test_scroll_resyncs_after_image_load_with_same_editor_line() {
         use egui_kittest::kittest::Queryable;
         let path = std::env::temp_dir().join(format!("madedit-image-reflow-{}.png", std::process::id()));
-        let uri = format!("file://{}", path.display());
+        let uri = image_uri(&path.to_string_lossy(), None);
         let text = format!("![圖](<{uri}>)\n\n{}", (0..100).map(|i| format!("## 標題 {i}\n\n段落 {i}\n\n")).collect::<String>());
         let mut h = preview_harness(text, 82);
         h.run_steps(5);

@@ -129,6 +129,133 @@ fn benchmark_markdown_preview_ui() {
     report("輸入內文與更新預覽", edit);
 }
 
+/// 以含超長單行的文件量測開檔、輸入、移動游標、選取與捲動的畫面更新耗時；不含原生視窗與 GPU 呈現。
+/// 執行：MADEDIT_LONGLINE_BENCH_FILE=文件 cargo test --release benchmark_long_line_ -- --ignored --nocapture
+#[test]
+#[ignore]
+fn benchmark_long_line_editing() {
+    use std::time::{Duration, Instant};
+
+    use crate::core::settings::WrapMode;
+
+    let path = std::path::PathBuf::from(std::env::var_os("MADEDIT_LONGLINE_BENCH_FILE").expect("請設定 MADEDIT_LONGLINE_BENCH_FILE"));
+
+    fn samples(wrap: WrapMode, path: &std::path::Path) {
+        let mut open = Vec::new();
+        let mut typing = Vec::new();
+        let mut caret = Vec::new();
+        let mut select = Vec::new();
+        let mut scroll = Vec::new();
+        let mut click = Vec::new();
+        for sample in 0..6 {
+            let start = Instant::now();
+            let mut h = Harness::builder().allow_missing_glyphs().with_size([1400.0, 900.0]).build_eframe(|cc| {
+                let mut app = App::new(cc, vec![path.to_path_buf()], None);
+                app.settings.wrap_mode = wrap;
+                app
+            });
+            h.run_steps(3);
+            if sample >= 1 {
+                open.push(start.elapsed());
+            }
+            for _ in 0..8 {
+                let t = Instant::now();
+                h.event(Event::Text("x".into()));
+                h.run_steps(1);
+                if sample >= 1 {
+                    typing.push(t.elapsed());
+                }
+            }
+            let t = Instant::now();
+            h.key_press(Key::End);
+            h.run_steps(1);
+            if sample >= 1 {
+                caret.push(t.elapsed());
+            }
+            let t = Instant::now();
+            h.key_press_modifiers(Modifiers::SHIFT, Key::End);
+            h.run_steps(1);
+            if sample >= 1 {
+                select.push(t.elapsed());
+            }
+            let t = Instant::now();
+            for _ in 0..5 {
+                h.key_press(Key::PageDown);
+                h.run_steps(1);
+            }
+            if sample >= 1 {
+                scroll.push(t.elapsed());
+            }
+            let t = Instant::now();
+            h.hover_at(eframe::egui::pos2(600.0, 400.0));
+            h.drag_at(eframe::egui::pos2(600.0, 400.0));
+            h.drop_at(eframe::egui::pos2(600.0, 400.0));
+            h.run_steps(1);
+            if sample >= 1 {
+                click.push(t.elapsed());
+            }
+            assert!(h.state_mut().doc().version > 0, "量測的文件必須實際開啟並編輯");
+        }
+        let report = |name: &str, mut v: Vec<Duration>| {
+            v.sort();
+            println!("{name}: median={:.2} ms p90={:.2} ms", v[v.len() / 2].as_secs_f64() * 1000.0, v[v.len() * 9 / 10].as_secs_f64() * 1000.0);
+        };
+        println!("--- {wrap:?} ---");
+        report("open+render", open);
+        report("keystroke", typing);
+        report("End caret", caret);
+        report("Shift+End select", select);
+        report("5x PageDown", scroll);
+        report("click", click);
+    }
+
+    samples(WrapMode::NoWrap, &path);
+    samples(WrapMode::ByWindow, &path);
+}
+
+/// 自動換行下超長行的視覺列、游標與編輯（涵蓋換行快取與逐行繪製重構）
+#[test]
+fn test_wrapped_long_line_rows_caret_and_edit() {
+    use crate::core::settings::WrapMode;
+    use crate::core::editor::TextPosition;
+    let mut h = harness();
+    h.state_mut().settings.wrap_mode = WrapMode::ByWindow;
+    h.event(Event::Paste(format!("{}\n短行", "x".repeat(2000))));
+    h.run_steps(3);
+    let rows = {
+        let tab = h.state_mut().tab_mut();
+        tab.view.row_count(&tab.doc.editor)
+    };
+    assert!(rows > 3, "2000 字的行自動換行後必須佔多個視覺列，實際 {rows}");
+    assert_eq!(h.state().doc().editor.lines.len(), 2, "換行不會產生新的邏輯行");
+
+    // 行首往下：應走到同一邏輯行的下一個視覺列，而非第二行
+    h.state_mut().doc_mut().editor.set_caret(0, 0);
+    h.run_steps(2);
+    h.key_press(Key::ArrowDown);
+    h.run_steps(2);
+    let head = h.state().doc().editor.selection.head;
+    assert_eq!(head.line, 0, "第一個視覺列的下方仍是同一行");
+    assert!(head.col > 0);
+
+    // 行尾（第 2000 字）往下：應落到短行行尾（水平移動重設記憶欄位）
+    h.state_mut().doc_mut().editor.set_caret(0, 2000);
+    h.run_steps(2);
+    h.key_press(Key::ArrowLeft);
+    h.key_press(Key::ArrowRight);
+    h.run_steps(2);
+    h.key_press(Key::ArrowDown);
+    h.run_steps(2);
+    assert_eq!(h.state().doc().editor.selection.head, TextPosition::new(1, 2), "行尾的下方是短行行尾");
+
+    // 在超長行中間輸入：換行快取增量更新，內容與游標正確
+    h.state_mut().doc_mut().editor.set_caret(0, 1000);
+    h.run_steps(1);
+    type_text(&mut h, "abc");
+    assert_eq!(h.state().doc().editor.lines[0].chars().count(), 2003);
+    assert_eq!(h.state().doc().editor.selection.head, TextPosition::new(0, 1003));
+}
+
 #[test]
 fn test_typing_enter_backspace_and_undo() {
     let mut h = harness();
@@ -1393,6 +1520,7 @@ fn test_preview_tab_close_button_is_named_and_closes_only_the_preview() {
     h.state_mut().doc_mut().syntax = "Markdown".into();
     h.state_mut().doc_mut().editor.set_text("# Title\n");
     h.state_mut().doc_mut().version += 1;
+    let original = h.state_mut().doc_mut().text();
     h.state_mut().pending.push(C::PreviewMarkdown);
     h.run_steps(3);
     h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Tab);
@@ -1403,7 +1531,7 @@ fn test_preview_tab_close_button_is_named_and_closes_only_the_preview() {
     let app = h.state_mut();
     assert!(app.tab_mut().md_preview.is_none());
     assert_eq!(app.tabs.len(), 1, "the document stays open");
-    assert_eq!(app.doc_mut().text(), "# Title\n");
+    assert_eq!(app.doc_mut().text(), original);
 }
 
 /// Where the buttons a screen reader would announce as nothing or as symbols only ("×", "−")
@@ -1575,4 +1703,33 @@ fn test_recent_files_filter_takes_focus_after_another_dialog_replaced_it() {
     h.run_steps(3);
     type_text(&mut h, "zzz");
     assert!(matches!(&h.state_mut().dialog, Some(Dialog::RecentFiles { filter }) if filter == "zzz"));
+}
+/// 含全形字的超長行水平捲動：視窗起點的位元組格線會落在多位元組字元中間，不得 panic
+#[test]
+fn test_cjk_long_line_horizontal_scroll() {
+    let mut h = harness();
+    // 一長串全形字（字串）：視窗起點會落在多位元組字元中間
+    let line = format!("let s = \"{}\";", "中文內容測試".repeat(4_000));
+    {
+        let doc = h.state_mut().doc_mut();
+        doc.syntax = "Rust".into();
+        doc.syntax_cache.clear();
+    }
+    h.event(Event::Paste(line.clone()));
+    h.run_steps(3);
+    let chars = h.state().doc().editor.line_char_count(0);
+    assert_eq!(chars, line.chars().count());
+    // 逐段把游標移到行內各處：畫面捲動會推進可見視窗，沿途每個視窗都要能切片與解析
+    for step in 0..=32 {
+        let col = chars * step / 32;
+        h.state_mut().doc_mut().editor.set_caret(0, col);
+        h.state_mut().tab_mut().view.ensure_visible = true;
+        h.run_steps(1);
+        assert_eq!(h.state().doc().editor.selection.head.col, col);
+    }
+    // 回到行首：視窗反向移動也不得 panic
+    h.state_mut().doc_mut().editor.set_caret(0, 0);
+    h.state_mut().tab_mut().view.ensure_visible = true;
+    h.run_steps(2);
+    assert_eq!(h.state().doc().editor.lines.len(), 1, "水平捲動不會產生新行");
 }

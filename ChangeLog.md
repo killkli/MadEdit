@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-27
+
 ### Added
 - Single instance: launching again or opening files from File Explorer sends files to the existing window, opens them in tabs, and restores and focuses the window. Reopening a file selects its existing tab. Different configuration directories remain independent, and screenshot tests run separately.
 - The UI theme can follow the system or be set to Light or Dark. The View menu, the toolbar and the Options dialog all apply it, and dialogs, banners and the Markdown preview follow it.
@@ -27,6 +29,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - While Options is open, F1 switches it to the Keys page, and commands that open other dialogs (such as F9) no longer replace it; the status bar asks to close Options first, so unapplied settings are kept.
 - OK and Apply in Options write back only the settings changed in the dialog, so other changes made while it was open (recent files, View menu toggles, font zoom, the personal dictionary and so on) are no longer reverted.
 - Switching page or command after pressing Add Shortcut on the Keys page cancels the capture instead of silently assigning the next key to the previous command.
+
+### Changed
+- Syntax highlighting for very long lines now tokenizes only the visible part of a line, uses the Oniguruma regex backend, and keeps each line's layout across frames. On a 1.99 MB sample whose longest line is 158 KB: keystroke 65 → 6 ms, End key 61 → 22 ms, PageDown per frame 119 → 1 ms, open plus first render 517 → 131 ms. The visible part at the end of a long line is now coloured too (only the first 16 KB used to be), and lines with full-width characters no longer crash while scrolling. Generate the sample with `python3 scripts/make_example_js.py`; see `docs/adr/0012-long-line-syntax-highlighting.md`.
 
 ### Fixed
 - Markdown preview now opens in a separate tab in the main window instead of a separate native window. Reopening selects the existing preview, and closing it keeps the source document and unsaved changes intact. Side-by-side and top-and-bottom layouts remain available.
@@ -128,7 +133,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 - Initial project. The Slint version implemented encoding support, a custom-drawn editor, a large-file engine, rectangular selection, find and replace, syntax highlighting, go-to-line, line endings, bookmarks, external change monitoring and the classic UI.
 
-[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/tenyi/MadEdit/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/tenyi/MadEdit/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/tenyi/MadEdit/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/tenyi/MadEdit/compare/v0.5.24...v0.6.0

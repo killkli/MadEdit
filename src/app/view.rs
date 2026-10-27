@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::{i18n, menus};
 use crate::app::commands::C;
 use crate::app::fonts::EDITOR_FAMILY;
+use crate::core::content_hash;
 use crate::core::document::{Document, EditKind};
 use crate::core::editor::{
     char_col_to_visual_col, char_visual_columns, tab_columns_at, tab_size, visual_col_to_char_col,
@@ -88,22 +89,53 @@ pub fn line_xs(line: &str, fixed: bool, widths: &CharWidths) -> Vec<f32> {
     xs
 }
 
+/// 水平可見的字元範圍 `[起, 迄)`，左右各留邊界以減少捲動時重解析
+///
+/// `xs` 是整行的每字元 x 座標（單調遞增），因此可用二分搜尋取得視窗邊界。
+fn visible_chars(xs: &[f32], row_start: usize, row_end: usize, scroll_x: f32, width: f32, rtl: bool) -> (usize, usize) {
+    const MARGIN: f32 = 64.0;
+    // 右到左模式下行首貼齊右緣，可見範圍對應的 x 區間會鏡射
+    let (left, right) = if rtl {
+        (scroll_x - width - MARGIN, scroll_x + MARGIN)
+    } else {
+        (scroll_x - MARGIN, scroll_x + width + MARGIN)
+    };
+    let last = row_end.min(xs.len().saturating_sub(1));
+    let first = row_start.min(last);
+    // 視覺列以列首字元為 x 原點（自動換行時同一行的每一列都從 0 起算）
+    let base = xs[first];
+    let lo = xs.partition_point(|x| *x < left + base).clamp(first, last);
+    let hi = xs.partition_point(|x| *x <= right + base).clamp(lo, last);
+    (lo, hi)
+}
+
 // ── 自動換行快取 ────────────────────────────────────────────────
 
 #[derive(Clone, PartialEq)]
 struct WrapKey {
     doc_id: u64,
-    version: u64,
     width_bits: u32,
     fixed: bool,
     font: (u32, String),
     tab: usize,
 }
 
+/// 單一邏輯行的換行結果（以內容雜湊判斷是否需要重算）
+#[derive(Clone)]
+struct LineWrap {
+    hash: u64,
+    /// 換行位置（字元索引，不含 0）
+    breaks: Vec<u32>,
+}
+
 /// 自動換行後的視覺列：(行號, 起始字元)
 #[derive(Default)]
 pub struct WrapCache {
     key: Option<WrapKey>,
+    /// 已完成各行雜湊檢查的文件版本；版本相同時直接沿用快取
+    checked_version: Option<u64>,
+    /// 與 `doc.editor.lines` 對齊的各行換行結果；編輯時只重算內容變動的行
+    per_line: Vec<Option<LineWrap>>,
     rows: Vec<(u32, u32)>,
     line_first_row: Vec<u32>,
 }
@@ -158,6 +190,28 @@ struct SpellContext {
 /// 對應括號快取的鍵與值
 type BraceCache = ((TextPosition, u64), Option<(TextPosition, TextPosition)>);
 
+/// 一行在本幀共用的版面資料：字元陣列與每字元起始 x
+type LineLayout = std::rc::Rc<(Vec<char>, Vec<f32>)>;
+
+/// 每幀各邏輯行的版面快取；超長行只量測一次，繪製與滑鼠／游標計算共用
+#[derive(Default)]
+struct FrameLayout {
+    /// 本幀的文件版本（由 [`ViewState::begin_frame`] 設定）
+    version: u64,
+    /// 版面參數（等寬格網、字型、縮排）：改變時整份清空
+    params: Option<(bool, (u32, String), usize)>,
+    lines: HashMap<usize, LayoutEntry>,
+}
+
+/// 一行本幀的版面，附內容版本與雜湊以便跨幀沿用
+struct LayoutEntry {
+    version: u64,
+    hash: u64,
+    layout: LineLayout,
+    /// 本幀是否用到；上一幀沒用到就丟棄（記憶體只保留看得到的行）
+    used: bool,
+}
+
 pub struct ViewState {
     /// 最上方顯示的視覺列
     pub top_row: usize,
@@ -179,8 +233,10 @@ pub struct ViewState {
     pub ensure_visible: bool,
     /// 對應括號快取：(游標位置, 文件版本) → 括號配對
     brace_cache: Option<BraceCache>,
-    spell_cache: HashMap<String, Vec<(usize, usize)>>,
+    spell_cache: HashMap<u64, Vec<(usize, usize)>>,
     spell_ctx: Option<SpellContext>,
+    /// 本幀各行版面快取（繪製、滑鼠與游標計算共用）
+    frame: std::cell::RefCell<FrameLayout>,
     pub text_rect: Rect,
     blink_start: f64,
 }
@@ -202,6 +258,7 @@ impl Default for ViewState {
             brace_cache: None,
             spell_cache: HashMap::new(),
             spell_ctx: None,
+            frame: std::cell::RefCell::default(),
             text_rect: Rect::NOTHING,
             blink_start: 0.0,
         }
@@ -234,7 +291,7 @@ impl Layout {
 }
 
 impl ViewState {
-    /// 重建換行快取（設定、寬度或內容改變時）
+    /// 重建換行快取。設定、寬度或字型改變時整份重算；內容改變時只重算雜湊不同的行
     fn update_wrap(&mut self, doc: &Document, lay: &Layout, widths: &CharWidths) {
         if lay.wrap == WrapMode::NoWrap {
             self.wrap.key = None;
@@ -242,27 +299,52 @@ impl ViewState {
         }
         let key = WrapKey {
             doc_id: doc.id,
-            version: doc.version,
             width_bits: lay.wrap_width.to_bits(),
             fixed: lay.fixed,
             font: widths.key.clone(),
             tab: tab_size(),
         };
-        if self.wrap.key.as_ref() == Some(&key) {
-            return;
+        if self.wrap.key.as_ref() != Some(&key) {
+            self.wrap.per_line.clear();
+            self.wrap.checked_version = None;
+            self.wrap.key = Some(key);
         }
         let lines = &doc.editor.lines;
-        self.wrap.rows.clear();
-        self.wrap.line_first_row.clear();
-        for (li, line) in lines.iter().enumerate() {
-            self.wrap.line_first_row.push(self.wrap.rows.len() as u32);
+        if self.wrap.per_line.len() != lines.len() {
+            self.wrap.per_line.resize(lines.len(), None);
+            self.wrap.checked_version = None;
+        }
+        if self.wrap.checked_version == Some(doc.version) {
+            return;
+        }
+        let max_w = lay.wrap_width.max(widths.cell_w * 4.0);
+        for (slot, line) in self.wrap.per_line.iter_mut().zip(lines.iter()) {
+            let hash = content_hash(line);
+            if slot.as_ref().is_some_and(|w| w.hash == hash) {
+                continue;
+            }
             let chars: Vec<char> = line.chars().collect();
             let xs = line_xs(line, lay.fixed, widths);
-            for s in wrap_line(&xs, &chars, lay.wrap_width.max(widths.cell_w * 4.0)) {
-                self.wrap.rows.push((li as u32, s as u32));
+            // wrap_line 的第一個起始是 0，breaks 只存後續斷行點（串接時補回行首 0）
+            let breaks = wrap_line(&xs, &chars, max_w)
+                .into_iter()
+                .skip(1)
+                .map(|i| i as u32)
+                .collect();
+            *slot = Some(LineWrap { hash, breaks });
+        }
+        self.wrap.checked_version = Some(doc.version);
+        // 串接各行的視覺列索引
+        self.wrap.rows.clear();
+        self.wrap.line_first_row.clear();
+        for (li, w) in self.wrap.per_line.iter().enumerate() {
+            self.wrap.line_first_row.push(self.wrap.rows.len() as u32);
+            let Some(w) = w else { continue };
+            self.wrap.rows.push((li as u32, 0));
+            for &b in &w.breaks {
+                self.wrap.rows.push((li as u32, b));
             }
         }
-        self.wrap.key = Some(key);
     }
 
     /// 一行在自動換行時的斷行位置（字元索引，不含 0）；未自動換行時為空
@@ -342,11 +424,71 @@ impl ViewState {
         r
     }
 
+    /// 每幀開始：丟掉上一幀沒用到的行版面，更新文件版本與版面參數
+    ///
+    /// 超長行的版面（字元陣列 + 每字元 x 座標）建一次就要數毫秒，因此跨幀沿用：
+    /// 只有真的被改到的行（內容雜湊不同）才重建。
+    pub fn begin_frame(&mut self, version: u64, fixed: bool, widths: &CharWidths) {
+        let mut frame = self.frame.borrow_mut();
+        frame.lines.retain(|_, e| e.used);
+        for e in frame.lines.values_mut() {
+            e.used = false;
+        }
+        let params = (fixed, widths.key.clone(), tab_size());
+        if frame.params.as_ref() != Some(&params) {
+            frame.lines.clear();
+            frame.params = Some(params);
+        }
+        frame.version = version;
+    }
+
+    /// 取得一行本幀的版面資料（字元陣列與每字元 x 座標），同一幀內共用
+    fn line_layout(&self, ed: &EditorState, line: usize, fixed: bool, widths: &CharWidths) -> LineLayout {
+        let mut frame = self.frame.borrow_mut();
+        let version = frame.version;
+        if let Some(e) = frame.lines.get_mut(&line) {
+            // 版本未變＝內容沒被編輯；版本變了則以內容雜湊確認這一行是否真的改了
+            if e.version == version || e.hash == content_hash(&ed.lines[line]) {
+                e.version = version;
+                e.used = true;
+                return std::rc::Rc::clone(&e.layout);
+            }
+        }
+        let hash = content_hash(&ed.lines[line]);
+        let layout: LineLayout = std::rc::Rc::new((ed.lines[line].chars().collect(), line_xs(&ed.lines[line], fixed, widths)));
+        frame.lines.insert(line, LayoutEntry { version, hash, layout: std::rc::Rc::clone(&layout), used: true });
+        layout
+    }
+
+    /// 清除行版面快取（內容編輯後必須呼叫）
+    pub fn clear_frame_layout(&self) {
+        self.frame.borrow_mut().lines.clear();
+    }
+
+    /// 視覺列所屬的邏輯行
+    fn row_line(&self, ed: &EditorState, row: usize) -> usize {
+        if !self.wrapped() {
+            row.min(ed.lines.len().saturating_sub(1))
+        } else {
+            self.wrap.rows[row].0 as usize
+        }
+    }
+
+    /// 視覺列在行內的起始字元
+    fn row_start(&self, _ed: &EditorState, row: usize) -> usize {
+        if !self.wrapped() { 0 } else { self.wrap.rows[row].1 as usize }
+    }
+
     /// 某視覺列在指定 x（相對列首）的字元位置
     fn pos_at_x(&self, ed: &EditorState, row: usize, x: f32, lay: &Layout, widths: &CharWidths) -> TextPosition {
         let row = row.min(self.row_count(ed).saturating_sub(1));
-        let (line, start, end) = self.row_info(ed, row);
-        let xs = line_xs(&ed.lines[line], lay.fixed, widths);
+        let line = self.row_line(ed, row);
+        let start = self.row_start(ed, row);
+        let end = match self.wrap.rows.get(row + 1) {
+            Some(&(l, s)) if self.wrapped() && l as usize == line => s as usize,
+            _ => ed.line_char_count(line),
+        };
+        let xs = &self.line_layout(ed, line, lay.fixed, widths).1;
         let x0 = xs[start];
         for i in start..end {
             if x < (xs[i] + xs[i + 1]) / 2.0 - x0 {
@@ -359,8 +501,9 @@ impl ViewState {
     /// 游標位置的 x（相對所在視覺列的列首）
     fn x_of(&self, ed: &EditorState, pos: TextPosition, lay: &Layout, widths: &CharWidths) -> f32 {
         let row = self.row_of(pos);
-        let (line, start, _) = self.row_info(ed, row);
-        let xs = line_xs(&ed.lines[line], lay.fixed, widths);
+        let line = self.row_line(ed, row);
+        let start = self.row_start(ed, row);
+        let xs = &self.line_layout(ed, line, lay.fixed, widths).1;
         xs[pos.col.min(xs.len() - 1)] - xs[start]
     }
 
@@ -751,13 +894,23 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
     let mut lay = Layout::new(settings, doc.mode);
     let ctx = ui.ctx().clone();
 
-    // 量測可見範圍的字元（含行號與控制字元符號）
+    // 量測可見範圍的字元（含行號與控制字元符號）；取樣有上限，避免超長行每幀掃整份文件
     let first_guess = view.top_row.min(doc.editor.lines.len().saturating_sub(1));
     {
-        let sample = doc.editor.lines.iter().skip(first_guess.saturating_sub(5)).take(200).flat_map(|l| l.chars());
+        let mut budget = 4096usize;
+        let mut sample: Vec<char> = Vec::new();
+        for line in doc.editor.lines.iter().skip(first_guess.saturating_sub(5)).take(200) {
+            if budget == 0 {
+                break;
+            }
+            let take = budget.min(512);
+            sample.extend(line.chars().take(take));
+            sample.push(' ');
+            budget = budget.saturating_sub(take + 1);
+        }
         let extra = "0123456789·»↵ ".chars();
         let pre = view.preedit.clone().unwrap_or_default();
-        env.widths.prepare(&ctx, &lay.font, env.editor_family, sample.chain(extra).chain(pre.chars().collect::<Vec<_>>()));
+        env.widths.prepare(&ctx, &lay.font, env.editor_family, sample.into_iter().chain(extra).chain(pre.chars()));
     }
     let widths: &CharWidths = env.widths;
     lay.row_h = (widths.text_h * settings.line_spacing.clamp(100, 250) as f32 / 100.0).round().max(1.0);
@@ -800,6 +953,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         WrapMode::ByColumn => settings.wrap_column.max(1) as f32 * widths.cell_w,
     };
     view.update_wrap(doc, &lay, widths);
+    view.begin_frame(doc.version, lay.fixed, widths);
     view.visible_rows = ((text_rect.height() / lay.row_h).floor() as usize).max(1);
     doc.editor.viewport.visible_line_count = view.visible_rows;
 
@@ -869,6 +1023,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             apply_action(doc, view, &a, settings, widths, &lay);
             // 編輯後立即重建換行快取，後續動作與本幀繪製才不會用舊的斷行位置索引新內容
             view.update_wrap(doc, &lay, widths);
+            view.clear_frame_layout();
             out.actions.push(a);
         }
         if doc.mode == EditMode::Column && !doc.editor.selection.is_block() {
@@ -1090,6 +1245,26 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
     let last_row = (first_row + vis + 1).min(total_rows);
     let first_line = view.row_info(&doc.editor, first_row).0;
     let last_line = if last_row > first_row { view.row_info(&doc.editor, last_row - 1).0 } else { first_line };
+    // 每行水平可見的字元範圍：超長行只解析這段視窗，成本與行長無關
+    let mut windows: Vec<(usize, usize, usize)> = Vec::with_capacity(last_line + 1 - first_line);
+    for row in first_row..last_row {
+        let line = view.row_line(&doc.editor, row);
+        let start = view.row_start(&doc.editor, row);
+        let layout = view.line_layout(&doc.editor, line, lay.fixed, widths);
+        let row_end = if row + 1 < last_row && view.row_line(&doc.editor, row + 1) == line {
+            view.row_start(&doc.editor, row + 1)
+        } else {
+            layout.0.len()
+        };
+        let (lo, hi) = visible_chars(&layout.1, start, row_end, view.scroll_x, text_rect.width(), lay.rtl);
+        match windows.last_mut() {
+            Some(w) if w.0 == line => {
+                w.1 = w.1.min(lo);
+                w.2 = w.2.max(hi);
+            }
+            _ => windows.push((line, lo, hi)),
+        }
+    }
     let spans = doc.syntax_cache.highlight(
         &doc.editor.lines,
         first_line,
@@ -1097,7 +1272,12 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         &doc.syntax,
         env.theme_name,
         env.is_dark,
+        &windows,
     );
+    if doc.syntax_cache.has_pending() {
+        // 分時解析尚未完成：要求下一幀續跑，把其餘行補上顏色
+        ctx.request_repaint();
+    }
     let ed = &doc.editor;
     let sel = ed.selection;
     let block_bounds = sel.is_block().then(|| sel.visual_bounds(ed));
@@ -1118,15 +1298,54 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         None
     };
 
-    let mut line_xs_cache: HashMap<usize, Vec<f32>> = HashMap::new();
     let mut max_w = 0.0f32;
     let control_color = if env.is_dark { Color32::from_rgb(90, 110, 120) } else { Color32::from_rgb(170, 190, 200) };
     let eol_color = Color32::from_rgb(80, 170, 80);
-    for row in first_row..last_row {
-        let (line, start, end) = view.row_info(ed, row);
+    // 可見列依邏輯行分組：每行只建立一次字元與顏色版面，超長行不會逐視覺列重建
+    let mut spell_ranges: Vec<(usize, usize)> = Vec::new();
+    let mut row_iter = first_row;
+    while row_iter < last_row {
+        let line = view.row_line(ed, row_iter);
+        let layout = view.line_layout(ed, line, lay.fixed, widths);
+        let chars = &layout.0;
+        let xs = &layout.1;
+        let char_count = chars.len();
+        // 拼字檢查每行一次（以內容雜湊快取，不複製整行文字當鍵）
+        spell_ranges.clear();
+        if settings.spell_check && let Some(sc) = env.spell {
+            let hash = content_hash(&ed.lines[line]);
+            if let Some(r) = view.spell_cache.get(&hash) {
+                spell_ranges = r.clone();
+            } else {
+                if view.spell_cache.len() > 4000 {
+                    view.spell_cache.clear();
+                }
+                let r = sc.misspelled_ranges(&ed.lines[line]);
+                view.spell_cache.insert(hash, r.clone());
+                spell_ranges = r;
+            }
+        }
+        // 每字元顏色：單一空白文字區段（如純文字檔）直接使用前景色，免去逐字表
+        let line_spans: &[HighlightSpan] = spans.get(line - first_line).map(|v| v.as_slice()).unwrap_or(&[]);
+        let colors: Option<Vec<Color32>> = if line_spans.len() <= 1 && line_spans.first().is_none_or(|s| s.text.is_empty()) {
+            None
+        } else {
+            let mut v: Vec<Color32> = Vec::with_capacity(chars.len());
+            for sp in line_spans {
+                if sp.skip_chars > 0 {
+                    // 超長行只解析可見視窗：視窗之前的字元以前景色顯示
+                    v.resize(v.len() + sp.skip_chars, fg);
+                }
+                let c = rgb(sp.color_rgb);
+                v.extend(std::iter::repeat_n(c, sp.text.chars().count()));
+            }
+            v.resize(chars.len(), fg);
+            Some(v)
+        };
+        let color_at = |i: usize| colors.as_ref().map_or(fg, |v| v[i]);
+        let mut draw_row = |row: usize, start: usize, end: usize| {
         let y = text_rect.top() + (row - first_row) as f32 * lay.row_h;
         let text_y = y + (lay.row_h - widths.text_h) / 2.0;
-        let xs = line_xs_cache.entry(line).or_insert_with(|| line_xs(&ed.lines[line], lay.fixed, widths));
         let x0 = xs[start];
         let row_w = xs[end] - x0;
         max_w = max_w.max(row_w);
@@ -1152,7 +1371,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             if line >= s.line && line <= e.line {
                 let a = if line == s.line { s.col.max(start) } else { start };
                 let bcol = if line == e.line { e.col.min(end) } else { end };
-                let last_row_of_line = end == ed.line_char_count(line);
+                let last_row_of_line = end == char_count;
                 if a <= bcol && (a < bcol || (line < e.line && last_row_of_line)) {
                     let xa = xs[a] - x0;
                     let mut xb = xs[bcol] - x0;
@@ -1165,7 +1384,6 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             }
         }
 
-        let chars: Vec<char> = ed.lines[line].chars().collect();
         // 雙擊標示的相同字詞
         if let Some(w) = view.highlight_word.as_deref() {
             let wc: Vec<char> = w.chars().collect();
@@ -1207,13 +1425,6 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         }
 
         // 文字：依語法色彩分段；等寬模式下字寬與格網相符的連續字元合併繪製
-        let line_spans: &[HighlightSpan] = spans.get(line - first_line).map(|v| v.as_slice()).unwrap_or(&[]);
-        let mut colors_per_char: Vec<Color32> = Vec::with_capacity(chars.len());
-        for sp in line_spans {
-            let c = rgb(sp.color_rgb);
-            colors_per_char.extend(std::iter::repeat_n(c, sp.text.chars().count()));
-        }
-        colors_per_char.resize(chars.len(), fg);
         let mut run = String::new();
         let mut run_x = 0.0f32;
         let mut run_color = fg;
@@ -1232,7 +1443,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
                 flush(&mut run, run_x, run_color);
                 continue;
             }
-            let color = colors_per_char[i];
+            let color = color_at(i);
             if c == '\t' || c == ' ' || c == '\u{3000}' {
                 flush(&mut run, run_x, run_color);
                 let show = if c == '\t' { settings.show_tab } else { settings.show_space };
@@ -1274,28 +1485,14 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         flush(&mut run, run_x, run_color);
 
         // 行尾符號
-        if settings.show_eol && end == ed.line_char_count(line) && line + 1 < ed.lines.len() {
+        if settings.show_eol && end == char_count && line + 1 < ed.lines.len() {
             let px = sx(row_w, widths.get('↵'));
             text_painter.text(Pos2::new(px, text_y), Align2::LEFT_TOP, "↵", lay.font.clone(), eol_color);
         }
 
         // 拼字錯誤底線
-        if settings.spell_check
-            && let Some(sc) = env.spell
-        {
-            let text = &ed.lines[line];
-            let ranges = match view.spell_cache.get(text) {
-                Some(r) => r.clone(),
-                None => {
-                    if view.spell_cache.len() > 4000 {
-                        view.spell_cache.clear();
-                    }
-                    let r = sc.misspelled_ranges(text);
-                    view.spell_cache.insert(text.clone(), r.clone());
-                    r
-                }
-            };
-            for (a, b) in ranges {
+        for &(a, b) in &spell_ranges {
+            {
                 let (a, b) = (a.max(start), b.min(end));
                 if a < b {
                     let xa = xs[a] - x0;
@@ -1381,6 +1578,19 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
                     should_interrupt_composition: false,
                 })
             });
+        }
+        };
+        // 這一行的每個可見視覺列
+        while row_iter < last_row && view.row_line(ed, row_iter) == line {
+            let row = row_iter;
+            row_iter += 1;
+            let start = view.row_start(ed, row);
+            let end = if row_iter < last_row && view.row_line(ed, row_iter) == line {
+                view.row_start(ed, row_iter)
+            } else {
+                char_count
+            };
+            draw_row(row, start, end);
         }
     }
     if focused && (head_row < first_row || head_row >= last_row) {
@@ -1504,9 +1714,118 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             ed.select_range(TextPosition::new(line, s), TextPosition::new(line, e));
             ed.insert_text(&word);
         });
+        view.clear_frame_layout();
         view.spell_cache.clear();
     }
     if out.add_word.is_some() {
         view.spell_cache.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn widths() -> CharWidths {
+        let mut w = CharWidths::default();
+        w.key = (f32::to_bits(14.0), "test".to_string());
+        w.cell_w = 10.0;
+        w.space_w = 10.0;
+        w.text_h = 14.0;
+        w
+    }
+
+    fn layout(wrap: WrapMode) -> Layout {
+        let mut lay = Layout::new(&Settings::default(), EditMode::Text);
+        lay.wrap = wrap;
+        lay.wrap_width = 100.0;
+        lay
+    }
+
+    #[test]
+    fn content_hash_detects_content_changes() {
+        assert_eq!(content_hash("hello"), content_hash("hello"));
+        assert_ne!(content_hash("hello"), content_hash("hellp"));
+        // 長度相同但內容不同、以及長度不同的情況都要區分
+        assert_ne!(content_hash("abc"), content_hash("abd"));
+        assert_ne!(content_hash("abc"), content_hash("abcd"));
+    }
+
+    #[test]
+    fn wrap_cache_matches_full_rebuild_after_edit() {
+        let long = "x".repeat(5000);
+        let mut doc = Document::default();
+        doc.editor = EditorState::from_text(&format!("hello world\n{long}\ntiny\n"));
+        let mut view = ViewState::default();
+        let lay = layout(WrapMode::ByWindow);
+        let w = widths();
+        view.update_wrap(&doc, &lay, &w);
+        let rows_before = view.wrap.rows.clone();
+
+        // 只編輯中間的超長行：其他行的換行結果應沿用，整體結果與全部重算一致
+        let hint = 1..2;
+        doc.edit(crate::core::document::EditKind::Typing, hint, |ed| {
+            ed.lines[1] = "y".repeat(300);
+        });
+        view.update_wrap(&doc, &lay, &w);
+
+        let mut fresh = ViewState::default();
+        fresh.update_wrap(&doc, &lay, &w);
+        assert_eq!(view.wrap.rows, fresh.wrap.rows, "增量重算必須與全部重算一致");
+        assert_ne!(view.wrap.rows, rows_before, "編輯的行換行結果必須更新");
+        assert_eq!(view.row_count(&doc.editor), fresh.row_count(&doc.editor));
+    }
+
+    #[test]
+    fn wrap_cache_tracks_line_count_changes() {
+        let long = "z".repeat(2000);
+        let mut doc = Document::default();
+        doc.editor = EditorState::from_text(&format!("a\n{long}"));
+        let mut view = ViewState::default();
+        let lay = layout(WrapMode::ByWindow);
+        let w = widths();
+        view.update_wrap(&doc, &lay, &w);
+        let rows_two_lines = view.row_count(&doc.editor);
+
+        doc.edit(crate::core::document::EditKind::Other, 0..1, |ed| {
+            ed.insert_text("b\n");
+        });
+        view.update_wrap(&doc, &lay, &w);
+        assert!(view.row_count(&doc.editor) > rows_two_lines, "插入新行後視覺列必須增加");
+        assert_eq!(view.wrap.line_first_row.len(), doc.editor.lines.len());
+        // 第一行仍從第 0 列開始
+        assert_eq!(view.wrap.rows[0], (0, 0));
+    }
+
+    #[test]
+    fn no_wrap_bypasses_wrap_cache() {
+        let mut doc = Document::default();
+        doc.editor = EditorState::from_text(&"x".repeat(3000));
+        let mut view = ViewState::default();
+        let lay = layout(WrapMode::NoWrap);
+        let w = widths();
+        view.update_wrap(&doc, &lay, &w);
+        assert!(!view.wrapped());
+        assert_eq!(view.row_count(&doc.editor), 1);
+        assert!(view.wrap_breaks(0).is_empty());
+    }
+
+    #[test]
+    fn caret_x_across_wrapped_rows_stays_in_row() {
+        // 每列 10 字（wrap_width = 100, cell_w = 10）：2000 字共 200 列，第 2001 列是短行
+        let mut doc = Document::default();
+        doc.editor = EditorState::from_text(&format!("{}\nab", "x".repeat(2000)));
+        let mut view = ViewState::default();
+        let lay = layout(WrapMode::ByWindow);
+        let w = widths();
+        view.update_wrap(&doc, &lay, &w);
+        assert_eq!(view.row_count(&doc.editor), 201);
+        let pos = TextPosition::new(0, 2000);
+        let row = view.row_of(pos);
+        assert_eq!(row, 199, "行尾在最後一個視覺列");
+        let x = view.x_of(&doc.editor, pos, &lay, &w);
+        assert!((x - 100.0).abs() < 0.01, "最後一列有 10 個字，游標 x 應為 100，實際 {x}");
+        let down = view.pos_at_x(&doc.editor, row + 1, x, &lay, &w);
+        assert_eq!(down, TextPosition::new(1, 2), "帶著記憶欄往下應落在短行行尾");
     }
 }
