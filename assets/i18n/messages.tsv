@@ -269,6 +269,7 @@ btn.save_anyway	Save Anyway	仍要保存	それでも保存	그래도 저장	Tro
 btn.save_utf8	Save as UTF-8	改用 UTF-8 保存	UTF-8 で保存	UTF-8로 저장	Als UTF-8 speichern	Guardar como UTF-8	Enregistrer en UTF-8	Salva come UTF-8	Salvar como UTF-8
 btn.reload_discard	Reload (discard my changes)	重新加载（放弃我的修改）	再読み込み（自分の変更を破棄）	다시 로드(내 변경 버리기)	Neu laden (meine Änderungen verwerfen)	Recargar (descartar mis cambios)	Recharger (abandonner mes modifications)	Ricarica (annulla le mie modifiche)	Recarregar (descartar as minhas alterações)
 btn.close_list	Close List	关闭列表	一覧を閉じる	목록 닫기	Liste schließen	Cerrar lista	Fermer la liste	Chiudi elenco	Fechar lista
+btn.create	Create	创建	作成	만들기	Erstellen	Crear	Créer	Crea	Criar
 banner.modified	The file was modified by another program.	文件已被其他程序修改。	他のプログラムがファイルを変更しました。	다른 프로그램이 파일을 수정했습니다.	Die Datei wurde von einem anderen Programm geändert.	Otro programa ha modificado el archivo.	Un autre programme a modifié le fichier.	Un altro programma ha modificato il file.	Outro programa modificou o ficheiro.
 banner.deleted	The file was deleted or moved by another program.	文件已被其他程序删除或移动。	他のプログラムがファイルを削除または移動しました。	다른 프로그램이 파일을 삭제하거나 옮겼습니다.	Die Datei wurde gelöscht oder verschoben.	El archivo fue eliminado o movido.	Le fichier a été supprimé ou déplacé.	Il file è stato eliminato o spostato.	O ficheiro foi apagado ou movido.
 banner.lose	Reloading will discard unsaved changes.	重新加载会丢失目前未保存的修改。	再読み込みすると未保存の変更が失われます。	다시 로드하면 저장하지 않은 변경이 사라집니다.	Neu laden verwirft ungespeicherte Änderungen.	Recargar descartará los cambios sin guardar.	Recharger annulera les modifications non enregistrées.	Ricaricare annullerà le modifiche non salvate.	Recarregar descarta as alterações não salvas.
@@ -283,6 +284,8 @@ confirm.external_title	File changed on disk	文件已被其他程序修改	デ�
 confirm.external_body	The file on disk changed after it was opened. Overwriting will discard those changes.	磁盘上的文件在打开后已被修改。覆盖会丢失其他程序所做的变更。	開いた後にディスク上のファイルが変更されています。上書きするとその変更は失われます。	연 뒤에 디스크의 파일이 바뀌었습니다. 덮어쓰면 그 변경이 사라집니다.	Die Datei wurde nach dem Öffnen geändert. Überschreiben verwirft diese Änderungen.	El archivo cambió después de abrirlo. Sobrescribir descarta esos cambios.	Le fichier a changé après l'ouverture. L'écraser annule ces changements.	Il file è cambiato dopo l'apertura. Sovrascriverlo annulla quelle modifiche.	O ficheiro mudou depois de aberto. Substituí-lo descarta essas alterações.
 confirm.reload_title	Reload	重新加载	再読み込み	다시 로드	Neu laden	Recargar	Recharger	Ricarica	Recarregar
 confirm.reload_body	Reload and discard unsaved changes?	重新加载会放弃目前未保存的修改，确定吗？	未保存の変更を破棄して再読み込みしますか？	저장하지 않은 변경을 버리고 다시 로드할까요?	Neu laden und ungespeicherte Änderungen verwerfen?	¿Recargar y descartar los cambios sin guardar?	Recharger et abandonner les modifications non enregistrées ?	Ricaricare e annullare le modifiche non salvate?	Recarregar e descartar as alterações não salvas?
+confirm.create_title	File not found	文件不存在	ファイルが見つかりません	파일을 찾을 수 없음	Datei nicht gefunden	Archivo no encontrado	Fichier introuvable	File non trovato	Ficheiro não encontrado
+confirm.create_body	“{q}” does not exist. Create a new file?	“{q}”不存在。要创建新文件吗？	「{q}」は存在しません。新しいファイルを作成しますか？	"{q}"이(가) 존재하지 않습니다. 새 파일을 만들까요?	„{q}“ existiert nicht. Neue Datei erstellen?	«{q}» no existe. ¿Crear un archivo nuevo?	« {q} » n’existe pas. Créer un nouveau fichier ?	«{q}» non esiste. Creare un nuovo file?	“{q}” não existe. Criar um novo ficheiro?
 spell.none	(No suggestions)	（没有建议）	（候補なし）	(제안 없음)	(Keine Vorschläge)	(Sin sugerencias)	(Aucune suggestion)	(Nessun suggerimento)	(Sem sugestões)
 spell.add	Add “{q}” to dictionary	将「{q}」加入字典	「{q}」を辞書に追加	"{q}"을(를) 사전에 추가	„{q}“ zum Wörterbuch hinzufügen	Añadir «{q}» al diccionario	Ajouter « {q} » au dictionnaire	Aggiungi «{q}» al dizionario	Adicionar “{q}” ao dicionário
 about.title	About MadEdit	关于 MadEdit	MadEdit について	MadEdit 정보	Über MadEdit	Acerca de MadEdit	À propos de MadEdit	Informazioni su MadEdit	Sobre o MadEdit
@@ -445,6 +448,7 @@ wc.full	Fullwidth characters	全角字符	全角文字	전각 문자	Vollbreite 
 wc.cjk	CJK characters	中日韩文字	中日韓の文字	한중일 문자	CJK-Zeichen	Caracteres CJK	Caractères CJC	Caratteri CJK	Caracteres CJK
 wc.lines	Lines	行数	行数	줄 수	Zeilen	Líneas	Lignes	Righe	Linhas
 msg.opened	Opened {q}	已打开 {q}	開きました {q}	열었습니다 {q}	Geöffnet {q}	Abierto {q}	Ouvert {q}	Aperto {q}	Aberto {q}
+msg.created	Created {q}	已创建 {q}	{q} を作成しました	{q}을(를) 생성했습니다	{q} erstellt	Creado {q}	{q} créé	Creato {q}	Criado {q}
 msg.saved	Saved {q}	已保存 {q}	保存しました {q}	저장했습니다 {q}	Gespeichert {q}	Guardado {q}	Enregistré {q}	Salvato {q}	Salvo {q}
 msg.reloaded	Reloaded	已重新加载	再読み込みしました	다시 로드했습니다	Neu geladen	Recargado	Rechargé	Ricaricato	Recarregado
 msg.open_fail	Cannot open	打开失败	開けません	열 수 없습니다	Öffnen fehlgeschlagen	No se puede abrir	Ouverture impossible	Impossibile aprire	Não é possível abrir

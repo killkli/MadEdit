@@ -1118,12 +1118,43 @@ impl App {
                     }
                 }
             }
+            Confirm::CreateNew { path } => {
+                let mut choice = None;
+                let name = path.display().to_string();
+                let body = self.tf("confirm.create_body", "「{q}」不存在，是否要建立新的檔案？", None, Some(&name));
+                modal.show(ctx, |ui| {
+                    ui.heading(self.t("confirm.create_title", "檔案不存在"));
+                    ui.label(body);
+                    ui.horizontal(|ui| {
+                        if ui.button(self.t("btn.create", "建立")).clicked() {
+                            choice = Some(true);
+                        }
+                        if ui.button(self.t("btn.cancel", "取消")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                            choice = Some(false);
+                        }
+                    });
+                });
+                if let Some(c) = choice {
+                    keep = false;
+                    if c {
+                        self.create_new_file(path.clone());
+                    }
+                    // 已詢問的路徑移出佇列，其餘的稍後繼續詢問
+                    if let Some(pos) = self.pending_create.iter().position(|p| p == path) {
+                        self.pending_create.remove(pos);
+                    }
+                }
+            }
         }
         if keep && self.confirm.is_none() {
             self.confirm = Some(confirm);
         } else if !keep && self.confirm.is_none() {
             // 確認視窗已關閉且沒有後續確認（取消、重新載入或存檔失敗）：中止暫存的關閉流程
             self.pending_close = None;
+            // 還有其他等待詢問是否建立的檔案時，繼續問下一個
+            if let Some(next) = self.pending_create.first() {
+                self.confirm = Some(Confirm::CreateNew { path: next.clone() });
+            }
         }
     }
 

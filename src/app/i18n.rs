@@ -200,6 +200,31 @@ mod tests {
     }
 
     #[test]
+    fn create_new_file_prompt_is_fully_translated() {
+        // 「是否要建立新的檔案」的確認訊息必須有全部語系的譯文，且保留 {q} 佔位符
+        const KEYS: [&str; 4] = ["btn.create", "confirm.create_title", "confirm.create_body", "msg.created"];
+        const LANGS: [Lang; 9] = [
+            Lang::En,
+            Lang::ZhCn,
+            Lang::Ja,
+            Lang::Ko,
+            Lang::De,
+            Lang::Es,
+            Lang::Fr,
+            Lang::It,
+            Lang::Pt,
+        ];
+        for key in KEYS {
+            for lang in LANGS {
+                assert!(!translate(lang, key, "").is_empty(), "{key} 缺少 {lang:?} 譯文");
+            }
+        }
+        for lang in LANGS {
+            assert!(translate(lang, "confirm.create_body", "").contains("{q}"), "confirm.create_body 缺少 {{q}} 佔位符：{lang:?}");
+        }
+    }
+
+    #[test]
     fn every_command_is_translated() {
         const ALL: [Lang; 10] = [
             Lang::En,

@@ -57,6 +57,15 @@ impl Tab {
     }
 }
 
+/// 比較兩個路徑是否指向同一個檔案；檔案尚未存在（無法 canonicalize）時改用絕對路徑比較，
+/// 避免「建立新檔但尚未存檔」時再開同一路徑而多出一個分頁
+fn same_target(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
 /// 需要使用者確認的動作
 pub enum Confirm {
     /// 關閉有未存檔修改的文件：依序詢問 `ids` 中每份文件；`exit` 為真時全部處理完後結束程式
@@ -69,6 +78,8 @@ pub enum Confirm {
     OverwriteExternal { id: u64, path: Option<PathBuf> },
     /// 重新載入會遺失未存檔修改
     ReloadModified { id: u64 },
+    /// 檔案不存在，詢問是否建立新檔案（比照 Notepad）
+    CreateNew { path: PathBuf },
     /// 一般訊息
     Message { title: String, text: String },
 }
@@ -90,6 +101,8 @@ pub struct App {
     /// 關閉流程中「儲存」需要再確認（外部修改、解碼錯誤等）時暫存的待關閉分頁與是否結束程式，
     /// 存檔成功後由此接續關閉；再確認被取消時清除
     pending_close: Option<(Vec<u64>, bool)>,
+    /// 等待使用者確認是否建立的檔案（開啟不存在的檔案時排隊）
+    pending_create: Vec<PathBuf>,
     macros: MacroState,
     spell: Option<SpellChecker>,
     spell_error: Option<String>,
@@ -139,6 +152,7 @@ impl App {
             dialog: None,
             confirm: None,
             pending_close: None,
+            pending_create: Vec::new(),
             macros: MacroState::default(),
             spell: None,
             spell_error: None,
@@ -290,8 +304,18 @@ impl App {
 
     /// 開啟檔案（已開啟則切換到該分頁）；成功回傳 true
     pub fn open_path(&mut self, path: &Path) -> bool {
-        let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        if let Some(i) = self.tabs.iter().position(|t| t.doc.path.as_deref().is_some_and(|p| p.canonicalize().ok().as_deref() == Some(&canon))) {
+        // 檔案不存在時無法 canonicalize，改用絕對路徑，讓後續顯示與建立檔案的位置一致
+        let canon = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    std::env::current_dir().map(|d| d.join(path)).unwrap_or_else(|_| path.to_path_buf())
+                }
+            }
+        };
+        if let Some(i) = self.tabs.iter().position(|t| t.doc.path.as_deref().is_some_and(|p| same_target(p, &canon))) {
             self.activate(i);
             return true;
         }
@@ -327,29 +351,60 @@ impl App {
                 if doc.mixed_newlines {
                     notes.push("檔案混用多種換行字元，存檔時會統一".to_string());
                 }
-                // 只剩一個未修改的空白未命名文件時直接取代
-                let replace_blank = self.tabs.len() == 1
-                    && self.tabs[0].doc.path.is_none()
-                    && !self.tabs[0].doc.is_modified()
-                    && self.tabs[0].doc.editor.lines.len() == 1
-                    && self.tabs[0].doc.editor.lines[0].is_empty();
-                if replace_blank {
-                    self.tabs[0] = Tab::new(doc);
-                    self.active = 0;
-                } else {
-                    self.tabs.push(Tab::new(doc));
-                    let idx = self.tabs.len() - 1;
-                    self.activate(idx);
-                }
+                self.push_tab(doc);
                 self.settings.add_recent_file(canon);
                 let shown = path.display().to_string();
                 self.set_status(if notes.is_empty() { self.tf("msg.opened", "已開啟 {q}", None, Some(&shown)) } else { notes.join("；") });
                 true
             }
             Err(e) => {
-                self.confirm = Some(Confirm::Message { title: self.t("msg.open_fail", "開啟失敗").to_string(), text: format!("{}\n{e}", path.display()) });
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    // 檔案不存在：比照 Notepad 詢問是否建立新檔案
+                    self.pending_create.push(canon.clone());
+                    if self.confirm.is_none() {
+                        self.confirm = Some(Confirm::CreateNew { path: canon });
+                    }
+                } else {
+                    self.confirm = Some(Confirm::Message { title: self.t("msg.open_fail", "開啟失敗").to_string(), text: format!("{}\n{e}", path.display()) });
+                }
                 false
             }
+        }
+    }
+
+    /// 建立指定路徑的新檔案（用於「開啟不存在的檔案」時使用者選擇建立）
+    fn create_new_file(&mut self, path: PathBuf) {
+        let s = &self.settings;
+        let enc = encoding::encoding_for_name(&s.new_doc_encoding).unwrap_or(encoding_rs::UTF_8);
+        let nl = match s.new_doc_newline.as_str() {
+            "CRLF" => NewLineFormat::Dos,
+            "CR" => NewLineFormat::Mac,
+            _ => NewLineFormat::Unix,
+        };
+        // 副檔名決定語法，與開啟既有檔案的行為一致
+        let syntax = crate::core::syntax::detect_syntax(&path, "");
+        let mut doc = Document::new_untitled(enc, s.new_doc_bom, nl, &syntax);
+        // 直接綁定路徑，存檔時寫回同一個檔案，不再詢問另存新檔
+        doc.path = Some(path.clone());
+        self.push_tab(doc);
+        let shown = path.display().to_string();
+        self.set_status(self.tf("msg.created", "已建立 {q}", None, Some(&shown)));
+    }
+
+    /// 新增分頁；只剩一個未修改的空白未命名文件時直接取代
+    fn push_tab(&mut self, doc: Document) {
+        let replace_blank = self.tabs.len() == 1
+            && self.tabs[0].doc.path.is_none()
+            && !self.tabs[0].doc.is_modified()
+            && self.tabs[0].doc.editor.lines.len() == 1
+            && self.tabs[0].doc.editor.lines[0].is_empty();
+        if replace_blank {
+            self.tabs[0] = Tab::new(doc);
+            self.active = 0;
+        } else {
+            self.tabs.push(Tab::new(doc));
+            let idx = self.tabs.len() - 1;
+            self.activate(idx);
         }
     }
 

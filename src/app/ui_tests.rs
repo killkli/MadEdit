@@ -235,6 +235,42 @@ fn test_close_save_with_second_confirm_still_closes() {
 }
 
 #[test]
+fn test_open_missing_file_asks_to_create_new_file() {
+    // 開啟不存在的檔案時要像 Notepad 一樣詢問是否建立新檔；
+    // 選擇建立後分頁綁定原路徑，存檔會真的把檔案寫出來
+    let p = std::env::temp_dir().join(format!("madedit_ui_create_{}.txt", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    h.state_mut().settings.ui_language = crate::core::settings::UiLanguage::ZhTw;
+    h.run_steps(3);
+    assert!(matches!(h.state_mut().confirm, Some(Confirm::CreateNew { .. })), "檔案不存在時應詢問是否建立");
+    h.get_by_label("建立").click();
+    h.run_steps(2);
+    assert!(h.state_mut().confirm.is_none());
+    assert_eq!(h.state_mut().doc().path.as_deref(), Some(p.as_path()), "建立後分頁應綁定原路徑");
+    h.state_mut().pending.push(C::Save);
+    h.run_steps(3);
+    assert!(p.exists(), "存檔後檔案應真的被建立");
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn test_open_missing_file_cancel_creates_nothing() {
+    // 取消建立時不得新增分頁，也不得在磁碟上留下檔案
+    let p = std::env::temp_dir().join(format!("madedit_ui_create_cancel_{}.txt", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
+    h.state_mut().settings.ui_language = crate::core::settings::UiLanguage::ZhTw;
+    h.run_steps(3);
+    let before = h.state_mut().tabs.len();
+    h.get_by_label("取消").click();
+    h.run_steps(2);
+    assert!(h.state_mut().confirm.is_none());
+    assert_eq!(h.state_mut().tabs.len(), before, "取消建立不得新增分頁");
+    assert!(!p.exists());
+}
+
+#[test]
 fn test_mode_switch_keeps_content() {
     let mut h = harness();
     type_text(&mut h, "hello");
