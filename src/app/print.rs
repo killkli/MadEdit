@@ -145,7 +145,7 @@ pub fn build_content(doc: &Document, opts: &PrintOptions) -> PrintContent {
                 line.push("●", SpanKind::Bookmark);
             }
             let spans = if opts.syntax_colors {
-                cache.highlight(lines, i, 1, &doc.syntax, theme, false).pop().unwrap_or_default()
+                cache.highlight_full(lines, i, 1, &doc.syntax, theme, false).pop().unwrap_or_default()
             } else {
                 Rc::new(Vec::new())
             };

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use syntect::highlighting::{
     FontStyle, HighlightIterator, HighlightState, Highlighter, Theme, ThemeSet,
@@ -16,11 +17,20 @@ pub const PLAIN_TEXT: &str = "Plain Text";
 /// 每隔多少行保存一次解析狀態檢查點
 const CHECKPOINT_INTERVAL: usize = 32;
 
+/// 行位元組數達此值就在該行後保存檢查點（長行不再等 32 行才存，起算點貼著長行）
+const CHECKPOINT_MIN_BYTES: usize = 4096;
+
+/// 檢查點數量上限，超過時只保留整段界線的檢查點
+const CHECKPOINT_CAP: usize = 8192;
+
 /// 需要往前補解析的行數超過此值時，改從目標行附近重新起算（避免大檔跳轉時長時間卡住）
 const MAX_CATCH_UP_LINES: usize = 20_000;
 
 /// 超長行只解析此前綴（位元組）；超過的部分以前景色顯示，避免每次編輯都對整行跑 syntect
-const MAX_PARSE_LINE_BYTES: usize = 64 * 1024;
+const MAX_PARSE_LINE_BYTES: usize = 16 * 1024;
+
+/// 單幀解析預算：超過就分時中斷，剩下的行先以前景色顯示、下幀續跑
+const PARSE_BUDGET: Duration = Duration::from_millis(8);
 
 /// 單一語法突顯區段
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,13 +180,29 @@ pub fn comment_tokens(syntax: &str) -> (Option<&'static str>, Option<(&'static s
     (line, block)
 }
 
+/// 單一檢查點：進入 `line` 行前的解析狀態（= 前一行結束後）
+struct Checkpoint {
+    line: usize,
+    parse: ParseState,
+    hl: HighlightState,
+}
+
 /// 一份文件的語法突顯快取：保存解析狀態檢查點與已突顯的行
+///
+/// 編輯只標記 `dirty_from`，不丟棄後續行的快取；重解析時與編輯前留下的
+/// 檢查點比對狀態，一致（收斂）即停止——典型編輯只需重解析被編輯的行。
 pub struct SyntaxCache {
     syntax_name: String,
     theme_name: String,
     is_dark: bool,
-    /// checkpoints[i] 為第 i * CHECKPOINT_INTERVAL 行開頭的解析狀態
-    checkpoints: Vec<(ParseState, HighlightState)>,
+    /// 依行號遞增；含編輯後仍未重驗證的「舊」檢查點（僅供收斂比對，不作為起算點）
+    checkpoints: Vec<Checkpoint>,
+    /// 自此行（含）起的快取不可信；None = 沒有失效
+    dirty_from: Option<usize>,
+    /// 分時解析中斷點：此行（含）之後尚未突顯；None = 沒有未完成的工作
+    parse_frontier: Option<usize>,
+    /// 單次 highlight 的解析預算（測試可調）；None = 不限時
+    parse_budget: Option<Duration>,
     lines: HashMap<usize, Rc<Vec<HighlightSpan>>>,
 }
 
@@ -187,6 +213,9 @@ impl Default for SyntaxCache {
             theme_name: String::new(),
             is_dark: false,
             checkpoints: Vec::new(),
+            dirty_from: None,
+            parse_frontier: None,
+            parse_budget: Some(PARSE_BUDGET),
             lines: HashMap::new(),
         }
     }
@@ -194,21 +223,31 @@ impl Default for SyntaxCache {
 
 impl SyntaxCache {
     /// 自第 `line` 行起（含）的快取失效
+    ///
+    /// 不立即重解析也不丟棄後續快取：保留舊檢查點供收斂比對，待下次
+    /// [`Self::highlight`] 時才重解析受影響的範圍。
     pub fn invalidate_from(&mut self, line: usize) {
-        self.checkpoints.truncate(line / CHECKPOINT_INTERVAL + 1);
-        self.lines.retain(|&l, _| l < line);
+        self.dirty_from = Some(self.dirty_from.map_or(line, |d| d.min(line)));
     }
 
     /// 清除全部快取
     pub fn clear(&mut self) {
         self.checkpoints.clear();
+        self.dirty_from = None;
+        self.parse_frontier = None;
         self.lines.clear();
+    }
+
+    /// 檢查點數量上限；過多時只保留整段界線的檢查點
+    fn trim_checkpoints(&mut self) {
+        if self.checkpoints.len() > CHECKPOINT_CAP {
+            self.checkpoints.retain(|c| c.line % CHECKPOINT_INTERVAL == 0);
+        }
     }
 
     /// 文字預設前景色
     pub fn default_fg(&self) -> (u8, u8, u8) {
-        let theme = theme_by_name(&self.theme_name, self.is_dark);
-        theme
+        theme_by_name(&self.theme_name, self.is_dark)
             .settings
             .foreground
             .map(|c| (c.r, c.g, c.b))
@@ -216,6 +255,9 @@ impl SyntaxCache {
     }
 
     /// 取得 [first, first + count) 行的突顯結果；語法或主題改變時自動重建
+    ///
+    /// 解析工作超過每幀預算時先回傳前景色暫替區段（[`Self::has_pending`] 為真，
+    /// UI 應要求重繪續跑）；列印請改用 [`Self::highlight_full`]。
     pub fn highlight(
         &mut self,
         lines: &[String],
@@ -224,6 +266,40 @@ impl SyntaxCache {
         syntax_name: &str,
         theme_name: &str,
         is_dark: bool,
+    ) -> Vec<Rc<Vec<HighlightSpan>>> {
+        self.highlight_inner(lines, first, count, syntax_name, theme_name, is_dark, self.parse_budget)
+    }
+
+    /// 無預算上限的完整突顯（列印用）：會先跑完上次分時剩下的進度
+    pub fn highlight_full(
+        &mut self,
+        lines: &[String],
+        first: usize,
+        count: usize,
+        syntax_name: &str,
+        theme_name: &str,
+        is_dark: bool,
+    ) -> Vec<Rc<Vec<HighlightSpan>>> {
+        if self.parse_frontier.is_some() {
+            self.highlight_inner(lines, 0, lines.len(), syntax_name, theme_name, is_dark, None);
+        }
+        self.highlight_inner(lines, first, count, syntax_name, theme_name, is_dark, None)
+    }
+
+    /// 是否還有本輪未解析完的行（UI 應要求重繪以續跑）
+    pub fn has_pending(&self) -> bool {
+        self.parse_frontier.is_some()
+    }
+
+    fn highlight_inner(
+        &mut self,
+        lines: &[String],
+        first: usize,
+        count: usize,
+        syntax_name: &str,
+        theme_name: &str,
+        is_dark: bool,
+        budget: Option<Duration>,
     ) -> Vec<Rc<Vec<HighlightSpan>>> {
         if self.syntax_name != syntax_name || self.theme_name != theme_name || self.is_dark != is_dark {
             self.syntax_name = syntax_name.to_string();
@@ -238,6 +314,7 @@ impl SyntaxCache {
         let fg = self.default_fg();
         let Some(syntax) = find_syntax(syntax_name) else {
             // 純文字：以空白文字區段代表整行前景色，並快取起來避免每幀複製整行
+            self.parse_frontier = None;
             let mut out = Vec::with_capacity(end - first);
             for l in first..end {
                 let cached = self.lines.entry(l).or_insert_with(|| Rc::new(vec![HighlightSpan::plain(String::new(), fg)]));
@@ -245,7 +322,12 @@ impl SyntaxCache {
             }
             return out;
         };
-        if (first..end).all(|l| self.lines.contains_key(&l)) {
+        let dirty = self.dirty_from;
+        let pending = self.parse_frontier;
+        if dirty.is_none()
+            && pending.map_or(true, |f| f >= end)
+            && (first..end).all(|l| self.lines.contains_key(&l))
+        {
             return (first..end).map(|l| Rc::clone(&self.lines[&l])).collect();
         }
 
@@ -257,40 +339,41 @@ impl SyntaxCache {
         let highlighter = Highlighter::new(theme);
         let ps = syntax_set();
 
-        // 找出起算點：最近的有效檢查點；太遠則從目標附近重新起算
-        let mut cp_idx = (first / CHECKPOINT_INTERVAL).min(self.checkpoints.len().saturating_sub(1));
-        let (mut parse, mut hl, mut line_no) =
-            if !self.checkpoints.is_empty() && first - cp_idx * CHECKPOINT_INTERVAL <= MAX_CATCH_UP_LINES {
-                let (p, h) = self.checkpoints[cp_idx].clone();
-                (p, h, cp_idx * CHECKPOINT_INTERVAL)
-            } else {
-                let start = if first <= MAX_CATCH_UP_LINES { 0 } else { first - first % CHECKPOINT_INTERVAL };
-                if start == 0 {
-                    self.checkpoints.clear();
-                    cp_idx = 0;
-                } else {
-                    // 遠距跳轉：不保存檢查點，避免與真正由開頭解析的結果混用
-                    cp_idx = usize::MAX;
-                }
-                (
-                    ParseState::new(syntax),
-                    HighlightState::new(&highlighter, ScopeStack::new()),
-                    start,
-                )
-            };
-        if self.checkpoints.is_empty() && cp_idx == 0 {
-            self.checkpoints.push((parse.clone(), hl.clone()));
+        // 需要重建/建立突顯的起點：
+        // - 有中斷點（frontier）時，其前的行都已完成，可視範圍若在其下直接沿用快取
+        // - 有編輯失效（dirty）時，自 dirty（或可視範圍起點，取較小）起狀態都須重掃
+        let work_from = match (dirty, self.parse_frontier) {
+            (Some(d), Some(f)) => first.max(d.min(f)),
+            (Some(d), None) => first.min(d),
+            (None, Some(f)) => first.max(f),
+            (None, None) => first,
+        };
+        // 起算點：進入 work_from 前最近的「有效」檢查點。行號 > dirty 的檢查點
+        // 是編輯前留下的舊狀態，從它起算會與後面的舊檢查點形成假收斂，不可作為起點；
+        // 沒有有效檢查點時由第 0 行或目標附近重新起算
+        let cp_limit = work_from.min(dirty.unwrap_or(usize::MAX));
+        let at = self.checkpoints.partition_point(|c| c.line <= cp_limit);
+        let save_checkpoints = at > 0 || work_from <= MAX_CATCH_UP_LINES;
+        let (mut parse, mut hl, mut line_no) = if at > 0 {
+            let cp = &self.checkpoints[at - 1];
+            (cp.parse.clone(), cp.hl.clone(), cp.line)
+        } else {
+            let start = if work_from <= MAX_CATCH_UP_LINES { 0 } else { work_from - work_from % CHECKPOINT_INTERVAL };
+            (
+                ParseState::new(syntax),
+                HighlightState::new(&highlighter, ScopeStack::new()),
+                start,
+            )
+        };
+        if self.checkpoints.is_empty() && save_checkpoints {
+            self.checkpoints.push(Checkpoint { line: 0, parse: parse.clone(), hl: hl.clone() });
         }
 
-        let mut out = Vec::with_capacity(end - first);
+        let deadline = budget.map(|b| Instant::now() + b);
+        let mut bytes_since = 0usize;
+        let mut converged = None;
+        let mut cut_at = None;
         while line_no < end {
-            let save_checkpoints = cp_idx != usize::MAX;
-            if save_checkpoints
-                && line_no % CHECKPOINT_INTERVAL == 0
-                && line_no / CHECKPOINT_INTERVAL == self.checkpoints.len()
-            {
-                self.checkpoints.push((parse.clone(), hl.clone()));
-            }
             let text = &lines[line_no];
             // 超長行只解析前綴（在 UTF-8 字元邊界截斷），其餘字元沿用前景色
             let with_nl = if text.len() <= MAX_PARSE_LINE_BYTES {
@@ -303,7 +386,11 @@ impl SyntaxCache {
                 format!("{}\n", &text[..cut])
             };
             let ops = parse.parse_line(&with_nl, ps).unwrap_or_default();
-            if line_no >= first {
+            bytes_since += text.len() + 1;
+            // 需要重建的行（≥ work_from 且「已失效或沒有快取」）：產生並覆蓋快取；
+            // 其餘只推進突顯狀態
+            let stale = dirty.is_some_and(|d| line_no >= d);
+            if line_no >= work_from && (stale || !self.lines.contains_key(&line_no)) {
                 let mut spans = Vec::new();
                 for (style, piece) in HighlightIterator::new(&mut hl, &ops, &with_nl, &highlighter) {
                     let piece = piece.trim_end_matches('\n');
@@ -322,14 +409,85 @@ impl SyntaxCache {
                     // 全行同色：空白文字代表「整行以前景色顯示」
                     spans.push(HighlightSpan::plain(String::new(), fg));
                 }
-                let spans = Rc::new(spans);
-                self.lines.insert(line_no, Rc::clone(&spans));
-                out.push(spans);
+                self.lines.insert(line_no, Rc::new(spans));
             } else {
                 // 只推進突顯狀態，不產生區段
                 for _ in HighlightIterator::new(&mut hl, &ops, &with_nl, &highlighter) {}
             }
-            line_no += 1;
+            let next = line_no + 1;
+            // 收斂判定：解析完 dirty 之後的行，若進入下一行的狀態與編輯前的
+            // 檢查點相同，代表更後面的舊快取仍然正確，直接沿用並停止
+            if dirty.is_none_or(|d| next > d) {
+                let at = self.checkpoints.partition_point(|c| c.line < next);
+                if let Some(c) = self.checkpoints.get(at).filter(|c| c.line == next) {
+                    if c.parse == parse && c.hl == hl {
+                        if (next..end).all(|l| self.lines.contains_key(&l)) {
+                            converged = Some(next);
+                            break;
+                        }
+                    } else {
+                        // 狀態已分歧：以此行後的新狀態取代舊檢查點
+                        self.checkpoints[at] = Checkpoint { line: next, parse: parse.clone(), hl: hl.clone() };
+                    }
+                }
+            }
+            // 分時預算：超過就中斷。存下目前狀態當檢查點，下幀自 next 續跑；
+            // 沒有剩餘工作（其餘行都有快取且未失效）就直接收工
+            if let Some(deadline) = deadline {
+                if Instant::now() >= deadline {
+                    let rest_work = (next..end).find(|&l| {
+                        !self.lines.contains_key(&l) || dirty.is_some_and(|d| l >= d)
+                    });
+                    if rest_work.is_some() {
+                        let at = self.checkpoints.partition_point(|c| c.line < next);
+                        let exists = self.checkpoints.get(at).is_some_and(|c| c.line == next);
+                        if !exists {
+                            self.checkpoints.insert(at, Checkpoint { line: next, parse: parse.clone(), hl: hl.clone() });
+                        }
+                        cut_at = Some(next);
+                    }
+                    break;
+                }
+            }
+            if save_checkpoints {
+                let at = self.checkpoints.partition_point(|c| c.line < next);
+                let exists = self.checkpoints.get(at).is_some_and(|c| c.line == next);
+                if !exists && (next % CHECKPOINT_INTERVAL == 0 || bytes_since >= CHECKPOINT_MIN_BYTES) {
+                    self.checkpoints.insert(at, Checkpoint { line: next, parse: parse.clone(), hl: hl.clone() });
+                    bytes_since = 0;
+                    self.trim_checkpoints();
+                }
+            }
+            line_no = next;
+        }
+        match converged {
+            Some(_) => {
+                // 收斂：next 起的舊快取仍然正確
+                self.dirty_from = None;
+                self.parse_frontier = None;
+            }
+            None => match cut_at {
+                Some(next) => {
+                    // 預算中斷：[work_from..next) 已重建；dirty 尚未驗證到收斂，
+                    // 未重建的失效區仍不可信
+                    self.dirty_from = match dirty {
+                        Some(d) => Some(d.max(next)),
+                        None => None,
+                    };
+                    self.parse_frontier = Some(next);
+                }
+                None => {
+                    // 已處理到 end
+                    self.parse_frontier = None;
+                    self.dirty_from = (dirty.is_some_and(|d| end < d) && end < lines.len()).then_some(end);
+                }
+            },
+        }
+        // out 依可視範圍補齊：快取優先，沒有的行以前景色暫替
+        let missing = Rc::new(vec![HighlightSpan::plain(String::new(), fg)]);
+        let mut out = Vec::with_capacity(end - first);
+        for l in first..end {
+            out.push(self.lines.get(&l).cloned().unwrap_or_else(|| Rc::clone(&missing)));
         }
         out
     }
@@ -338,6 +496,16 @@ impl SyntaxCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 反覆呼叫直到分時解析完成，回傳最後一次的完整結果
+    fn drain(cache: &mut SyntaxCache, lines: &[String], first: usize, count: usize) -> Vec<Rc<Vec<HighlightSpan>>> {
+        loop {
+            let out = cache.highlight(lines, first, count, "Rust", "InspiredGitHub", false);
+            if !cache.has_pending() {
+                return out;
+            }
+        }
+    }
 
     #[test]
     fn test_detect_syntax() {
@@ -402,6 +570,93 @@ mod tests {
         let text: String = out[0].iter().map(|s| s.text.as_str()).collect();
         assert_eq!(text, "// comment");
         assert_eq!(out[0][0].color_rgb, out[0].last().unwrap().color_rgb);
+    }
+
+    #[test]
+    fn test_edit_converges_and_reuses_following_cache() {
+        // 編輯不影響後續行狀態時，重解析到下一個檢查點即收斂，後續行沿用原快取（Rc 同源）
+        // 行長 ≥ CHECKPOINT_MIN_BYTES：每行後都有檢查點，收斂即時發生
+        let pad = "x".repeat(4096);
+        let mut lines: Vec<String> = (0..6).map(|i| format!("let v{i} = {i}; // {pad}")).collect();
+        let mut cache = SyntaxCache::default();
+        let before = drain(&mut cache, &lines, 0, 6);
+        lines[1].push('x');
+        cache.invalidate_from(1);
+        let after = drain(&mut cache, &lines, 1, 5);
+        assert_eq!(after.len(), 5);
+        let text: String = after[0].iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(text, lines[1], "編輯的行必須重建");
+        assert!(Rc::ptr_eq(&before[2], &after[1]), "收斂後第 2 行必須沿用原快取");
+        assert!(Rc::ptr_eq(&before[5], &after[4]), "收斂後第 5 行必須沿用原快取");
+        assert_eq!(cache.dirty_from, None);
+    }
+
+    #[test]
+    fn test_diverging_edit_rehighlights_following_lines() {
+        // 在第 1 行打開區塊註解：後續行狀態分歧，必須重解析且顏色改變
+        let pad = "x".repeat(4096);
+        let mut lines: Vec<String> = (0..6).map(|i| format!("let v{i} = {i}; // {pad}")).collect();
+        let mut cache = SyntaxCache::default();
+        let before = drain(&mut cache, &lines, 0, 6);
+        lines[1] = format!("/* let v1 // {pad}");
+        cache.invalidate_from(1);
+        let after = drain(&mut cache, &lines, 1, 5);
+        assert!(!Rc::ptr_eq(&before[2], &after[1]), "註解狀態分歧，第 2 行必須重解析");
+        assert_ne!(before[2][0].color_rgb, after[1].last().unwrap().color_rgb, "第 2 行應變為註解色");
+        assert!(!Rc::ptr_eq(&before[3], &after[2]), "註解持續到結尾前都應重解析");
+        // 收斂後與從頭重算的結果一致
+        let mut fresh = SyntaxCache::default();
+        let all = drain(&mut fresh, &lines, 0, 6);
+        for i in 0..5 {
+            assert_eq!(after[i], all[i + 1]);
+        }
+    }
+
+    #[test]
+    fn test_time_sliced_highlight_fills_progressively() {
+        // 預算歸零：每幀只解析一行，未完成的行先以前景色暫替，最終結果與一次算完一致
+        let pad = "x".repeat(4096);
+        let lines: Vec<String> = (0..6).map(|i| format!("let v{i} = {i}; // {pad}")).collect();
+        let mut cache = SyntaxCache::default();
+        cache.parse_budget = Some(Duration::ZERO);
+        let mut frames = 0;
+        let last = loop {
+            assert!(frames < 20, "分時解析必須在有限幀內完成");
+            let out = cache.highlight(&lines, 0, 6, "Rust", "InspiredGitHub", false);
+            frames += 1;
+            assert_eq!(out.len(), 6);
+            if !cache.has_pending() {
+                break out;
+            }
+        };
+        let mut fresh = SyntaxCache::default();
+        let all = drain(&mut fresh, &lines, 0, 6);
+        for i in 0..6 {
+            assert_eq!(last[i], all[i], "分時完成後應與一次算完一致");
+        }
+        assert!(frames > 1, "零預算必須分多幀");
+    }
+
+    #[test]
+    fn test_diverging_edit_below_viewport_rebuilds_stale_lines() {
+        // 編輯行在可視範圍之前且狀態分歧（未關閉的區塊註解）：可視範圍的行必須全部重解析
+        let pad = "x".repeat(4096);
+        let mut lines: Vec<String> = (0..8).map(|i| format!("let v{i} = {i}; // {pad}")).collect();
+        let mut cache = SyntaxCache::default();
+        let before = drain(&mut cache, &lines, 0, 8);
+        lines[1] = format!("/* let v1 // {pad}");
+        cache.invalidate_from(1);
+        let after = drain(&mut cache, &lines, 4, 4);
+        assert_eq!(after.len(), 4);
+        for i in 0..4 {
+            assert!(!Rc::ptr_eq(&before[4 + i], &after[i]), "註解分歧，第 {} 行必須重解析", 4 + i);
+        }
+        // 與從頭重算的結果一致
+        let mut fresh = SyntaxCache::default();
+        let all = drain(&mut fresh, &lines, 0, 8);
+        for i in 0..4 {
+            assert_eq!(after[i], all[4 + i]);
+        }
     }
 
     #[test]

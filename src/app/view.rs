@@ -1212,6 +1212,10 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         env.theme_name,
         env.is_dark,
     );
+    if doc.syntax_cache.has_pending() {
+        // 分時解析尚未完成：要求下一幀續跑，把其餘行補上顏色
+        ctx.request_repaint();
+    }
     let ed = &doc.editor;
     let sel = ed.selection;
     let block_bounds = sel.is_block().then(|| sel.visual_bounds(ed));
