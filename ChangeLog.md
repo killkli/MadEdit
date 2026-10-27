@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-27
+
 ### Added
 - Single instance: launching again or opening files from File Explorer sends files to the existing window, opens them in tabs, and restores and focuses the window. Reopening a file selects its existing tab. Different configuration directories remain independent, and screenshot tests run separately.
 
@@ -100,7 +102,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 - Initial project. The Slint version implemented encoding support, a custom-drawn editor, a large-file engine, rectangular selection, find and replace, syntax highlighting, go-to-line, line endings, bookmarks, external change monitoring and the classic UI.
 
-[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/tenyi/MadEdit/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/tenyi/MadEdit/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/tenyi/MadEdit/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/tenyi/MadEdit/compare/v0.5.24...v0.6.0
