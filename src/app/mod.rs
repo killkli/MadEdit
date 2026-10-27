@@ -933,8 +933,7 @@ impl App {
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         // 先把文件狀態抄出來，避免翻譯時同時借用文件
         let snap = {
-            let doc = self.doc();
-            let ed = &doc.editor;
+            let doc = self.doc_mut();
             let position = if doc.mode == EditMode::Hex {
                 doc.hex.as_ref().map(|hb| {
                     let sel = hb.selection().map(|(s, e)| e - s).unwrap_or(0);
@@ -944,15 +943,16 @@ impl App {
                 None
             };
             let text = if doc.mode != EditMode::Hex {
+                let ed = &mut doc.editor;
                 let h = ed.selection.head;
-                let vcol = editor::char_col_to_visual_col(&ed.lines[h.line], h.col);
                 let block = if ed.selection.is_block() {
                     let b = ed.selection.visual_bounds(ed);
                     Some(((b.max_line - b.min_line + 1).to_string(), (b.max_vcol - b.min_vcol).to_string()))
                 } else {
                     None
                 };
-                Some((h.line + 1, ed.lines.len(), vcol + 1, ed.char_pos(h), ed.selection_char_count(), block))
+                let (vcol, char_pos, sel_chars) = ed.status_info(doc.version);
+                Some((h.line + 1, ed.lines.len(), vcol + 1, char_pos, sel_chars, block))
             } else {
                 None
             };
@@ -966,7 +966,7 @@ impl App {
                 doc.syntax.clone(),
                 doc.mode,
                 doc.read_only,
-                if doc.mode == EditMode::Hex { doc.hex.as_ref().is_some_and(|h| h.overwrite) } else { ed.overwrite_mode },
+                if doc.mode == EditMode::Hex { doc.hex.as_ref().is_some_and(|h| h.overwrite) } else { doc.editor.overwrite_mode },
                 doc.selecting_mode,
             )
         };
