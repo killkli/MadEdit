@@ -13,6 +13,7 @@ use egui::load::{BytesPoll, ImageLoadResult, ImageLoader, ImagePoll, LoadError, 
 use egui::mutex::Mutex;
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
+use super::form;
 use super::i18n::{self, Lang};
 
 /// 文件被切成的片段：一般 Markdown 或 Mermaid 圖表原始碼
@@ -439,7 +440,10 @@ impl MarkdownPreview {
             HashMap::new()
         };
         // SVG 載入器（resvg）不支援 CSS 變數，請 fermaid 直接依深淺色調色盤輸出實際顏色
-        let palette = if dark { fermaid::Palette::dark() } else { fermaid::Palette::light() };
+        let mut palette = if dark { fermaid::Palette::dark() } else { fermaid::Palette::light() };
+        // Edge labels sit on patches of `bg`; use the preview's own fill so they do not show as boxes.
+        let fill = preview_fill(dark);
+        palette.bg = format!("#{:02x}{:02x}{:02x}", fill.r(), fill.g(), fill.b());
         let opts = fermaid::RenderOptions {
             max_width: (key.width > 0).then_some(key.width as f64),
             palette: Some(palette),
@@ -555,13 +559,13 @@ impl MarkdownPreview {
         let t = |k: &str, zh: &'static str| i18n::translate(lang, k, zh);
         let mut close = false;
         ui.horizontal_wrapped(|ui| {
-            if ui.button("−").on_hover_text(t("md.zoom_out", "縮小（Ctrl+滾輪）")).clicked() {
+            if form::icon_button(ui, egui::Button::new("−"), t("md.zoom_out", "縮小（Ctrl+滾輪）"), t("md.zoom_out", "縮小（Ctrl+滾輪）")).clicked() {
                 self.zoom = (self.zoom / ZOOM_STEP).max(ZOOM_MIN);
             }
             if ui.button(format!("{:.0}%", self.zoom * 100.0)).on_hover_text(t("md.zoom_reset", "還原 100%")).clicked() {
                 self.zoom = 1.0;
             }
-            if ui.button("+").on_hover_text(t("md.zoom_in", "放大（Ctrl+滾輪）")).clicked() {
+            if form::icon_button(ui, egui::Button::new("+"), t("md.zoom_in", "放大（Ctrl+滾輪）"), t("md.zoom_in", "放大（Ctrl+滾輪）")).clicked() {
                 self.zoom = (self.zoom * ZOOM_STEP).min(ZOOM_MAX);
             }
             ui.separator();
@@ -581,7 +585,8 @@ impl MarkdownPreview {
                 self.synced_line = None;
                 self.preview_source = None;
             }
-            close = ui.button("×").on_hover_text(t("md.close", "關閉預覽")).clicked();
+            let lbl_close = t("md.close", "關閉預覽");
+            close = form::icon_button(ui, egui::Button::new("×"), lbl_close, lbl_close).clicked();
             if !self.image_uris.is_empty() && ui.button(t("md.reload_images", "重新載入圖片")).on_hover_text(t("md.reload_images_tip", "圖片檔案更新或補回後，重新讀取圖片")).clicked() {
                 self.reload_images(ui.ctx());
             }
@@ -607,7 +612,7 @@ impl MarkdownPreview {
                 message.map(|m| (uri, m))
             }).collect();
             if !errors.is_empty() {
-                ui.collapsing(RichText::new(i18n::fill(i18n::translate(lang, "md.images_failed", "{n} 張圖片載入失敗"), Some(errors.len()), None)).color(Color32::LIGHT_RED), |ui| {
+                ui.collapsing(RichText::new(i18n::fill(i18n::translate(lang, "md.images_failed", "{n} 張圖片載入失敗"), Some(errors.len()), None)).color(ui.visuals().error_fg_color), |ui| {
                     for (uri, message) in errors {
                         ui.label(uri);
                         ui.label(message);
@@ -645,8 +650,7 @@ impl MarkdownPreview {
         let mut anchors = Vec::with_capacity(self.items.len() * 2 + 1);
         let mut avail_w = self.avail_w;
         // 預覽分頁與並排面板共用高對比底色，避免受到外層面板底色影響。
-        let dark = ui.visuals().dark_mode;
-        let fill = egui::Frame::new().fill(if dark { Color32::BLACK } else { Color32::WHITE });
+        let fill = egui::Frame::new().fill(preview_fill(ui.visuals().dark_mode));
         let output = egui::CentralPanel::default().frame(fill).show(ui, |ui| area.show(ui, |ui| {
             high_contrast(ui.visuals_mut());
             // 文字隨縮放放大（圖表另外依尺寸縮放）
@@ -667,6 +671,12 @@ impl MarkdownPreview {
                         // 每個區塊各自一個 id：egui_commonmark 的表格 id 只在單次 show 內遞增，
                         // 多個區塊共用同一個 ui id 時，不同表格會共用 Grid 欄寬而文字互相覆蓋
                         ui.push_id(item.line, |ui| {
+                            // Grid stripes span every column at its minimum width (interact_size.x,
+                            // 40 pt), but the table frame only wraps the last column's real
+                            // content, so short cells made stripes stick out past the frame.
+                            // Columns then hug their text; egui_commonmark forces item_spacing.x
+                            // to 0, so the column gap cannot be widened from here.
+                            ui.spacing_mut().interact_size.x = 0.0;
                             CommonMarkViewer::new().explicit_image_uri_scheme(true).show(ui, &mut self.cache, m);
                         });
                     }
@@ -689,14 +699,14 @@ impl MarkdownPreview {
                                 ui.allocate_ui(size, |ui| ui.spinner());
                             }
                             Err(e) => {
-                                ui.label(RichText::new(format!("{}{e}", i18n::translate(lang, "md.diagram_failed", "圖表顯示失敗："))).color(Color32::LIGHT_RED));
+                                ui.label(RichText::new(format!("{}{e}", i18n::translate(lang, "md.diagram_failed", "圖表顯示失敗："))).color(ui.visuals().error_fg_color));
                             }
                         }
                         ui.add_space(8.0);
                     }
                     Content::Error { line, column, message, source } => {
                         let at = i18n::fill(i18n::translate(lang, "md.mermaid_error", "Mermaid 語法錯誤：第 {n} 行第 {q} 欄："), Some(*line as usize), Some(&column.to_string()));
-                        ui.label(RichText::new(format!("{at}{message}")).color(Color32::LIGHT_RED));
+                        ui.label(RichText::new(format!("{at}{message}")).color(ui.visuals().error_fg_color));
                         ui.code(source);
                     }
                 }
@@ -724,15 +734,24 @@ impl MarkdownPreview {
         self.anchors = anchors;
         // 寬度或縮放改變會讓圖表排版寬度跨級，下一幀由 refresh 重建
         self.avail_w = avail_w;
-        if self.sync_scroll && moved && !following_editor && !layout_changed {
-            if let Some((line, fraction)) = source_position(&self.anchors, offset) {
-                self.preview_source = Some((line, fraction));
-                ui.ctx().request_repaint();
-                return MdAction::ScrollTo { line, fraction };
-            }
+        if self.sync_scroll
+            && moved
+            && !following_editor
+            && !layout_changed
+            && let Some((line, fraction)) = source_position(&self.anchors, offset)
+        {
+            self.preview_source = Some((line, fraction));
+            ui.ctx().request_repaint();
+            return MdAction::ScrollTo { line, fraction };
         }
         MdAction::None
     }
+}
+
+/// Background of the preview tab and side panel: pure black or white for the highest contrast.
+/// Mermaid diagrams paint their edge-label patches in the same color, so both must use this.
+fn preview_fill(dark: bool) -> Color32 {
+    if dark { Color32::BLACK } else { Color32::WHITE }
 }
 
 /// 預覽內容的高對比配色：深色為純黑底、淺色為純白底；內文、粗體與標題都接近純黑／純白，
@@ -759,8 +778,11 @@ fn high_contrast(v: &mut egui::Visuals) {
 pub struct DiagramLoader {
     options: resvg::usvg::Options<'static>,
     /// （uri, 尺寸提示）→ 點陣化結果
-    cache: Mutex<HashMap<(String, SizeHint), Result<Arc<egui::ColorImage>, String>>>,
+    cache: Mutex<HashMap<(String, SizeHint), Rasterized>>,
 }
+
+/// A rasterized diagram, or the error message shown in its place.
+type Rasterized = Result<Arc<egui::ColorImage>, String>;
 
 impl DiagramLoader {
     pub const ID: &'static str = egui::generate_loader_id!(DiagramLoader);
@@ -872,6 +894,23 @@ mod tests {
         for d in after {
             assert!(matches!(ctx.try_load_bytes(&d.uri), Ok(BytesPoll::Ready { .. })), "新圖與未修改的圖都應保留");
         }
+    }
+
+    #[test]
+    fn test_diagram_label_patches_use_the_preview_background() {
+        let ctx = egui::Context::default();
+        let mut preview = MarkdownPreview::new();
+        preview.avail_w = 768.0;
+        let text = "```mermaid\nflowchart LR\n    A -->|missing| B\n```\n";
+        // Only the dark palette differs: fermaid's light background is already white.
+        preview.refresh(&ctx, text, 0, true, None);
+        let uri = diagrams(&preview).remove(0).uri.clone();
+        let Ok(BytesPoll::Ready { bytes, .. }) = ctx.try_load_bytes(&uri) else { panic!("diagram not loaded") };
+        let svg = String::from_utf8_lossy(&bytes).to_lowercase();
+        assert_eq!(preview_fill(true), Color32::BLACK);
+        assert!(svg.contains("#000000"), "label patches should be black");
+        // fermaid's own dark background, which showed as gray boxes on the black preview.
+        assert!(!svg.contains("#1e1e1e"));
     }
 
     #[test]
@@ -1168,7 +1207,7 @@ mod tests {
     fn test_scroll_resyncs_after_image_load_with_same_editor_line() {
         use egui_kittest::kittest::Queryable;
         let path = std::env::temp_dir().join(format!("madedit-image-reflow-{}.png", std::process::id()));
-        let uri = format!("file://{}", path.display());
+        let uri = image_uri(&path.to_string_lossy(), None);
         let text = format!("![圖](<{uri}>)\n\n{}", (0..100).map(|i| format!("## 標題 {i}\n\n段落 {i}\n\n")).collect::<String>());
         let mut h = preview_harness(text, 82);
         h.run_steps(5);

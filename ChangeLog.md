@@ -10,6 +10,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 - Single instance: launching again or opening files from File Explorer sends files to the existing window, opens them in tabs, and restores and focuses the window. Reopening a file selects its existing tab. Different configuration directories remain independent, and screenshot tests run separately.
+- The UI theme can follow the system or be set to Light or Dark. The View menu, the toolbar and the Options dialog all apply it, and dialogs, banners and the Markdown preview follow it.
+- Help > Keyboard Shortcuts (F1) lists every current shortcut, customized ones included, grouped by menu in two columns. The list can be filtered by command name or key (words such as ctrl or cmd also find keys shown as symbols), and a button opens the Keys page of Options to customize them.
+- The About dialog shows the app icon, version, platform, technologies used, settings file location and a project link, with a button that copies the version information for bug reports. Copied paths show the home folder as ~, so the user name is not revealed.
+
+### Changed
+- Refreshed look: rounded buttons, tabs and dialogs, soft shadows, and card-style find bar and file-change banner.
+- When the window is wide enough, font zoom, the theme switch and quick search move to the right of the menu bar, leaving the toolbar a single row of icons (they stay when the toolbar is hidden). With the menu bar hidden or a narrow window they remain in the toolbar.
+- Consistent menus: top-level menus, submenus and context menus share a minimum width with their item text in one column, and long menus scroll instead of running past the bottom of the window.
+- The View menu is hierarchical: the top level keeps the edit modes, encoding, syntax, preview and window items, while Font, Layout (wrapping, tab width, line spacing, text direction) and Show (line numbers, ruler, control characters, highlights, spell check) each have a submenu.
+- The theme switch at the right of the menu bar is one icon button instead of three text buttons: a sun in the light theme and a moon in the dark one, and each click switches to the other, like the Toggle Dark/Light Theme command. The chosen theme is saved and used at the next launch; without a settings file, MadEdit follows the system theme.
+- The Options dialog is a modern settings page: a sidebar of pages, settings grouped into cards by topic, names on the left and values aligned on the right. Switches replace checkboxes (clicking the text flips them too), small choices such as the theme and line endings are segmented buttons, and the Keys page lists each command's shortcuts beside it with a card on the right for editing them. Page Setup uses the same layout. Buttons are ordered Apply, Cancel, OK, with the main action rightmost.
+- Every other dialog (Font, Recent Files, Insert Numbers, Sort Options, Find/Replace in Files, Temporary Macro, Syntax Highlighting, Source Formatter, Clear History, Convert Encoding, Word Count, Window List, About, Keyboard Shortcuts and all confirmations, including the new create-file prompt) uses the same card layout: switches, segmented buttons, and a right-aligned button row with the main action, in the accent color, rightmost. Buttons that discard data have red text. Dialogs get narrower in a small main window, content that does not fit scrolls so the buttons stay on screen, and dialogs reopen scrolled to the top. Setting cards have no dividers between rows; hovering a switch row highlights the whole row, since clicking anywhere on it flips the switch.
+- Theme changes in Syntax Highlighting are saved at once.
+- Screen readers announce toolbar icons by their command name, zoom buttons as zoom in / out instead of "A+" or "−", and × buttons by what they do instead of "×": the close buttons of tabs and of the Window List as "Close" followed by the file name, and the remove buttons in Options as "Remove" followed by the shortcut or word.
+- In Recent Files, Tab moves on to the list and Enter on an item opens that file.
+- The Options dialog has a fixed size, so switching pages no longer resizes it. In a small main window the Options and Keyboard Shortcuts dialogs shrink so their buttons stay visible, and the shortcut list uses one column when narrow.
+- While Options is open, F1 switches it to the Keys page, and commands that open other dialogs (such as F9) no longer replace it; the status bar asks to close Options first, so unapplied settings are kept.
+- OK and Apply in Options write back only the settings changed in the dialog, so other changes made while it was open (recent files, View menu toggles, font zoom, the personal dictionary and so on) are no longer reverted.
+- Switching page or command after pressing Add Shortcut on the Keys page cancels the capture instead of silently assigning the next key to the previous command.
 
 ### Changed
 - Syntax highlighting for very long lines now tokenizes only the visible part of a line, uses the Oniguruma regex backend, and keeps each line's layout across frames. On a 1.99 MB sample whose longest line is 158 KB: keystroke 65 → 6 ms, End key 61 → 22 ms, PageDown per frame 119 → 1 ms, open plus first render 517 → 131 ms. The visible part at the end of a long line is now coloured too (only the first 16 KB used to be), and lines with full-width characters no longer crash while scrolling. Generate the sample with `python3 scripts/make_example_js.py`; see `docs/adr/0012-long-line-syntax-highlighting.md`.
@@ -17,6 +36,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 - Markdown preview now opens in a separate tab in the main window instead of a separate native window. Reopening selects the existing preview, and closing it keeps the source document and unsaved changes intact. Side-by-side and top-and-bottom layouts remain available.
 - Opening a nonexistent file now asks whether to create it, as Notepad does, instead of immediately reporting an open failure. If created, saving writes to the same path. The confirmation message is translated into all supported UI languages.
+- A message opened by a key press (such as an error after pressing Enter on a file in Recent Files that cannot be read) is no longer dismissed by that same key before it appears.
+- The find bar background was transparent in the dark theme and showed as white.
+- The drop-down arrow ▾ and close buttons showed as empty boxes.
+- 한국어 in the UI language menu showed as empty boxes on macOS (PingFang has no Hangul); a Korean font is now added automatically.
+- In Markdown preview, the stripes of tables with short columns ran past the table frame.
+- In the dark Markdown preview, Mermaid edge labels sat on gray boxes instead of the black background.
+- In the dark theme, black toolbar icons such as Find (binoculars), Replace, Wrap, Indent and Preview were nearly invisible. The dark theme now uses automatically lightened icons: outlines and solid black areas (such as the binoculars' body) are lightened, while details drawn on a light fill keep their color; the light theme keeps the original art. Thin lines are no longer lost when icons are shrunk on non-high-DPI displays.
+- The 🔒 on read-only tabs and the copy button of Markdown code blocks showed as empty boxes; emoji fonts are now bundled.
+- In the light theme, the hex view selection and warning and error text had too little contrast.
 
 ## [0.6.2] - 2026-10-27
 

@@ -11,7 +11,7 @@ use crate::core::document::EditKind;
 use crate::core::editor::{extract_visual_slice, EditorState, Selection, TextPosition};
 use crate::core::encoding;
 use crate::core::model::{EditMode, NewLineFormat};
-use crate::core::settings::{SortOptions, ThemeChoice, WrapMode};
+use crate::core::settings::{SortOptions, WrapMode};
 use crate::core::syntax;
 use crate::core::textops;
 
@@ -130,12 +130,13 @@ impl App {
                     }
                     // 快速移動與放開可能落在同一幀，egui 此時未必回報 drag_stopped；
                     // 只要先前確實按在分隔線上，就依放開位置保存尺寸，再交由面板正常記憶。
-                    if ctx.input(|i| i.pointer.primary_released()) && std::mem::take(&mut pv.resize_started) {
-                        if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                            let size = if placement == Placement::Right { area.right() - pos.x } else { area.bottom() - pos.y };
-                            pv.resize_to = Some(size.clamp(160.0_f32.min(available), available));
-                            ctx.request_repaint();
-                        }
+                    if ctx.input(|i| i.pointer.primary_released())
+                        && std::mem::take(&mut pv.resize_started)
+                        && let Some(pos) = ctx.input(|i| i.pointer.interact_pos())
+                    {
+                        let size = if placement == Placement::Right { area.right() - pos.x } else { area.bottom() - pos.y };
+                        pv.resize_to = Some(size.clamp(160.0_f32.min(available), available));
+                        ctx.request_repaint();
                     }
                 }
                 shown.inner
@@ -159,6 +160,29 @@ impl App {
 
     /// 執行命令
     pub fn run(&mut self, ctx: &egui::Context, c: C) {
+        // The Options dialog holds unapplied changes, so a command that opens another dialog
+        // (F1, F9, a menu item) must not replace it and silently drop them. Options stays
+        // open instead; F1 shows its Keys tab, where shortcuts are listed and changed.
+        let options = match self.dialog.take() {
+            Some(Dialog::Options(st)) => Some(st),
+            other => {
+                self.dialog = other;
+                None
+            }
+        };
+        self.dispatch(ctx, c);
+        if let Some(mut st) = options {
+            if c == C::KeyboardShortcuts {
+                st.tab = super::dialogs::OPTIONS_KEYS_TAB;
+            } else if !matches!(self.dialog, None | Some(Dialog::Options(_))) {
+                // Say why the dialog the command asked for did not appear.
+                self.set_status(self.t("status.options_open", "請先關閉選項對話框"));
+            }
+            self.dialog = Some(Dialog::Options(st));
+        }
+    }
+
+    fn dispatch(&mut self, ctx: &egui::Context, c: C) {
         if self.macros.recording {
             self.macros.record_command(c);
         }
@@ -614,10 +638,7 @@ impl App {
                 }
             }
             C::ToggleStatusbar => self.settings.show_statusbar = !self.settings.show_statusbar,
-            C::ToggleTheme => {
-                self.settings.theme = if App::is_dark(ctx) { ThemeChoice::Light } else { ThemeChoice::Dark };
-                self.apply_theme(ctx);
-            }
+            C::ToggleTheme => self.toggle_theme(ctx),
             C::TextMode | C::ColumnMode | C::HexMode => {
                 let mode = match c {
                     C::TextMode => EditMode::Text,
@@ -791,7 +812,8 @@ impl App {
             C::SwitchTab8 => self.activate_page(7),
             C::SwitchLastTab => self.activate_page(self.tab_pages().len() - 1),
             C::WindowList => self.dialog = Some(Dialog::WindowList),
-            C::About => self.dialog = Some(Dialog::About),
+            C::About => self.dialog = Some(Dialog::About { copied_at: None }),
+            C::KeyboardShortcuts => self.dialog = Some(Dialog::Shortcuts { filter: String::new() }),
 
             _ => {
                 if !editable {

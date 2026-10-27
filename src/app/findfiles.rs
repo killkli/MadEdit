@@ -10,7 +10,7 @@ use std::thread::JoinHandle;
 use eframe::egui;
 use regex::Regex;
 
-use super::App;
+use super::{form, App};
 use crate::core::document::EditKind;
 use crate::core::editor::TextPosition;
 use crate::core::encoding;
@@ -251,13 +251,14 @@ impl App {
 
     pub fn find_results_panel(&mut self, ui: &mut egui::Ui) {
         let mut open: Option<Hit> = None;
+        let lbl_close = self.t("btn.close", "關閉").to_string();
         ui.horizontal(|ui| {
             ui.strong("搜尋結果");
             ui.label(&self.fif.summary);
             if ui.button("清除").clicked() {
                 self.fif.results.clear();
             }
-            if ui.button("✕").clicked() {
+            if form::icon_button(ui, egui::Button::new("×"), &lbl_close, &lbl_close).clicked() {
                 self.fif.show_results = false;
             }
         });

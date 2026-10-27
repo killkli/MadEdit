@@ -3,7 +3,7 @@
 use eframe::egui::{self, Key};
 use regex::Regex;
 
-use super::{App, Confirm};
+use super::{form, App, Confirm};
 use crate::core::document::EditKind;
 use crate::core::editor::{EditorState, TextPosition};
 use crate::core::encoding;
@@ -125,6 +125,16 @@ pub fn replace_all_lines(ed: &mut EditorState, re: &Regex, rep: &str, use_regex:
         ed.clamp_caret();
     }
     count
+}
+
+/// Rounded, outlined panel shared by the find / replace bar and the go-to bar.
+fn bar_frame(ui: &egui::Ui) -> egui::Frame {
+    let visuals = ui.visuals();
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .fill(visuals.faint_bg_color)
+        .stroke(visuals.widgets.noninteractive.bg_stroke)
+        .corner_radius(8.0)
 }
 
 impl App {
@@ -368,7 +378,7 @@ impl App {
         let lbl_replace_btn = self.t("find.replace_btn", "取代");
         let lbl_replace_all = self.t("find.replace_all", "全部取代");
         let lbl_in_sel = self.t("find.in_selection", "只在選取範圍內");
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 4)).fill(ui.visuals().faint_bg_color).show(ui, |ui| {
+        bar_frame(ui).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(lbl_find);
                 let resp = ui.add(egui::TextEdit::singleline(&mut self.find.query).desired_width(260.0).hint_text(if self.find.hex { lbl_hex_hint.clone() } else { String::new() }));
@@ -412,7 +422,7 @@ impl App {
                 if let Some(info) = &self.find.info {
                     ui.label(info);
                 }
-                if ui.button("✕").on_hover_text(lbl_close).clicked() {
+                if form::icon_button(ui, egui::Button::new("×"), lbl_close, lbl_close).clicked() {
                     close = true;
                 }
             });
@@ -472,8 +482,9 @@ impl App {
         let lbl_goto_pos = self.t("find.goto_pos", "移至位置（位元組，可用 0x 十六進位）：");
         let lbl_goto_line = self.t("find.goto_line", "移至行（行號 或 行:欄）：");
         let lbl_go = self.t("find.go", "跳轉");
+        let lbl_close = self.t("find.close", "關閉 (Esc)");
         let lbl_by_bytes = self.t("find.by_bytes", "依位元組位置");
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 4)).fill(ui.visuals().faint_bg_color).show(ui, |ui| {
+        bar_frame(ui).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let by_pos = self.goto.by_position || hex_mode;
                 ui.label(if by_pos { lbl_goto_pos } else { lbl_goto_line });
@@ -491,9 +502,9 @@ impl App {
                     ui.checkbox(&mut self.goto.by_position, lbl_by_bytes);
                 }
                 if let Some(e) = &self.goto.error {
-                    ui.colored_label(egui::Color32::RED, e);
+                    ui.colored_label(ui.visuals().error_fg_color, e);
                 }
-                if ui.button("✕").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                if form::icon_button(ui, egui::Button::new("×"), lbl_close, lbl_close).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                     close = true;
                 }
             });

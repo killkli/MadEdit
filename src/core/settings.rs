@@ -441,6 +441,24 @@ pub struct SettingsLoadError {
 }
 
 impl Settings {
+    /// These live settings with the changes a dialog made to its copy: every top-level field
+    /// where `edited` differs from `base` (the copy as the dialog started) takes `edited`'s
+    /// value, and all other fields keep their live value. The Options dialog is not modal, so
+    /// while it is open the recent files, View toggles, zoom and so on keep changing; copying
+    /// its whole draft back would revert them.
+    pub fn with_edits(&self, base: &Settings, edited: &Settings) -> Settings {
+        use serde_json::{to_value, Value};
+        let (Ok(Value::Object(base)), Ok(Value::Object(edited)), Ok(Value::Object(mut live))) = (to_value(base), to_value(edited), to_value(self)) else {
+            return edited.clone();
+        };
+        for (key, value) in edited {
+            if base.get(&key) != Some(&value) {
+                live.insert(key, value);
+            }
+        }
+        serde_json::from_value(Value::Object(live)).unwrap_or_else(|_| self.clone())
+    }
+
     /// 設定檔路徑（例如 macOS 的 ~/Library/Application Support/MadEdit/settings.json）
     pub fn path() -> Option<PathBuf> {
         // 單元測試不讀寫使用者的設定檔
@@ -568,6 +586,26 @@ mod tests {
     }
 
     #[test]
+    fn test_with_edits_keeps_live_changes_the_dialog_did_not_touch() {
+        let base = Settings::default();
+        let mut edited = base.clone();
+        edited.tab_size = 8;
+        edited.print.line_numbers = !base.print.line_numbers;
+        let mut live = base.clone();
+        live.recent_files.push(PathBuf::from("/tmp/opened-meanwhile.txt"));
+        live.show_ruler = !base.show_ruler;
+        live.tab_size = 2;
+        let merged = live.with_edits(&base, &edited);
+        assert_eq!(merged.tab_size, 8, "the dialog's change wins");
+        assert_eq!(merged.print.line_numbers, edited.print.line_numbers);
+        assert_eq!(merged.recent_files, live.recent_files);
+        assert_eq!(merged.show_ruler, live.show_ruler);
+        // Nothing edited: the live settings come back unchanged.
+        let same = live.with_edits(&base, &base);
+        assert_eq!(serde_json::to_value(&same).unwrap(), serde_json::to_value(&live).unwrap());
+    }
+
+    #[test]
     fn test_legacy_default_encoding_moves_to_fallback() {
         let path = std::env::temp_dir().join(format!("madedit-enc-migrate-{}.json", std::process::id()));
         std::fs::write(&path, r#"{"default_encoding":"Big5"}"#).unwrap();
@@ -584,13 +622,18 @@ mod tests {
         let p = dir.join("settings.json");
         let mut s = Settings::default();
         s.add_recent_file(PathBuf::from("/a.txt"));
+        s.theme = ThemeChoice::Dark;
         s.save_to(&p).unwrap();
         let (loaded, err) = Settings::load_from(&p);
         assert!(err.is_none());
         assert_eq!(loaded.recent_files, vec![PathBuf::from("/a.txt")]);
+        // The theme picked last time is the one the next launch starts in.
+        assert_eq!(loaded.theme, ThemeChoice::Dark);
         // 檔案不存在：靜默使用預設值
-        let (_, err) = Settings::load_from(&dir.join("missing.json"));
+        let (missing, err) = Settings::load_from(&dir.join("missing.json"));
         assert!(err.is_none());
+        // Without a settings file the theme follows the system.
+        assert_eq!(missing.theme, ThemeChoice::System);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

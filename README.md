@@ -57,8 +57,8 @@ The original C++ / wxWidgets **MadEdit** is a classic tool for many developers a
 - **File**: multi-document tabs, save a copy, save all, recent files, read-only flag, printing and in-app print preview (A4 pages, paging, zoom), session persistence.
 - **Edit**: bookmark line operations, hex string conversion, indent, comment, change case, full/half width, tabs to spaces and back, increment numbers, sort, column alignment.
 - **Search**: plain text / case / whole word / Regex / Hex find and replace, find and replace in multiple files, jump to matching bracket.
-- **View**: word wrap, line numbers, bookmark gutter, ruler, control characters, current line, column guide lines, light/dark theme, Markdown / HTML preview.
-- **Macros and tools**: macro record and playback, shortcut reassignment, spell check, word count, Simplified/Traditional Chinese and Japanese Kanji conversion, JSON / XML formatting.
+- **View**: word wrap, line numbers, bookmark gutter, ruler, control characters, current line, column guide lines, System / Light / Dark theme, Markdown / HTML preview.
+- **Macros and tools**: macro record and playback, shortcut reassignment and a searchable shortcut list (Help > Keyboard Shortcuts, F1), spell check, word count, Simplified/Traditional Chinese and Japanese Kanji conversion, JSON / XML formatting.
 
 ### 7. macOS native integration
 - Supports Finder "Open With" and dropping files on the Dock icon (including names with CJK characters, spaces and percent-encoding). Opening a file while the app is running adds a tab in the same app.

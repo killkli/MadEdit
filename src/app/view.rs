@@ -10,7 +10,7 @@ use eframe::egui::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::i18n;
+use super::{i18n, menus};
 use crate::app::commands::C;
 use crate::app::fonts::EDITOR_FAMILY;
 use crate::core::content_hash;
@@ -1677,31 +1677,32 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
     let spell_none = i18n::translate(lang, "spell.none", "（沒有建議）");
     let spell_add = i18n::translate(lang, "spell.add", "將「{q}」加入字典");
     response.context_menu(|ui| {
+        ui.set_min_width(menus::SUBMENU_MIN_WIDTH);
         if let Some(sc) = spell_ctx.as_ref() {
             if sc.suggestions.is_empty() {
                 ui.label(spell_none);
             }
             for s in &sc.suggestions {
-                if ui.button(s).clicked() {
+                if ui.button(menus::check_label(false, s)).clicked() {
                     replace_word = Some((sc.line, sc.start, sc.end, s.clone()));
                     ui.close();
                 }
             }
-            if ui.button(i18n::fill(spell_add, None, Some(&sc.word))).clicked() {
+            if ui.button(menus::check_label(false, &i18n::fill(spell_add, None, Some(&sc.word)))).clicked() {
                 out.add_word = Some(sc.word.clone());
                 ui.close();
             }
             ui.separator();
         }
         for c in [C::Undo, C::Redo, C::Cut, C::Copy, C::Paste, C::Delete, C::SelectAll] {
-            if ui.button(i18n::command_text(lang, c)).clicked() {
+            if ui.button(menus::check_label(false, &i18n::command_text(lang, c))).clicked() {
                 out.commands.push(c);
                 ui.close();
             }
         }
         ui.separator();
         for c in [C::ToUpperCase, C::ToLowerCase, C::Comment, C::Uncomment] {
-            if ui.button(i18n::command_text(lang, c)).clicked() {
+            if ui.button(menus::check_label(false, &i18n::command_text(lang, c))).clicked() {
                 out.commands.push(c);
                 ui.close();
             }

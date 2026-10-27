@@ -141,7 +141,7 @@ pub fn command_text(lang: Lang, c: C) -> String {
 }
 
 /// 把譯文裡的 `{n}`、`{q}` 換成數字或文字。
-pub fn fill<'a>(template: &'a str, n: Option<usize>, q: Option<&str>) -> String {
+pub fn fill(template: &str, n: Option<usize>, q: Option<&str>) -> String {
     let mut s = template.to_string();
     if let Some(n) = n {
         s = s.replace("{n}", &n.to_string());

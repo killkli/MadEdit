@@ -3,7 +3,9 @@
 mod actions;
 pub mod commands;
 mod i18n;
+mod icons;
 mod dialogs;
+mod form;
 mod find;
 mod findfiles;
 pub mod fonts;
@@ -96,12 +98,18 @@ pub struct App {
     fonts: FontManager,
     font_applied: Option<String>,
     widths: CharWidths,
-    icons: HashMap<&'static str, TextureHandle>,
+    /// Toolbar icon textures: (light theme, dark theme). See `icons.rs`.
+    icons: HashMap<&'static str, (TextureHandle, TextureHandle)>,
     status: Option<(String, f64)>,
     find: FindBar,
     goto: GotoBar,
     dialog: Option<Dialog>,
     confirm: Option<Confirm>,
+    /// Kind of dialog and confirmation shown last frame, to tell when one has just opened
+    /// (its first field takes focus and its content starts scrolled to the top). Reopening
+    /// the same kind over itself (F9 while Recent Files is open) does not count as opening.
+    shown_dialog: Option<std::mem::Discriminant<Dialog>>,
+    shown_confirm: Option<std::mem::Discriminant<Confirm>>,
     /// 關閉流程中「儲存」需要再確認（外部修改、解碼錯誤等）時暫存的待關閉分頁與是否結束程式，
     /// 存檔成功後由此接續關閉；再確認被取消時清除
     pending_close: Option<(Vec<u64>, bool)>,
@@ -113,6 +121,9 @@ pub struct App {
     fif: FindInFiles,
     bindings: Vec<(KeyboardShortcut, C)>,
     post_it: bool,
+    /// Set each frame by the menu bar when it had room for the zoom / theme / quick-search
+    /// controls; otherwise the toolbar shows them.
+    quick_in_menubar: bool,
     fullscreen: bool,
     last_autosave: f64,
     last_disk_check: f64,
@@ -133,14 +144,20 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext, files: Vec<PathBuf>, screenshot: Option<PathBuf>) -> Self {
-        #[cfg(target_os = "macos")]
-        crate::macos::attach_context(&cc.egui_ctx);
         // 自動化截圖以預設設定啟動，不還原或覆寫使用者的工作階段。
         let (settings, settings_error) = if screenshot.is_some() {
             (Settings::default(), None)
         } else {
             Settings::load_checked()
         };
+        Self::with_settings(cc, files, screenshot, settings, settings_error)
+    }
+
+    /// Builds the app from settings already loaded; tests start it from chosen settings here,
+    /// since `Settings::load_checked` never reads a file under `cfg(test)`.
+    fn with_settings(cc: &eframe::CreationContext, files: Vec<PathBuf>, screenshot: Option<PathBuf>, settings: Settings, settings_error: Option<SettingsLoadError>) -> Self {
+        #[cfg(target_os = "macos")]
+        crate::macos::attach_context(&cc.egui_ctx);
         let mut app = Self {
             instance: None,
             settings,
@@ -158,6 +175,8 @@ impl App {
             goto: GotoBar::default(),
             dialog: None,
             confirm: None,
+            shown_dialog: None,
+            shown_confirm: None,
             pending_close: None,
             pending_create: Vec::new(),
             macros: MacroState::default(),
@@ -166,6 +185,7 @@ impl App {
             fif: FindInFiles::default(),
             bindings: Vec::new(),
             post_it: false,
+            quick_in_menubar: false,
             fullscreen: false,
             last_autosave: 0.0,
             last_disk_check: 0.0,
@@ -182,7 +202,6 @@ impl App {
         app.load_icons(&cc.egui_ctx);
         app.rebuild_bindings();
         app.apply_theme(&cc.egui_ctx);
-        egui_extras_style(&cc.egui_ctx);
         // 第一幀繪製前就註冊編輯區字型家族（set_fonts 於下一幀才生效，延後註冊會 panic）
         let fam = app.settings.font_family.clone();
         app.fonts.apply(&cc.egui_ctx, &fam);
@@ -643,6 +662,25 @@ impl App {
             ThemeChoice::Light => egui::ThemePreference::Light,
             ThemeChoice::Dark => egui::ThemePreference::Dark,
         });
+        // set_theme only stores the preference; the shared shape and accent settings must be
+        // written into both the light and dark styles so a later system theme switch keeps them.
+        install_style(ctx);
+    }
+
+    /// Theme picked from the View menu or the toolbar: takes effect at once and is saved
+    /// right away, unlike the Options dialog, which only applies on OK / Apply.
+    pub fn set_theme(&mut self, ctx: &egui::Context, choice: ThemeChoice) {
+        self.settings.theme = choice;
+        self.apply_theme(ctx);
+        let _ = self.settings.save();
+    }
+
+    /// The theme icon and View > Toggle Theme: switch to the opposite of the theme shown now
+    /// (for System, whatever the OS uses). The result is always Light or Dark and is saved, so
+    /// the next launch starts in it; only a fresh install, without settings, follows the system.
+    pub fn toggle_theme(&mut self, ctx: &egui::Context) {
+        let next = if App::is_dark(ctx) { ThemeChoice::Light } else { ThemeChoice::Dark };
+        self.set_theme(ctx, next);
     }
 
     pub fn is_dark(ctx: &egui::Context) -> bool {
@@ -668,26 +706,27 @@ impl App {
     }
 
     fn load_icons(&mut self, ctx: &egui::Context) {
-        macro_rules! icons {
-            ($($name:literal),*) => {
-                $(
-                    let bytes: &[u8] = include_bytes!(concat!("../../assets/icons/", $name, ".png"));
-                    if let Ok(img) = image::load_from_memory(bytes) {
-                        let rgba = img.to_rgba8();
-                        let size = [rgba.width() as usize, rgba.height() as usize];
-                        let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
-                        self.icons.insert($name, ctx.load_texture($name, ci, egui::TextureOptions::NEAREST));
-                    }
-                )*
-            };
+        let texture = |name: String, img: &image::RgbaImage, options: egui::TextureOptions| {
+            let size = [img.width() as usize, img.height() as usize];
+            let ci = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+            ctx.load_texture(name, ci, options)
+        };
+        // Pixel art stays crisp when enlarged, but the 32 px art is drawn at 16 pt, i.e. shrunk
+        // on 1x displays, where nearest sampling drops every other row and column and with
+        // them thin outlines; linear minification averages them instead.
+        let pixel_art = egui::TextureOptions { minification: egui::TextureFilter::Linear, ..egui::TextureOptions::NEAREST };
+        for &(name, bytes) in icons::ICONS {
+            if let Some(img) = icons::decode(bytes) {
+                let dark = icons::dark_variant(&img);
+                self.icons.insert(name, (texture(name.to_string(), &img, pixel_art), texture(format!("{name}-dark"), &dark, pixel_art)));
+            }
         }
-        icons!(
-            "new", "fileopen", "filesave", "saveall", "fileclose", "closeall", "print", "undo", "redo", "cut", "copy",
-            "paste", "indent", "unindent", "comment", "uncomment", "find", "findnext", "findprev", "replace",
-            "goposition", "nowrap", "wrapbywin", "wrapbycol", "textmode", "columnmode", "hexmode", "bookmark_toggle",
-            "bookmark_next", "bookmark_prev", "bookmark_clear", "preview", "encoding", "syntax", "reload", "quit",
-            "help", "down"
-        );
+        // Application icon for the About dialog; it is colorful, so both themes share it. It is
+        // enlarged by a non-integer factor (48 px to 56 pt), which nearest sampling makes blocky.
+        if let Some(img) = icons::decode(include_bytes!("../../assets/madedit-icon.png")) {
+            let tex = texture("app".into(), &img, egui::TextureOptions::LINEAR);
+            self.icons.insert("app", (tex.clone(), tex));
+        }
     }
 
     // ── 快捷鍵 ──────────────────────────────────────────────────
@@ -856,9 +895,17 @@ impl App {
         let unsaved = self.t("st.unsaved", "尚未儲存").to_string();
         let preview_title = self.t("md.title", "Markdown 預覽").to_string();
         let preview_active = self.is_preview_tab();
+        let close_tip = self.t("btn.close", "關閉").to_string();
+        let close_preview_tip = self.t("md.close", "關閉預覽").to_string();
+        let copy_path = self.t("tab.copy_path", "複製完整路徑").to_string();
+        // A thin outline groups each tab's name with its own close button.
+        let tab_frame = egui::Frame::new()
+            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+            .corner_radius(6.0)
+            .inner_margin(egui::Margin::symmetric(2, 1));
         egui::ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
+                ui.spacing_mut().item_spacing.x = 4.0;
                 for (i, t) in self.tabs.iter().enumerate() {
                     let mut name = t.doc.display_name();
                     if t.doc.is_modified() {
@@ -868,44 +915,53 @@ impl App {
                         name.push_str(" 🔒");
                     }
                     let selected = i == self.active && !preview_active;
-                    let resp = ui.add(egui::Button::selectable(selected, name)).on_hover_text(
-                        t.doc.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| unsaved.clone()),
-                    );
-                    if resp.clicked() {
-                        activate = Some((i, false));
-                    }
-                    if resp.middle_clicked() {
-                        close = Some(t.doc.id);
-                    }
-                    resp.context_menu(|ui| {
-                        for c in [C::Save, C::SaveAs, C::Reload, C::Close, C::CloseOthers, C::CloseLeft, C::CloseRight, C::CloseAll] {
-                            if ui.button(self.cmd_text(c)).clicked() {
-                                menu_cmd = Some((i, c));
+                    tab_frame.show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        let resp = ui.add(egui::Button::selectable(selected, name)).on_hover_text(
+                            t.doc.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| unsaved.clone()),
+                        );
+                        if resp.clicked() {
+                            activate = Some((i, false));
+                        }
+                        if resp.middle_clicked() {
+                            close = Some(t.doc.id);
+                        }
+                        resp.context_menu(|ui| {
+                            ui.set_min_width(menus::SUBMENU_MIN_WIDTH);
+                            for c in [C::Save, C::SaveAs, C::Reload, C::Close, C::CloseOthers, C::CloseLeft, C::CloseRight, C::CloseAll] {
+                                if ui.button(menus::check_label(false, &self.cmd_text(c))).clicked() {
+                                    menu_cmd = Some((i, c));
+                                    ui.close();
+                                }
+                            }
+                            if let Some(p) = &t.doc.path
+                                && ui.button(menus::check_label(false, &copy_path)).clicked()
+                            {
+                                ui.ctx().copy_text(p.display().to_string());
                                 ui.close();
                             }
-                        }
-                        if let Some(p) = &t.doc.path
-                            && ui.button("複製完整路徑").clicked()
-                        {
-                            ui.ctx().copy_text(p.display().to_string());
-                            ui.close();
+                        });
+                        // The tab name tells the close buttons apart for screen readers.
+                        let close_name = format!("{close_tip} {}", t.doc.display_name());
+                        if form::icon_button(ui, egui::Button::new("×").small().frame(false), &close_tip, &close_name).clicked() {
+                            close = Some(t.doc.id);
                         }
                     });
-                    if ui.add(egui::Button::new("×").small().frame(false)).on_hover_text("關閉").clicked() {
-                        close = Some(t.doc.id);
-                    }
-                    ui.separator();
+                    // A document's Markdown preview tab follows it, outlined the same way.
                     if t.md_preview.as_ref().is_some_and(|pv| pv.placement == mdpreview::Placement::Tab) {
                         let name = format!("{} — {preview_title}", t.doc.display_name());
-                        let resp = ui.add(egui::Button::selectable(i == self.active && preview_active, name));
-                        if resp.clicked() {
-                            activate = Some((i, true));
-                        }
-                        if resp.middle_clicked() || ui.add(egui::Button::new("×").small().frame(false))
-                            .on_hover_text(self.t("md.close", "關閉預覽")).clicked() {
-                            close_preview = Some(i);
-                        }
-                        ui.separator();
+                        tab_frame.show(ui, |ui| {
+                            ui.spacing_mut().item_spacing.x = 2.0;
+                            let resp = ui.add(egui::Button::selectable(i == self.active && preview_active, name));
+                            if resp.clicked() {
+                                activate = Some((i, true));
+                            }
+                            let close_name = format!("{close_preview_tip} {}", t.doc.display_name());
+                            let close_btn = form::icon_button(ui, egui::Button::new("×").small().frame(false), &close_preview_tip, &close_name);
+                            if resp.middle_clicked() || close_btn.clicked() {
+                                close_preview = Some(i);
+                            }
+                        });
                     }
                 }
             });
@@ -1017,11 +1073,11 @@ impl App {
             ui.monospace(if overwrite { "OVR" } else { "INS" });
             if selecting {
                 ui.separator();
-                ui.colored_label(Color32::from_rgb(200, 120, 0), self.t("st.selecting", "選取中"));
+                ui.colored_label(ui.visuals().warn_fg_color, self.t("st.selecting", "選取中"));
             }
             if recording {
                 ui.separator();
-                ui.colored_label(Color32::RED, self.t("st.recording", "● 錄製巨集"));
+                ui.colored_label(ui.visuals().error_fg_color, self.t("st.recording", "● 錄製巨集"));
             }
             if let Some((msg, _)) = &status {
                 ui.separator();
@@ -1039,10 +1095,18 @@ impl App {
         let id = t.doc.id;
         let modified = t.doc.is_modified();
         let exists = t.doc.path.as_ref().is_some_and(|p| p.exists());
-        egui::Frame::new().fill(Color32::from_rgb(255, 236, 170)).inner_margin(6.0).show(ui, |ui| {
+        // Amber warning banner in both themes: pale amber with dark text in light mode,
+        // deep amber with light text in dark mode, so the message stays readable either way.
+        let (banner_bg, banner_fg, banner_danger) = if ui.visuals().dark_mode {
+            (Color32::from_rgb(74, 52, 16), Color32::from_rgb(255, 228, 176), Color32::from_rgb(255, 160, 140))
+        } else {
+            (Color32::from_rgb(255, 244, 214), Color32::from_rgb(72, 48, 8), Color32::from_rgb(168, 32, 24))
+        };
+        let banner = egui::Frame::new().fill(banner_bg).inner_margin(egui::Margin::symmetric(10, 6)).corner_radius(8.0);
+        banner.show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.colored_label(
-                    Color32::BLACK,
+                    banner_fg,
                     format!(
                         "⚠ {}",
                         if exists {
@@ -1053,7 +1117,7 @@ impl App {
                     ),
                 );
                 if modified {
-                    ui.colored_label(Color32::from_rgb(160, 0, 0), self.t("banner.lose", "重新載入會遺失目前未存檔的修改。"));
+                    ui.colored_label(banner_danger, self.t("banner.lose", "重新載入會遺失目前未存檔的修改。"));
                 }
                 if exists && ui.button(self.t("btn.reload", "重新載入")).clicked() {
                     if modified {
@@ -1129,11 +1193,46 @@ impl App {
     }
 }
 
-/// 介面細節：較緊湊的間距
-fn egui_extras_style(ctx: &egui::Context) {
-    ctx.global_style_mut(|s| {
-        s.spacing.button_padding = egui::vec2(5.0, 2.0);
-        s.spacing.item_spacing = egui::vec2(6.0, 3.0);
+/// Modern look shared by the light and dark styles: rounded widgets and windows, softer
+/// shadows and one accent blue. Background colors stay on egui's own light / dark palette
+/// so dialogs, menus and panels all match.
+///
+/// Vertical spacing keeps the old compact values (padding 2, spacing 3): the Edit menu has
+/// dozens of rows, and although long menus scroll (`menus::menu`), taller rows would make
+/// them scroll on an ordinary laptop screen.
+fn install_style(ctx: &egui::Context) {
+    ctx.all_styles_mut(|style| {
+        style.spacing.button_padding = egui::vec2(6.0, 2.0);
+        style.spacing.item_spacing = egui::vec2(6.0, 3.0);
+        style.spacing.window_margin = egui::Margin::symmetric(12, 10);
+        let visuals = &mut style.visuals;
+        let radius = egui::CornerRadius::same(6);
+        visuals.widgets.inactive.corner_radius = radius;
+        visuals.widgets.hovered.corner_radius = radius;
+        visuals.widgets.active.corner_radius = radius;
+        visuals.widgets.open.corner_radius = radius;
+        visuals.window_corner_radius = egui::CornerRadius::same(10);
+        visuals.menu_corner_radius = egui::CornerRadius::same(8);
+        let shadow = if visuals.dark_mode { 96 } else { 32 };
+        visuals.window_shadow = egui::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(shadow) };
+        visuals.popup_shadow = egui::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(shadow) };
+        // Warning / error text (status bar, dialogs, find bar) must stay readable as small text:
+        // egui's default light-mode orange is only about 3:1 against the panel; these reach 4.5:1+.
+        if visuals.dark_mode {
+            visuals.warn_fg_color = Color32::from_rgb(255, 170, 60);
+            visuals.error_fg_color = Color32::from_rgb(255, 110, 100);
+            visuals.selection.bg_fill = Color32::from_rgb(46, 92, 160);
+            visuals.selection.stroke.color = Color32::from_rgb(226, 236, 255);
+            visuals.hyperlink_color = Color32::from_rgb(140, 186, 255);
+        } else {
+            visuals.warn_fg_color = Color32::from_rgb(160, 80, 0);
+            visuals.error_fg_color = Color32::from_rgb(190, 30, 30);
+            // The hex view and the editor fallback paint selections at 60% of this color on
+            // white, so it must be strong enough to stay visible after that fade.
+            visuals.selection.bg_fill = Color32::from_rgb(160, 200, 255);
+            visuals.selection.stroke.color = Color32::from_rgb(12, 52, 120);
+            visuals.hyperlink_color = Color32::from_rgb(16, 90, 180);
+        }
     });
 }
 
@@ -1208,6 +1307,7 @@ impl eframe::App for App {
         self.periodic(&ctx);
 
         let show_bars = !self.post_it;
+        self.quick_in_menubar = false;
         if self.settings.show_menubar && show_bars {
             egui::Panel::top("menubar").show(ui, |ui| self.menu_bar(ui));
         }
@@ -1237,7 +1337,10 @@ impl eframe::App for App {
                 mdpreview::Placement::Tab => {}
             }
         }
-        egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(editor_margin)).show(ui, |ui| {
+        // Opaque panel color: the find / go-to bars and the gaps around them must not show the
+        // window's clear color, which is dark even in light mode.
+        let editor_frame = egui::Frame::new().inner_margin(editor_margin).fill(ui.visuals().panel_fill);
+        egui::CentralPanel::default().frame(editor_frame).show(ui, |ui| {
             if self.is_preview_tab() {
                 self.show_markdown_preview(ui);
             } else {
