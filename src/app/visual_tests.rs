@@ -1,7 +1,12 @@
 //! 離屏繪製截圖（供無法開啟實體視窗的環境檢查畫面）
 //!
 //! 預設略過，執行方式：
-//! `MADEDIT_SHOT_OUT=out.png MADEDIT_SHOT_FILE=檔案 MADEDIT_SHOT_CMDS=menuDarkTheme,menuHexMode cargo test shot -- --ignored`
+//! `MADEDIT_SHOT_OUT=out.png MADEDIT_SHOT_FILE=檔案 MADEDIT_SHOT_CMDS=menuToggleTheme,menuHexMode cargo test shot -- --ignored`
+//!
+//! The window starts in the dark theme (it follows the system); `menuToggleTheme` switches to
+//! the light one.
+
+use egui_kittest::kittest::Queryable;
 
 use super::commands::C;
 use super::App;
@@ -25,6 +30,12 @@ fn shot() {
     }
     if let Ok(text) = std::env::var("MADEDIT_SHOT_TYPE") {
         harness.event(eframe::egui::Event::Text(text));
+        harness.run_steps(3);
+    }
+    // Comma-separated widget labels to click in order (e.g. a menu title, then a submenu),
+    // so open menus can be inspected too.
+    for label in std::env::var("MADEDIT_SHOT_CLICK").unwrap_or_default().split(',').filter(|s| !s.is_empty()) {
+        harness.get_by_label(label).click();
         harness.run_steps(3);
     }
     harness.render().expect("繪製失敗").save(&out).expect("無法儲存截圖");

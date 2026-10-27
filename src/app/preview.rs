@@ -329,7 +329,8 @@ impl PrintPreview {
             });
         });
 
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(Color32::from_gray(128))).show(ui, |ui| {
+        let desk = if ui.visuals().dark_mode { Color32::from_gray(22) } else { Color32::from_gray(214) };
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(desk)).show(ui, |ui| {
             egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
                 let page_size = Vec2::new(PAGE_W, PAGE_H) * self.zoom;
                 // 四周留白，紙張水平置中

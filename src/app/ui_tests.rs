@@ -1,10 +1,11 @@
 //! 以 egui_kittest 模擬鍵盤與輸入法事件的整合測試（不開視窗、不需 GPU）
 
-use eframe::egui::{Event, ImeEvent, Key, Modifiers};
+use eframe::egui::{self, Event, ImeEvent, Key, Modifiers};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
 use super::commands::C;
+use super::dialogs::Dialog;
 use super::{App, Confirm};
 
 fn harness() -> Harness<'static, App> {
@@ -40,7 +41,7 @@ fn test_instance_request_restores_window_without_running_ui() {
         eframe::App::logic(h.state_mut(), ctx, &mut frame);
     });
     assert_eq!(text(&mut h), "external document");
-    let commands: Vec<_> = output.viewport_commands.iter().flat_map(|(_, commands)| commands).collect();
+    let commands: Vec<_> = output.viewport_commands.values().flatten().collect();
     assert!(commands.iter().any(|cmd| matches!(cmd, eframe::egui::ViewportCommand::Minimized(false))));
     assert!(commands.iter().any(|cmd| matches!(cmd, eframe::egui::ViewportCommand::Focus)));
     drop(h.state_mut().instance.take());
@@ -109,14 +110,14 @@ fn benchmark_markdown_preview_ui() {
             edit.push(elapsed);
         }
         // 選用的離屏截圖在計時完成後才執行，不將 GPU 初始化算入效能樣本。
-        if sample == 11 {
-            if let Some(out) = std::env::var_os("MADEDIT_MD_BENCH_SHOT") {
-                if let Ok(line) = std::env::var("MADEDIT_MD_BENCH_TOP_LINE").unwrap_or_default().parse::<usize>() {
-                    h.state_mut().tab_mut().view.top_row = line;
-                }
-                h.run_steps(5);
-                h.render().expect("預覽截圖失敗").save(out).unwrap();
+        if sample == 11
+            && let Some(out) = std::env::var_os("MADEDIT_MD_BENCH_SHOT")
+        {
+            if let Ok(line) = std::env::var("MADEDIT_MD_BENCH_TOP_LINE").unwrap_or_default().parse::<usize>() {
+                h.state_mut().tab_mut().view.top_row = line;
             }
+            h.run_steps(5);
+            h.render().expect("預覽截圖失敗").save(out).unwrap();
         }
     }
     let report = |name: &str, mut samples: Vec<Duration>| {
@@ -209,15 +210,410 @@ fn test_find_bar_selects_match() {
 }
 
 #[test]
-fn test_toggle_theme_switches_visuals() {
+fn test_toggle_theme_command_switches_light_and_dark_like_the_icon() {
+    use crate::core::settings::ThemeChoice;
     let mut h = harness();
-    let before = App::is_dark(&h.ctx);
-    h.state_mut().pending.push(C::ToggleTheme);
+    let ctx = h.ctx.clone();
+    h.state_mut().set_theme(&ctx, ThemeChoice::System);
     h.run_steps(3);
-    assert_ne!(App::is_dark(&h.ctx), before);
-    h.state_mut().pending.push(C::ToggleTheme);
+    let mut dark = App::is_dark(&h.ctx);
+    for _ in 0..3 {
+        h.state_mut().pending.push(C::ToggleTheme);
+        h.run_steps(3);
+        dark = !dark;
+        assert_eq!(App::is_dark(&h.ctx), dark);
+        assert_eq!(h.state_mut().settings.theme, if dark { ThemeChoice::Dark } else { ThemeChoice::Light });
+        // The icon names the same theme the command switched to.
+        let label = format!("介面主題：{}", if dark { "深色" } else { "淺色" });
+        assert!(h.query_by_label(&label).is_some(), "{label}");
+    }
+}
+
+#[test]
+fn test_theme_choice_can_return_to_system_and_styles_both_themes() {
+    use crate::core::settings::ThemeChoice;
+    use eframe::egui;
+    let mut h = harness();
+    let ctx = h.ctx.clone();
+    h.state_mut().set_theme(&ctx, ThemeChoice::Dark);
+    h.run_steps(2);
+    assert!(App::is_dark(&h.ctx));
+    h.state_mut().set_theme(&ctx, ThemeChoice::System);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().settings.theme, ThemeChoice::System);
+    assert_eq!(h.ctx.options(|o| o.theme_preference), egui::ThemePreference::System);
+    // Both styles carry the shared look, so a system theme switch mid-session keeps it.
+    for theme in [egui::Theme::Light, egui::Theme::Dark] {
+        let style = h.ctx.style_of(theme);
+        assert_eq!(style.visuals.window_corner_radius, egui::CornerRadius::same(10));
+        // Rows stay as compact as before, so long menus fit without scrolling where they can.
+        assert_eq!(style.spacing.item_spacing.y, 3.0);
+        assert_eq!(style.spacing.button_padding.y, 2.0);
+    }
+}
+
+#[test]
+fn test_light_selection_stays_visible_in_hex_view() {
+    use eframe::egui;
+    let h = harness();
+    // The hex view paints the selection at 60% over a white background.
+    let sel = h.ctx.style_of(egui::Theme::Light).visuals.selection.bg_fill.gamma_multiply(0.6);
+    let over_white = |c: u8| c as f32 + 255.0 * (1.0 - sel.a() as f32 / 255.0);
+    assert!(over_white(sel.r()) <= 210.0 && over_white(sel.g()) <= 230.0, "selection too pale: {sel:?}");
+}
+
+#[test]
+fn test_options_ok_keeps_theme_picked_from_toolbar() {
+    use crate::core::settings::ThemeChoice;
+    let mut h = harness();
+    h.state_mut().pending.push(C::Options);
     h.run_steps(3);
-    assert_eq!(App::is_dark(&h.ctx), before);
+    // The dialog's draft was taken before this change; OK must not revert it.
+    let ctx = h.ctx.clone();
+    h.state_mut().set_theme(&ctx, ThemeChoice::Dark);
+    h.run_steps(3);
+    h.get_by_label("確定").click();
+    h.run_steps(3);
+    assert!(h.state_mut().dialog.is_none());
+    assert_eq!(h.state_mut().settings.theme, ThemeChoice::Dark);
+    assert!(App::is_dark(&h.ctx));
+}
+
+#[test]
+fn test_short_menus_keep_the_shared_minimum_width() {
+    let mut h = harness();
+    // Help has a single item; without the floor its popup shrank to that item's width.
+    h.get_by_label("說明(H)").click();
+    h.run_steps(3);
+    let help = h.get_by_label_contains("關於").rect().width();
+    assert!(help >= 230.0, "Help menu item is only {help} wide");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    // Submenus (Theme has three short items) share a smaller floor.
+    h.get_by_label("檢視(V)").click();
+    h.run_steps(3);
+    h.get_by_label("　 介面主題").click();
+    h.run_steps(3);
+    let theme = h.get_by_label("　 深色").rect().width();
+    assert!(theme >= 170.0, "Theme submenu item is only {theme} wide");
+}
+
+#[test]
+fn test_view_menu_groups_display_options_into_submenus() {
+    let mut h = harness();
+    h.get_by_label("檢視(V)").click();
+    h.run_steps(3);
+    // Display toggles live in View > Show, not at the top level.
+    assert!(h.query_by_label_contains("顯示行號").is_none());
+    h.get_by_label("　 顯示").click();
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("顯示行號").is_some());
+    // Word wrap lives in View > Layout and still runs its command.
+    h.get_by_label("　 排版").click();
+    h.run_steps(3);
+    // The toolbar has a same-named button, so match the menu item by its check-mark column.
+    h.get_by(|n| n.label().is_some_and(|l| l.starts_with("　 依視窗寬度換行"))).click();
+    h.run_steps(3);
+    assert_eq!(h.state_mut().settings.wrap_mode, crate::core::settings::WrapMode::ByWindow);
+}
+
+#[test]
+fn test_quick_controls_move_to_toolbar_when_menu_bar_hidden() {
+    use eframe::egui::accesskit::Role;
+    let mut h = harness();
+    // Wide enough: zoom / theme / quick search sit in the menu bar, toolbar is one row of icons.
+    assert!(h.state_mut().quick_in_menubar);
+    h.state_mut().settings.show_menubar = false;
+    h.run_steps(3);
+    assert!(!h.state_mut().quick_in_menubar);
+    // Still reachable from the toolbar.
+    let ctx = h.ctx.clone();
+    h.state_mut().set_theme(&ctx, crate::core::settings::ThemeChoice::Light);
+    h.run_steps(3);
+    assert_eq!(h.query_all_by(|n| n.role() == Role::Button && n.label().is_some_and(|l| l.starts_with("介面主題："))).count(), 1);
+    click_theme_toggle(&mut h);
+    assert!(App::is_dark(&h.ctx));
+}
+
+/// Clicks the quick-controls theme icon, whose label names the current theme.
+fn click_theme_toggle(h: &mut Harness<'static, App>) {
+    h.get_by(|n| n.role() == eframe::egui::accesskit::Role::Button && n.label().is_some_and(|l| l.starts_with("介面主題："))).click();
+    h.run_steps(3);
+}
+
+#[test]
+fn test_saved_theme_is_applied_at_startup() {
+    use crate::core::settings::{Settings, ThemeChoice};
+    use eframe::egui::{Context, ThemePreference};
+    // Built on a plain context: the kittest harness sets its own theme after creating the app,
+    // which would hide what startup applied. eframe itself leaves the app's choice alone.
+    let start = |theme: ThemeChoice| {
+        let ctx = Context::default();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        let app = App::with_settings(&cc, Vec::new(), None, Settings { theme, ..Settings::default() }, None);
+        assert_eq!(app.settings.theme, theme);
+        ctx.options(|o| o.theme_preference)
+    };
+    assert_eq!(start(ThemeChoice::Light), ThemePreference::Light);
+    assert_eq!(start(ThemeChoice::Dark), ThemePreference::Dark);
+    // Without a settings file the defaults apply, and they follow the system.
+    assert_eq!(start(Settings::default().theme), ThemePreference::System);
+}
+
+#[test]
+fn test_theme_toggle_switches_between_light_and_dark_only() {
+    use crate::core::settings::ThemeChoice;
+    let mut h = harness();
+    let ctx = h.ctx.clone();
+    // Following the system (a fresh install), the icon names the theme the system uses.
+    h.state_mut().set_theme(&ctx, ThemeChoice::System);
+    h.run_steps(3);
+    let system_dark = App::is_dark(&h.ctx);
+    let name = |dark: bool| format!("介面主題：{}", if dark { "深色" } else { "淺色" });
+    // It also says that the theme follows the system, which a click ends.
+    let following = format!("{} · 跟隨系統", name(system_dark));
+    assert!(h.query_by_label(&following).is_some(), "{following}");
+    // Each click flips the shown theme and saves it explicitly; System never comes back.
+    for i in 1..=4 {
+        click_theme_toggle(&mut h);
+        let dark = system_dark ^ (i % 2 == 1);
+        assert_eq!(App::is_dark(&h.ctx), dark);
+        assert_eq!(h.state_mut().settings.theme, if dark { ThemeChoice::Dark } else { ThemeChoice::Light });
+        assert!(h.query_by_label(&name(dark)).is_some());
+    }
+}
+
+#[test]
+fn test_options_window_keeps_its_size_across_tabs() {
+    use eframe::egui::accesskit::Role;
+    let mut h = harness();
+    h.state_mut().pending.push(C::Options);
+    h.run_steps(4);
+    let window = |h: &Harness<'static, App>| h.get_by_role_and_label(Role::Window, "選項").rect();
+    let first = window(&h);
+    for tab in ["一般", "編輯", "新文件", "列印", "按鍵", "拼字檢查", "一般"] {
+        // By role: the Keys page also lists a "拼字檢查" command.
+        h.get_by_role_and_label(Role::Tab, tab).click();
+        h.run_steps(4);
+        let r = window(&h);
+        assert!((r.width() - first.width()).abs() < 1.0 && (r.height() - first.height()).abs() < 1.0, "{tab}: {r:?} vs {first:?}");
+    }
+}
+
+#[test]
+fn test_dialog_shortcuts_keep_open_options() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::Options);
+    h.run_steps(3);
+    h.get_by_label("編輯").click();
+    h.run_steps(3);
+    let tab = |h: &mut Harness<'static, App>| match &h.state_mut().dialog {
+        Some(Dialog::Options(st)) => Some(st.tab),
+        _ => None,
+    };
+    let edit_tab = tab(&mut h);
+    assert!(edit_tab.is_some_and(|t| t != 0));
+    // F9 (recent files) and the Options command itself leave the open dialog as it was; a
+    // fresh Options dialog would start on the first tab with a new draft.
+    h.key_press(egui::Key::F9);
+    h.run_steps(3);
+    h.state_mut().pending.push(C::Options);
+    h.run_steps(3);
+    assert_eq!(tab(&mut h), edit_tab);
+    // F1 shows the Keys tab, where the shortcuts are listed.
+    h.key_press(egui::Key::F1);
+    h.run_steps(3);
+    assert_eq!(tab(&mut h), Some(super::dialogs::OPTIONS_KEYS_TAB));
+}
+
+#[test]
+fn test_fixed_size_dialogs_fit_a_small_window() {
+    use eframe::egui::accesskit::Role;
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([500.0, 400.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    h.state_mut().settings.ui_language = crate::core::settings::UiLanguage::ZhTw;
+    h.run_steps(3);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(500.0, 400.0));
+    for (cmd, title, button) in [(C::Options, "選項", "確定"), (C::KeyboardShortcuts, "鍵盤快捷鍵", "關閉")] {
+        h.state_mut().dialog = None;
+        h.state_mut().pending.push(cmd);
+        h.run_steps(4);
+        let window = h.get_by_role_and_label(Role::Window, title).rect();
+        let footer = h.get_by(|n| n.role() == Role::Button && n.label().as_deref() == Some(button)).rect();
+        assert!(screen.contains_rect(window), "{title}: {window:?}");
+        assert!(window.contains_rect(footer), "{title}: {footer:?} outside {window:?}");
+    }
+    // Too narrow for two columns: every menu title starts at the same x.
+    let lefts: Vec<f32> = ["檔案", "編輯"].iter().filter_map(|t| h.query_by_label(t).map(|n| n.rect().left())).collect();
+    assert_eq!(lefts.len(), 2);
+    assert!((lefts[0] - lefts[1]).abs() < 1.0, "menu titles at x = {lefts:?}");
+}
+
+#[test]
+fn test_keyboard_shortcuts_dialog_lists_and_filters_bindings() {
+    let mut h = harness();
+    h.key_press(egui::Key::F1);
+    h.run_steps(3);
+    assert!(matches!(h.state_mut().dialog, Some(Dialog::Shortcuts { .. })));
+    // Rows scrolled out of view are not in the accessibility tree, so narrow the list first.
+    if let Some(Dialog::Shortcuts { filter }) = &mut h.state_mut().dialog {
+        *filter = "尋找".into();
+    }
+    h.run_steps(3);
+    let find = h.ctx.format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::F));
+    assert!(dialog(&h).query_by_label("尋找").is_some());
+    // Each binding is on its own line of the keys cell.
+    let cell = |v: String| v.lines().any(|l| l == find);
+    assert_eq!(h.query_all_by(|n| n.role() == egui::accesskit::Role::Label && n.value().is_some_and(cell)).count(), 1);
+    // Spelled-out modifier names match too, whatever symbols the platform shows.
+    if let Some(Dialog::Shortcuts { filter }) = &mut h.state_mut().dialog {
+        *filter = "ctrl+f".into();
+    }
+    h.run_steps(3);
+    assert!(dialog(&h).query_by_label("尋找").is_some());
+    if let Some(Dialog::Shortcuts { filter }) = &mut h.state_mut().dialog {
+        *filter = "zzz-no-such-command".into();
+    }
+    h.run_steps(3);
+    assert!(h.query_by_label("沒有符合的快捷鍵").is_some());
+    // "Customize" hands over to Options at the Keys tab, whose command filter is shown.
+    h.get_by_label("自訂快捷鍵…").click();
+    h.run_steps(3);
+    assert!(matches!(&h.state_mut().dialog, Some(Dialog::Options(st)) if st.tab == super::dialogs::OPTIONS_KEYS_TAB));
+    // The Keys page lists the commands, without their menu mnemonics.
+    assert!(dialog(&h).query_by_label("新增檔案").is_some());
+}
+
+#[test]
+fn test_options_rows_use_switches_and_flip_from_their_label() {
+    use eframe::egui::accesskit::{Role, Toggled};
+    use egui_kittest::kittest::NodeT;
+    let mut h = harness();
+    h.state_mut().pending.push(C::Options);
+    h.run_steps(3);
+    h.get_by_label("編輯").click();
+    h.run_steps(3);
+    let state = |h: &Harness<'static, App>| h.get_by_role_and_label(Role::Switch, "自動縮排").accesskit_node().toggled();
+    let before = state(&h);
+    assert!(matches!(before, Some(Toggled::True | Toggled::False)));
+    // Clicking the row's text flips the switch like clicking the switch itself.
+    h.get_by(|n| n.role() == Role::Label && n.value().as_deref() == Some("自動縮排")).click();
+    h.run_steps(3);
+    assert_ne!(state(&h), before);
+    h.get_by_role_and_label(Role::Switch, "自動縮排").click();
+    h.run_steps(3);
+    assert_eq!(state(&h), before);
+    // So does the empty space between the text and the switch.
+    let switch = h.get_by_role_and_label(Role::Switch, "自動縮排").rect();
+    let gap = egui::pos2(switch.left() - 80.0, switch.center().y);
+    for pressed in [true, false] {
+        h.event(Event::PointerMoved(gap));
+        h.event(Event::PointerButton { pos: gap, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE });
+    }
+    h.run_steps(3);
+    assert_ne!(state(&h), before);
+}
+
+#[test]
+fn test_options_ok_keeps_live_changes_and_drops_stale_capture() {
+    use eframe::egui::accesskit::Role;
+    let mut h = harness();
+    h.state_mut().pending.push(C::Options);
+    h.run_steps(3);
+    h.get_by_role_and_label(Role::Tab, "編輯").click();
+    h.run_steps(3);
+    let indent = h.state_mut().settings.auto_indent;
+    h.get_by_role_and_label(Role::Switch, "自動縮排").click();
+    h.run_steps(3);
+    // Meanwhile, outside the dialog: a View toggle and a newly opened file.
+    let ruler = !h.state_mut().settings.show_ruler;
+    h.state_mut().settings.show_ruler = ruler;
+    h.state_mut().settings.recent_files.insert(0, "/tmp/opened-meanwhile.txt".into());
+    // Another dialog cannot replace Options, and the status bar says why.
+    h.state_mut().pending.push(C::About);
+    h.run_steps(3);
+    assert!(matches!(h.state_mut().dialog, Some(Dialog::Options(_))));
+    assert!(h.state_mut().status.as_ref().is_some_and(|(m, _)| m == "請先關閉選項對話框"));
+    // A key capture started on the Keys page ends when another page is shown.
+    h.get_by_role_and_label(Role::Tab, "按鍵").click();
+    h.run_steps(3);
+    dialog(&h).get_by_label("新增檔案").click();
+    h.run_steps(3);
+    h.get_by_label("新增快捷鍵…").click();
+    h.run_steps(3);
+    let capturing = |h: &mut Harness<'static, App>| matches!(&h.state_mut().dialog, Some(Dialog::Options(st)) if st.capturing.is_some());
+    assert!(capturing(&mut h));
+    h.get_by_role_and_label(Role::Tab, "一般").click();
+    h.run_steps(3);
+    assert!(!capturing(&mut h));
+    h.get_by_label("確定").click();
+    h.run_steps(3);
+    let s = &h.state_mut().settings;
+    assert_eq!(s.auto_indent, !indent, "the dialog's change is applied");
+    assert_eq!(s.show_ruler, ruler, "the View toggle is not reverted");
+    assert_eq!(s.recent_files.first().map(|p| p.to_string_lossy().into_owned()).as_deref(), Some("/tmp/opened-meanwhile.txt"));
+}
+
+#[test]
+fn test_keyboard_shortcuts_dialog_lists_menus_in_two_columns() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::KeyboardShortcuts);
+    h.run_steps(4);
+    // Menu titles visible at the top of the list; the two columns start at different x.
+    let lefts: Vec<f32> = ["檔案", "編輯", "搜尋", "檢視", "巨集", "工具", "視窗", "說明"]
+        .iter()
+        .filter_map(|t| h.query_by_label(t).map(|n| n.rect().left()))
+        .collect();
+    let (min, max) = lefts.iter().fold((f32::MAX, f32::MIN), |(a, b), &x| (a.min(x), b.max(x)));
+    assert!(lefts.len() >= 2 && max - min > 250.0, "menu titles at x = {lefts:?}");
+}
+
+#[test]
+fn test_theme_toggle_stays_in_menu_bar_when_toolbar_hidden() {
+    use eframe::egui::accesskit::Role;
+    let mut h = harness();
+    h.state_mut().settings.show_toolbar = false;
+    h.run_steps(3);
+    assert!(h.state_mut().quick_in_menubar);
+    assert_eq!(h.query_all_by(|n| n.role() == Role::Button && n.label().is_some_and(|l| l.starts_with("介面主題："))).count(), 1);
+}
+
+#[test]
+fn test_about_dialog_shows_version_and_opens_shortcuts() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::About);
+    h.run_steps(3);
+    assert!(h.query_by_label_contains(env!("CARGO_PKG_VERSION")).is_some());
+    h.get_by_label("複製資訊").click();
+    h.run_steps(3);
+    assert!(h.query_by_label("已複製").is_some());
+    // The confirmation goes away after a moment.
+    if let Some(Dialog::About { copied_at }) = &mut h.state_mut().dialog {
+        *copied_at = Some(-10.0);
+    }
+    h.run_steps(3);
+    assert!(h.query_by_label("複製資訊").is_some());
+    h.get_by_label("鍵盤快捷鍵").click();
+    h.run_steps(3);
+    assert!(matches!(h.state_mut().dialog, Some(Dialog::Shortcuts { .. })));
+}
+
+#[test]
+fn test_options_choice_wins_over_later_toolbar_change() {
+    use crate::core::settings::ThemeChoice;
+    use eframe::egui::accesskit::Role;
+    let mut h = harness();
+    h.state_mut().pending.push(C::Options);
+    h.run_steps(3);
+    // Pick Light inside the dialog (match the radio button, not the View > Theme menu item).
+    h.get_by_role_and_label(Role::RadioButton, "淺色").click();
+    h.run_steps(3);
+    let ctx = h.ctx.clone();
+    h.state_mut().set_theme(&ctx, ThemeChoice::Dark);
+    h.run_steps(3);
+    h.get_by_label("確定").click();
+    h.run_steps(3);
+    assert_eq!(h.state_mut().settings.theme, ThemeChoice::Light);
+    assert!(!App::is_dark(&h.ctx));
 }
 
 #[test]
@@ -516,7 +912,7 @@ fn test_markdown_preview_docks_at_half_size() {
     std::fs::create_dir_all(&dir).unwrap();
     let p = dir.join("dock.md");
     // 內含寬圖表，確認內容不會把面板撐大
-    let table = format!("\n| {} |\n| {} |\n| {} |\n", vec!["欄位"; 12].join(" | "), vec!["---"; 12].join(" | "), vec!["LongUnbrokenCellValue"; 12].join(" | "));
+    let table = format!("\n| {} |\n| {} |\n| {} |\n", ["欄位"; 12].join(" | "), ["---"; 12].join(" | "), ["LongUnbrokenCellValue"; 12].join(" | "));
     std::fs::write(&p, format!("# 標題\n\n```mermaid\nflowchart LR\n  A[很長很長的節點一] --> B[很長很長的節點二] --> C[很長很長的節點三] --> D[很長很長的節點四]\n```\n{table}")).unwrap();
     let mut h = Harness::builder().allow_missing_glyphs().with_size([1000.0, 700.0]).build_eframe(|cc| App::new(cc, vec![p.clone()], None));
     h.run_steps(3);
@@ -757,4 +1153,426 @@ fn 另存檔名去除前後空白與結尾句點() {
     assert_eq!(t("/a/ b . . "), PathBuf::from("/a/b"));
     assert_eq!(t("/a/.hidden"), PathBuf::from("/a/.hidden"));
     assert_eq!(t("/a /b.txt"), PathBuf::from("/a /b.txt"));
+}
+
+#[test]
+fn test_every_dialog_keeps_its_buttons_inside_its_window() {
+    // The smallest main window, and a normal one where tall dialogs once clipped their footer.
+    for size in [egui::vec2(400.0, 300.0), egui::vec2(1100.0, 720.0)] {
+        dialogs_keep_their_buttons_inside(size);
+    }
+}
+
+fn dialogs_keep_their_buttons_inside(size: egui::Vec2) {
+    use eframe::egui::accesskit::Role;
+    let mut h = Harness::builder().allow_missing_glyphs().with_size(size).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    h.state_mut().settings.ui_language = crate::core::settings::UiLanguage::ZhTw;
+    h.run_steps(3);
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+    let dialogs = [
+        (C::SetFont, "確定"),
+        (C::PageSetup, "關閉"),
+        (C::RecentFilesList, "關閉"),
+        (C::ToFullWidthByOptions, "確定"),
+        (C::InsertNumbers, "確定"),
+        (C::SortOptions, "排序"),
+        (C::FindInFiles, "全部尋找"),
+        (C::RunTempMacro, "執行"),
+        (C::Highlighting, "關閉"),
+        (C::SourceFormatter, "關閉"),
+        (C::PurgeHistories, "清除"),
+        (C::ConvertEncoding, "轉換"),
+        (C::WordCount, "關閉"),
+        (C::WindowList, "關閉清單"),
+        (C::About, "確定"),
+    ];
+    for (cmd, button) in dialogs {
+        h.state_mut().dialog = None;
+        h.state_mut().pending.push(cmd);
+        h.run_steps(4);
+        assert!(h.state_mut().dialog.is_some(), "{cmd:?} opened no dialog");
+        let windows: Vec<egui::Rect> = h.query_all_by(|n| n.role() == Role::Window).map(|n| n.rect()).collect();
+        let rects: Vec<egui::Rect> = h.query_all_by(|n| n.role() == Role::Button && n.label().as_deref() == Some(button)).map(|n| n.rect()).collect();
+        assert!(!rects.is_empty(), "{cmd:?}: no {button} button");
+        for r in rects {
+            assert!(screen.contains_rect(r), "{cmd:?} at {size:?}: {button} at {r:?} is off screen");
+            assert!(windows.iter().any(|w| w.contains_rect(r)), "{cmd:?} at {size:?}: {button} at {r:?} is outside its window {windows:?}");
+        }
+    }
+}
+
+/// Opens a dialog through its command and clicks one of its buttons.
+fn click_in_dialog(h: &mut Harness<'static, App>, cmd: C, button: &str) {
+    h.state_mut().pending.push(cmd);
+    h.run_steps(3);
+    h.get_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(button)).click();
+    h.run_steps(3);
+}
+
+/// The open dialog's window, to search it without matching toolbar buttons of the same name
+/// (toolbar icons are named after their commands, like the rows of the shortcut lists).
+fn dialog<'t>(h: &'t Harness<'static, App>) -> egui_kittest::Node<'t> {
+    h.get_by(|n| n.role() == egui::accesskit::Role::Window && n.parent().is_some())
+}
+
+/// Clicks a button of the open dialog or confirmation by its exact label.
+fn click_button(h: &mut Harness<'static, App>, label: &str) {
+    h.get_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(label)).click();
+    h.run_steps(3);
+}
+
+#[test]
+fn test_clear_history_dialog_clears_and_closes() {
+    let mut h = harness();
+    h.state_mut().settings.recent_files = vec![std::path::PathBuf::from("/tmp/a.txt")];
+    click_in_dialog(&mut h, C::PurgeHistories, "清除");
+    assert!(h.state_mut().settings.recent_files.is_empty());
+    assert!(h.state_mut().dialog.is_none());
+}
+
+#[test]
+fn test_full_width_dialog_converts_the_whole_document() {
+    let mut h = harness();
+    type_text(&mut h, "ab1");
+    click_in_dialog(&mut h, C::ToFullWidthByOptions, "確定");
+    assert_eq!(text(&mut h), "ａｂ１");
+    assert!(h.state_mut().dialog.is_none());
+}
+
+#[test]
+fn test_insert_numbers_dialog_inserts_one_per_line() {
+    let mut h = harness();
+    h.state_mut().settings.numbers.total = 3;
+    click_in_dialog(&mut h, C::InsertNumbers, "確定");
+    assert_eq!(text(&mut h), "1\n2\n3");
+}
+
+#[test]
+fn test_sort_dialog_uses_its_options() {
+    let mut h = harness();
+    h.state_mut().doc_mut().replace_all_text("b\na\nc");
+    h.state_mut().settings.sort.descending = true;
+    click_in_dialog(&mut h, C::SortOptions, "排序");
+    assert_eq!(text(&mut h), "c\nb\na");
+}
+
+#[test]
+fn test_convert_encoding_dialog_switches_the_encoding() {
+    let mut h = harness();
+    type_text(&mut h, "abc");
+    h.state_mut().pending.push(C::ConvertEncoding);
+    h.run_steps(3);
+    if let Some(Dialog::ConvertEncoding { encoding, .. }) = &mut h.state_mut().dialog {
+        *encoding = "UTF-16LE".into();
+    }
+    h.run_steps(2);
+    click_button(&mut h, "轉換");
+    assert_eq!(h.state_mut().doc().encoding.name(), "UTF-16LE");
+    assert!(h.state_mut().dialog.is_none());
+}
+
+#[test]
+fn test_temp_macro_dialog_reports_errors_and_runs_valid_scripts() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::RunTempMacro);
+    h.run_steps(3);
+    let run = |h: &mut Harness<'static, App>, source: &str| {
+        if let Some(Dialog::TempMacro { script, .. }) = &mut h.state_mut().dialog {
+            *script = source.into();
+        }
+        h.run_steps(2);
+        click_button(h, "執行");
+    };
+    run(&mut h, "not json");
+    assert!(matches!(h.state_mut().dialog, Some(Dialog::TempMacro { error: Some(_), .. })));
+    run(&mut h, "[]");
+    assert!(h.state_mut().dialog.is_none());
+}
+
+#[test]
+fn test_highlighting_dialog_applies_the_ui_theme_at_once() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::Highlighting);
+    h.run_steps(3);
+    h.get_by_role_and_label(egui::accesskit::Role::RadioButton, "深色").click();
+    h.run_steps(3);
+    assert_eq!(h.state_mut().settings.theme, crate::core::settings::ThemeChoice::Dark);
+}
+
+#[test]
+fn test_confirmations_keep_their_buttons_on_a_small_window() {
+    use eframe::egui::accesskit::Role;
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([400.0, 300.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    h.state_mut().settings.ui_language = crate::core::settings::UiLanguage::ZhTw;
+    h.run_steps(3);
+    let id = h.state_mut().doc().id;
+    let path = Some(std::path::PathBuf::from("/tmp/x.txt"));
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0));
+    let cases = [
+        (Confirm::Close { ids: vec![id], exit: false }, "儲存"),
+        (Confirm::SaveLossy { id, path: path.clone() }, "仍要存檔"),
+        (Confirm::SaveUnmappable { id, path: path.clone(), message: "x ".repeat(300) }, "改用 UTF-8 存檔"),
+        (Confirm::OverwriteExternal { id, path: path.clone() }, "覆寫"),
+        (Confirm::ReloadModified { id }, "重新載入"),
+        (Confirm::CreateNew { path: std::path::PathBuf::from("/tmp/x-new.txt") }, "建立"),
+        (Confirm::Message { title: "t".into(), text: "long ".repeat(200) }, "確定"),
+    ];
+    for (confirm, button) in cases {
+        h.state_mut().confirm = Some(confirm);
+        h.run_steps(4);
+        let r = h.get_by(|n| n.role() == Role::Button && n.label().as_deref() == Some(button)).rect();
+        assert!(screen.contains_rect(r), "{button} at {r:?} is off screen");
+        h.state_mut().confirm = None;
+        h.run_steps(2);
+    }
+}
+
+#[test]
+fn test_dialog_reopens_scrolled_to_the_top() {
+    use eframe::egui::accesskit::Role;
+    let mut h = Harness::builder().allow_missing_glyphs().with_size([400.0, 300.0]).build_eframe(|cc| App::new(cc, Vec::new(), None));
+    h.state_mut().settings.ui_language = crate::core::settings::UiLanguage::ZhTw;
+    h.run_steps(3);
+    let first_row = |h: &Harness<'static, App>| h.query_by(|n| n.role() == Role::Switch && n.label().as_deref() == Some("列印語法色彩")).map(|n| n.rect());
+    h.state_mut().pending.push(C::PageSetup);
+    h.run_steps(4);
+    let top = first_row(&h).expect("first row visible on opening");
+    h.event(Event::PointerMoved(top.center()));
+    h.event(Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, -400.0), modifiers: Modifiers::NONE, phase: egui::TouchPhase::Move, source: egui::MouseWheelSource::Wheel });
+    h.run_steps(4);
+    assert!(first_row(&h).is_none_or(|r| r.top() < top.top() - 50.0), "the wheel did not scroll the dialog");
+    click_button(&mut h, "關閉");
+    assert!(h.state_mut().dialog.is_none());
+    h.state_mut().pending.push(C::PageSetup);
+    h.run_steps(4);
+    let again = first_row(&h).expect("first row visible after reopening");
+    assert!((again.top() - top.top()).abs() < 1.0, "reopened at {again:?}, first opened at {top:?}");
+}
+
+#[test]
+fn test_window_list_close_buttons_are_named_for_screen_readers() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::New);
+    h.run_steps(2);
+    assert_eq!(h.state_mut().tabs.len(), 2);
+    let names: Vec<String> = h.state_mut().tabs.iter().map(|t| format!("關閉 {}", t.doc.display_name())).collect();
+    h.state_mut().pending.push(C::WindowList);
+    h.run_steps(3);
+    for name in &names {
+        // One in the tab bar and one in the list below it.
+        assert_eq!(h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(name.as_str())).count(), 2, "{name}");
+    }
+    let mut pair: Vec<_> = h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(names[1].as_str())).collect();
+    pair.sort_by(|a, b| a.rect().top().total_cmp(&b.rect().top()));
+    assert!(pair[1].rect().top() > pair[0].rect().bottom(), "the list's button sits below the tab bar's");
+    pair[1].click();
+    h.run_steps(3);
+    assert_eq!(h.state_mut().tabs.len(), 1);
+    assert_eq!(format!("關閉 {}", h.state_mut().tabs[0].doc.display_name()), names[0]);
+}
+
+#[test]
+fn test_tab_close_buttons_are_named_for_screen_readers() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::New);
+    h.run_steps(2);
+    let names: Vec<String> = h.state_mut().tabs.iter().map(|t| format!("關閉 {}", t.doc.display_name())).collect();
+    assert_eq!(names.len(), 2);
+    for name in &names {
+        assert_eq!(h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(name.as_str())).count(), 1, "{name}");
+    }
+    h.get_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(names[0].as_str())).click();
+    h.run_steps(3);
+    assert_eq!(h.state_mut().tabs.len(), 1);
+}
+
+#[test]
+fn test_preview_tab_close_button_is_named_and_closes_only_the_preview() {
+    use super::mdpreview::Placement;
+    let mut h = harness();
+    h.state_mut().doc_mut().syntax = "Markdown".into();
+    h.state_mut().doc_mut().editor.set_text("# Title\n");
+    h.state_mut().doc_mut().version += 1;
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Tab);
+    h.run_steps(3);
+    let name = format!("關閉預覽 {}", h.state_mut().doc_mut().display_name());
+    h.get_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(name.as_str())).click();
+    h.run_steps(3);
+    let app = h.state_mut();
+    assert!(app.tab_mut().md_preview.is_none());
+    assert_eq!(app.tabs.len(), 1, "the document stays open");
+    assert_eq!(app.doc_mut().text(), "# Title\n");
+}
+
+/// Where the buttons a screen reader would announce as nothing or as symbols only ("×", "−")
+/// are. Glyphs that include a letter, such as "A+", are not caught; check those by name.
+fn unnamed_buttons(h: &Harness<'static, App>) -> Vec<String> {
+    h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().is_none_or(|l| !l.chars().any(char::is_alphanumeric)))
+        .map(|n| format!("{:?}", n.rect()))
+        .collect()
+}
+
+#[test]
+fn test_icon_buttons_are_named_for_screen_readers() {
+    use super::mdpreview::Placement;
+    let mut h = harness();
+    h.state_mut().doc_mut().syntax = "Markdown".into();
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    h.state_mut().tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Right);
+    h.state_mut().pending.push(C::Find);
+    h.run_steps(3);
+    h.state_mut().fif.show_results = true;
+    h.run_steps(3);
+    // Toolbar icons, the find bar, the docked preview toolbar and the Find in Files results.
+    let find = super::commands::plain_label(&h.state_mut().cmd_text(C::Find));
+    assert!(h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(find.as_str())).count() >= 1, "toolbar icon {find}");
+    for zoom in ["縮小字型", "放大字型"] {
+        assert_eq!(h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(zoom)).count(), 1, "{zoom}");
+    }
+    assert!(h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().is_some_and(|l| l == "A−" || l == "A+")).next().is_none());
+    assert_eq!(unnamed_buttons(&h), Vec::<String>::new());
+    h.state_mut().find.visible = false;
+    h.state_mut().pending.push(C::GoToLine);
+    h.run_steps(3);
+    assert_eq!(unnamed_buttons(&h), Vec::<String>::new(), "go-to bar");
+    h.state_mut().goto.visible = false;
+    h.run_steps(2);
+
+    // Options: a shortcut's remove button on the Keys page and a word's on the spelling page.
+    h.state_mut().settings.personal_dictionary = vec!["madedit".into()];
+    let save = super::commands::plain_label(&h.state_mut().cmd_text(C::Save));
+    h.state_mut().pending.push(C::Options);
+    h.run_steps(3);
+    h.key_press(egui::Key::F1);
+    h.run_steps(3);
+    dialog(&h).get_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some(save.as_str())).click();
+    h.run_steps(3);
+    assert!(h.query_all_by(|n| n.role() == egui::accesskit::Role::Button && n.label().is_some_and(|l| l.starts_with("移除 "))).count() >= 1, "remove {save}'s shortcut");
+    assert_eq!(unnamed_buttons(&h), Vec::<String>::new(), "Keys page");
+    h.get_by(|n| n.role() == egui::accesskit::Role::Tab && n.label().as_deref() == Some("拼字檢查")).click();
+    h.run_steps(3);
+    h.get_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some("移除 madedit")).click();
+    h.run_steps(3);
+    assert_eq!(unnamed_buttons(&h), Vec::<String>::new(), "spelling page");
+}
+
+/// A temporary folder removed when dropped, so a failing test does not leave it behind.
+struct TempDir(std::path::PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Recent Files open with two existing files, alpha.txt then beta.txt.
+fn recent_files_fixture(name: &str) -> (TempDir, Harness<'static, App>, std::path::PathBuf) {
+    let dir = TempDir(std::env::temp_dir().join(format!("madedit-{name}-{}", std::process::id())));
+    std::fs::create_dir_all(&dir.0).unwrap();
+    let (a, b) = (dir.0.join("alpha.txt"), dir.0.join("beta.txt"));
+    std::fs::write(&a, "alpha").unwrap();
+    std::fs::write(&b, "beta").unwrap();
+    let mut h = harness();
+    h.state_mut().settings.recent_files = vec![a, b.clone()];
+    h.state_mut().pending.push(C::RecentFilesList);
+    h.run_steps(3);
+    (dir, h, b)
+}
+
+/// The active document's file name; compared by name because the temporary folder can be a
+/// symlink (/var → /private/var on macOS).
+fn open_file_name(h: &mut Harness<'static, App>) -> Option<std::ffi::OsString> {
+    h.state_mut().doc().path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_os_string())
+}
+
+#[test]
+fn test_recent_files_enter_opens_the_first_match_from_the_filter() {
+    let (_dir, mut h, beta) = recent_files_fixture("recent");
+    type_text(&mut h, "beta");
+    h.key_press(Key::Enter);
+    h.run_steps(3);
+    assert_eq!(open_file_name(&mut h).as_deref(), beta.file_name());
+    assert!(h.state_mut().dialog.is_none());
+}
+
+#[test]
+fn test_recent_files_enter_on_a_row_opens_that_row() {
+    let (_dir, mut h, beta) = recent_files_fixture("recent-row");
+    // From the filter, Tab reaches the first row and then the second.
+    for _ in 0..2 {
+        h.key_press(Key::Tab);
+        h.run_steps(2);
+    }
+    h.key_press(Key::Enter);
+    h.run_steps(3);
+    assert_eq!(open_file_name(&mut h).as_deref(), beta.file_name());
+}
+
+#[test]
+fn test_enter_on_a_missing_recent_file_asks_to_create_it() {
+    let mut h = harness();
+    h.state_mut().settings.recent_files = vec![std::path::PathBuf::from("/nonexistent-madedit-dir/missing.txt")];
+    h.state_mut().pending.push(C::RecentFilesList);
+    h.run_steps(3);
+    type_text(&mut h, "missing");
+    h.key_press(Key::Enter);
+    h.run_steps(3);
+    assert!(matches!(h.state_mut().confirm, Some(Confirm::CreateNew { .. })), "the same Enter must not dismiss the prompt");
+    h.key_press(Key::Escape);
+    h.run_steps(3);
+    assert!(h.state_mut().confirm.is_none());
+}
+
+#[test]
+fn test_message_ignores_the_key_pressed_in_the_frame_it_opens() {
+    let mut h = harness();
+    // The Enter that led to an error (opening a file, say) arrives in the message's first frame.
+    h.state_mut().confirm = Some(Confirm::Message { title: "t".into(), text: "x".into() });
+    h.key_press(Key::Enter);
+    h.run_steps(3);
+    assert!(h.state_mut().confirm.is_some(), "dismissed before it was drawn");
+    h.key_press(Key::Enter);
+    h.run_steps(3);
+    assert!(h.state_mut().confirm.is_none());
+}
+
+#[test]
+fn test_dialog_handed_over_counts_as_opened() {
+    let mut h = harness();
+    h.state_mut().pending.push(C::About);
+    h.run_steps(3);
+    let about = h.state_mut().dialog.as_ref().map(std::mem::discriminant);
+    h.get_by(|n| n.role() == egui::accesskit::Role::Button && n.label().as_deref() == Some("鍵盤快捷鍵")).click();
+    // Frame by frame up to the hand-over: the frame that made it drew About, which is what
+    // must be recorded, so Shortcuts counts as opened on its first frame.
+    for _ in 0..5 {
+        h.run_steps(1);
+        if matches!(h.state_mut().dialog, Some(Dialog::Shortcuts { .. })) {
+            break;
+        }
+    }
+    assert!(matches!(h.state_mut().dialog, Some(Dialog::Shortcuts { .. })));
+    assert_eq!(h.state_mut().shown_dialog, about);
+    h.run_steps(1);
+    let app = h.state_mut();
+    assert_eq!(app.shown_dialog, app.dialog.as_ref().map(std::mem::discriminant));
+}
+
+#[test]
+fn test_recent_files_filter_takes_focus_after_another_dialog_replaced_it() {
+    let mut h = harness();
+    h.state_mut().settings.recent_files = vec![std::path::PathBuf::from("/tmp/x-alpha.txt")];
+    h.state_mut().pending.push(C::RecentFilesList);
+    h.run_steps(3);
+    h.state_mut().pending.push(C::WordCount);
+    h.run_steps(3);
+    h.state_mut().dialog = None;
+    h.run_steps(2);
+    h.state_mut().pending.push(C::RecentFilesList);
+    h.run_steps(3);
+    type_text(&mut h, "zzz");
+    assert!(matches!(&h.state_mut().dialog, Some(Dialog::RecentFiles { filter }) if filter == "zzz"));
 }

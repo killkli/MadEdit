@@ -231,7 +231,20 @@ commands! {
     SwitchLastTab => "menuSwitchLastTab", "切換至最後一個分頁", "Ctrl+9";
 
     // ── 說明 ──
+    KeyboardShortcuts => "menuKeyboardShortcuts", "鍵盤快捷鍵(&K)...", "F1";
     About => "menuAbout", "關於 MadEdit(&A)...", "";
+}
+
+/// Drops a trailing "..." and then a trailing one-letter mnemonic such as "(F)" or "(&F)"
+/// from a menu label, for lists where neither means anything ("尋找(F)..." becomes "尋找").
+/// Longer parentheses such as "(LF)" are part of the name and stay.
+pub fn plain_label(label: &str) -> String {
+    let s = label.trim_end_matches("...").trim_end_matches('…').trim_end();
+    let mnemonic = s.strip_suffix(')').and_then(|r| {
+        let r = r.strip_suffix(|ch: char| ch.is_ascii_alphanumeric())?;
+        r.strip_suffix("(&").or_else(|| r.strip_suffix('('))
+    });
+    mnemonic.unwrap_or(s).trim_end().to_string()
 }
 
 /// 解析單一快捷鍵字串（如 "Ctrl+Shift+K"、"Alt+ArrowUp"、"F3"）
@@ -296,6 +309,17 @@ pub fn is_bindable(sc: &KeyboardShortcut) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_plain_label_drops_only_one_letter_mnemonics() {
+        assert_eq!(plain_label("尋找(F)..."), "尋找");
+        assert_eq!(plain_label("About MadEdit (A)..."), "About MadEdit");
+        assert_eq!(plain_label("鍵盤快捷鍵(&K)…"), "鍵盤快捷鍵");
+        assert_eq!(plain_label("Help (H)"), "Help");
+        assert_eq!(plain_label("Convert to UNIX (LF)"), "Convert to UNIX (LF)");
+        assert_eq!(plain_label("Close (Esc)"), "Close (Esc)");
+        assert_eq!(plain_label("Select All"), "Select All");
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

@@ -163,6 +163,7 @@ menuToggleWindow	Switch Window (&T)	切换窗口(&T)	ウィンドウを切り替
 menuPreviousWindow	Previous Window (&P)	上一个窗口(&P)	前のウィンドウ(&P)	이전 창(&P)	Vorheriges Fenster (&P)	Ventana anterior (&P)	Fenêtre précédente (&P)	Finestra precedente (&P)	Janela anterior (&P)
 menuNextWindow	Next Window (&N)	下一个窗口(&N)	次のウィンドウ(&N)	다음 창(&N)	Nächstes Fenster (&N)	Ventana siguiente (&N)	Fenêtre suivante (&N)	Finestra successiva (&N)	Janela seguinte (&N)
 menuWindowList	Window List (&W)...	窗口列表(&W)...	ウィンドウ一覧(&W)...	창 목록(&W)...	Fensterliste (&W)...	Lista de ventanas (&W)...	Liste des fenêtres (&W)...	Elenco finestre (&W)...	Lista de janelas (&W)...
+menuKeyboardShortcuts	&Keyboard Shortcuts...	键盘快捷键(&K)...	キーボード ショートカット(&K)...	바로 가기 키(&K)...	&Tastenkürzel...	Atajos de &teclado...	Raccourcis &clavier...	Scorciatoie da &tastiera...	Atalhos de &teclado...
 menuAbout	About MadEdit (&A)...	关于 MadEdit(&A)...	MadEdit について(&A)...	MadEdit 정보(&A)...	Über MadEdit (&A)...	Acerca de MadEdit (&A)...	À propos de MadEdit (&A)...	Informazioni su MadEdit (&A)...	Sobre o MadEdit (&A)...
 menuSwitchTab1	Switch to Tab 1	切换到第 1 个标签页	1 番目のタブへ	1번째 탭으로	Zu Registerkarte 1	Ir a la pestaña 1	Aller à l'onglet 1	Vai alla scheda 1	Ir para o separador 1
 menuSwitchTab2	Switch to Tab 2	切换到第 2 个标签页	2 番目のタブへ	2번째 탭으로	Zu Registerkarte 2	Ir a la pestaña 2	Aller à l'onglet 2	Vai alla scheda 2	Ir para o separador 2
@@ -208,6 +209,12 @@ menu.newline_same	The whole document uses one line ending. This matches the file
 menu.chinese	Chinese Conversion	简繁转换	中国語変換	중국어 변환	Chinesische Umwandlung	Conversión chino	Conversion chinoise	Conversione cinese	Conversão de chinês
 menu.convert	Text Conversion / Format	文字转换／格式化	文字変換／整形	텍스트 변환/서식	Textumwandlung / Format	Conversión / formato de texto	Conversion / mise en forme	Conversione / formato testo	Conversão / formatação de texto
 menu.language	Language	界面语言	表示言語	언어	Sprache	Idioma	Langue	Lingua	Idioma
+menu.theme	Theme	界面主题	表示テーマ	테마	Design	Tema	Thème	Tema	Tema
+menu.font	Font	字体	フォント	글꼴	Schrift	Fuente	Police	Carattere	Fonte
+menu.layout	Layout	排版	レイアウト	레이아웃	Layout	Diseño	Mise en page	Layout	Layout
+menu.show	Show	显示	表示	표시	Anzeigen	Mostrar	Afficher	Mostra	Mostrar
+tb.theme_toggle	Theme: {q}	界面主题：{q}	テーマ: {q}	테마: {q}	Design: {q}	Tema: {q}	Thème : {q}	Tema: {q}	Tema: {q}
+tb.theme_next	Click to switch to “{q}”	单击切换为“{q}”	クリックで「{q}」に切り替え	클릭하면 '{q}'(으)로 전환	Klicken für „{q}“	Haga clic para cambiar a «{q}»	Cliquez pour passer à « {q} »	Fare clic per passare a «{q}»	Clique para mudar para “{q}”
 st.line	Line {n}/{q}	行 {n}/{q}	行 {n}/{q}	줄 {n}/{q}	Zeile {n}/{q}	Línea {n}/{q}	Ligne {n}/{q}	Riga {n}/{q}	Linha {n}/{q}
 st.col	Col {n}	栏 {n}	列 {n}	열 {n}	Spalte {n}	Col {n}	Col {n}	Col {n}	Col {n}
 st.offset	Offset {n} / {q}	位移 {n} / {q}	位置 {n} / {q}	오프셋 {n} / {q}	Offset {n} / {q}	Desplazamiento {n} / {q}	Décalage {n} / {q}	Offset {n} / {q}	Deslocamento {n} / {q}
@@ -257,6 +264,7 @@ btn.ok	OK	确定	OK	확인	OK	Aceptar	OK	OK	OK
 btn.cancel	Cancel	取消	キャンセル	취소	Abbrechen	Cancelar	Annuler	Annulla	Cancelar
 btn.apply	Apply	应用	適用	적용	Übernehmen	Aplicar	Appliquer	Applica	Aplicar
 btn.close	Close	关闭	閉じる	닫기	Schließen	Cerrar	Fermer	Chiudi	Fechar
+tab.copy_path	Copy Full Path	复制完整路径	完全なパスをコピー	전체 경로 복사	Vollständigen Pfad kopieren	Copiar ruta completa	Copier le chemin complet	Copia percorso completo	Copiar caminho completo
 btn.save	Save	保存	保存	저장	Speichern	Guardar	Enregistrer	Salva	Salvar
 btn.dont_save	Don't Save	不保存	保存しない	저장 안 함	Nicht speichern	No guardar	Ne pas enregistrer	Non salvare	Não salvar
 btn.reload	Reload	重新加载	再読み込み	다시 로드	Neu laden	Recargar	Recharger	Ricarica	Recarregar
@@ -292,6 +300,15 @@ about.title	About MadEdit	关于 MadEdit	MadEdit について	MadEdit 정보	Üb
 about.tagline	A text and hex editor rewritten in Rust and egui.	用 Rust 与 egui 重制的文本／十六进制编辑器。	Rust と egui で作り直したテキスト／16進エディタです。	Rust와 egui로 다시 만든 텍스트/16진 편집기입니다.	Ein in Rust und egui neu geschriebener Text- und Hex-Editor.	Un editor de texto y hexadecimal reescrito en Rust y egui.	Un éditeur texte et hexadécimal réécrit en Rust et egui.	Un editor di testo ed esadecimale riscritto in Rust ed egui.	Um editor de texto e hexadecimal reescrito em Rust e egui.
 about.credit	The original MadEdit was created by Alston Chen. MadEdit-Mod is maintained by Minggang Li (GPL).	原版 MadEdit 由 Alston Chen 开发，MadEdit-Mod 由 Minggang Li 维护（GPL）。	原版 MadEdit は Alston Chen が開発し、MadEdit-Mod は Minggang Li が保守しています（GPL）。	원본 MadEdit은 Alston Chen이 만들었고, MadEdit-Mod는 Minggang Li가 유지합니다(GPL).	Das ursprüngliche MadEdit stammt von Alston Chen. MadEdit-Mod wird von Minggang Li gepflegt (GPL).	El MadEdit original es de Alston Chen. MadEdit-Mod lo mantiene Minggang Li (GPL).	Le MadEdit d'origine est d'Alston Chen. MadEdit-Mod est maintenu par Minggang Li (GPL).	Il MadEdit originale è di Alston Chen. MadEdit-Mod è mantenuto da Minggang Li (GPL).	O MadEdit original é de Alston Chen. O MadEdit-Mod é mantido por Minggang Li (GPL).
 about.assets	Toolbar icons, Chinese conversion tables, and spelling dictionaries come from the original project.	工具栏图标、简繁对照表与拼写字典取自原版。	ツールバーアイコン、簡繁対照表、スペル辞書は原版のものです。	도구 모음 아이콘, 간체/번체 표, 맞춤법 사전은 원본에서 가져왔습니다.	Symbole, Umwandlungstabellen und Wörterbücher stammen aus dem Original.	Los iconos, las tablas de conversión y los diccionarios proceden del original.	Les icônes, tables de conversion et dictionnaires viennent du projet d'origine.	Icone, tabelle di conversione e dizionari provengono dall'originale.	Ícones, tabelas de conversão e dicionários vêm do projeto original.
+about.version	Version {q}	版本 {q}	バージョン {q}	버전 {q}	Version {q}	Versión {q}	Version {q}	Versione {q}	Versão {q}
+about.platform	Platform	平台	プラットフォーム	플랫폼	Plattform	Plataforma	Plateforme	Piattaforma	Plataforma
+about.built_with	Built with	使用技术	使用技術	사용 기술	Erstellt mit	Hecho con	Conçu avec	Realizzato con	Feito com
+about.settings	Settings file	设置文件	設定ファイル	설정 파일	Einstellungsdatei	Archivo de configuración	Fichier de réglages	File delle impostazioni	Arquivo de configurações
+about.project	Project page	项目网页	プロジェクト ページ	프로젝트 페이지	Projektseite	Página del proyecto	Page du projet	Pagina del progetto	Página do projeto
+about.copy_info	Copy Info	复制信息	情報をコピー	정보 복사	Infos kopieren	Copiar información	Copier les infos	Copia informazioni	Copiar informações
+about.copied	Copied	已复制	コピーしました	복사됨	Kopiert	Copiado	Copié	Copiato	Copiado
+keys.none	No matching shortcuts	没有符合的快捷键	一致するショートカットはありません	일치하는 바로 가기 키가 없습니다	Keine passenden Tastenkürzel	No hay atajos que coincidan	Aucun raccourci correspondant	Nessuna scorciatoia corrispondente	Nenhum atalho correspondente
+keys.customize	Customize Shortcuts…	自定义快捷键…	ショートカットをカスタマイズ…	바로 가기 키 사용자 지정…	Tastenkürzel anpassen…	Personalizar atajos…	Personnaliser les raccourcis…	Personalizza scorciatoie…	Personalizar atalhos…
 dlg.options	Options	选项	オプション	옵션	Optionen	Opciones	Options	Opzioni	Opções
 dlg.font	Font	字体	フォント	글꼴	Schriftart	Fuente	Police	Carattere	Tipo de letra
 dlg.page	Page Setup	页面设置	ページ設定	페이지 설정	Seite einrichten	Configurar página	Mise en page	Imposta pagina	Configurar página
@@ -333,8 +350,8 @@ opt.editor_font	Editor font:	编辑区字体：	編集フォント：	편집기 
 opt.font_auto	Automatic ({q})	自动（{q}）	自動（{q}）	자동({q})	Automatisch ({q})	Automática ({q})	Automatique ({q})	Automatico ({q})	Automático ({q})
 opt.reload_startup	Reopen files from the last session	启动时重新打开上次的文件	起動時に前回のファイルを開く	시작할 때 지난 파일 다시 열기	Dateien der letzten Sitzung erneut öffnen	Reabrir los archivos de la última sesión	Rouvrir les fichiers de la dernière session	Riapri i file dell'ultima sessione	Reabrir os ficheiros da última sessão
 opt.restore_caret	Restore the caret position when opening	打开时还原上次的光标位置	開くときにカーソル位置を復元	열 때 커서 위치 복원	Cursorposition beim Öffnen wiederherstellen	Restaurar el cursor al abrir	Restaurer le curseur à l'ouverture	Ripristina il cursore all'apertura	Restaurar o cursor ao abrir
-opt.autosave	Autosave every	自动保存，每	自動保存、間隔	자동 저장, 매	Automatisch speichern alle	Autoguardar cada	Enregistrement auto toutes les	Salvataggio automatico ogni	Salvar automaticamente a cada
-opt.minutes	minutes	分钟	分	분	Minuten	minutos	minutes	minuti	minutos
+opt.autosave_label	Auto save	自动保存	自動保存	자동 저장	Automatisch speichern	Autoguardar	Enregistrement automatique	Salvataggio automatico	Salvar automaticamente
+opt.autosave_interval	every {n} min	每 {n} 分钟	{n} 分ごと	{n}분마다	alle {n} Min.	cada {n} min	toutes les {n} min	ogni {n} min	a cada {n} min
 opt.backup	Keep a backup when saving (.bak)	保存时保留备份（文件名.bak）	保存時にバックアップ（.bak）を残す	저장할 때 백업 유지(.bak)	Beim Speichern eine Sicherung behalten (.bak)	Conservar una copia al guardar (.bak)	Conserver une copie à l'enregistrement (.bak)	Conserva un backup al salvataggio (.bak)	Manter uma cópia ao salvar (.bak)
 opt.purge_exit	Clear history on exit	结束时清除历史记录	終了時に履歴を消去	종료할 때 기록 지우기	Verlauf beim Beenden löschen	Borrar el historial al salir	Effacer l'historique à la fermeture	Cancella la cronologia all'uscita	Limpar o histórico ao sair
 opt.wrap_col	Wrap column:	按栏数换行的栏数：	折り返し桁数：	줄 바꿈 열:	Umbruchspalte:	Columna de ajuste:	Colonne de retour :	Colonna di a capo:	Coluna de quebra:
@@ -392,7 +409,6 @@ width.space	Spaces	空格	空白	공백	Leerzeichen	Espacios	Espaces	Spazi	Espa�
 width.katakana	Japanese katakana	日文片假名	カタカナ	일본어 가타카나	Japanisches Katakana	Katakana japonés	Katakana japonais	Katakana giapponese	Katakana japonês
 zoom.out	Zoom Out	缩小字体	縮小	축소	Verkleinern	Alejar	Zoom arrière	Riduci	Reduzir
 zoom.in	Zoom In	放大字体	拡大	확대	Vergrößern	Acercar	Zoom avant	Ingrandisci	Ampliar
-zoom.theme	Toggle dark/light theme	切换深色/浅色主题	ダーク/ライトの切り替え	어두운/밝은 테마 전환	Dunkles/helles Design umschalten	Alternar tema oscuro/claro	Basculer le thème sombre/clair	Attiva tema scuro/chiaro	Alternar tema escuro/claro
 num.initial	Initial value:	起始值：	開始値：	시작 값:	Startwert:	Valor inicial:	Valeur initiale :	Valore iniziale:	Valor inicial:
 num.step	Increment:	递增值：	増分：	증가 값:	Schrittweite:	Incremento:	Incrément :	Incremento:	Incremento:
 num.count	Count (without a column selection):	数量（无列块选取时）：	個数（矩形選択がないとき）：	개수(열 블록 선택이 없을 때):	Anzahl (ohne Spaltenauswahl):	Cantidad (sin selección de columna):	Nombre (sans sélection en colonne) :	Quantità (senza selezione a colonna):	Quantidade (sem seleção de coluna):
@@ -505,3 +521,24 @@ md.save_first	Save the document first to load images with relative paths.	请先
 md.images_failed	{n} image(s) failed to load	{n} 张图片加载失败	{n} 件の画像を読み込めませんでした	이미지 {n}개를 불러오지 못했습니다	{n} Bild(er) konnten nicht geladen werden	No se pudieron cargar {n} imagen(es)	{n} image(s) n'ont pas pu être chargée(s)	Impossibile caricare {n} immagine/i	Falha ao carregar {n} imagem(ns)
 md.diagram_failed	Failed to display diagram: 	图表显示失败：	図を表示できません：	다이어그램 표시 실패: 	Diagramm konnte nicht angezeigt werden: 	No se pudo mostrar el diagrama: 	Impossible d'afficher le diagramme : 	Impossibile visualizzare il diagramma: 	Falha ao mostrar o diagrama: 
 md.mermaid_error	Mermaid syntax error at line {n}, column {q}: 	Mermaid 语法错误：第 {n} 行第 {q} 列：	Mermaid 構文エラー：{n} 行 {q} 列：	Mermaid 구문 오류: {n}행 {q}열: 	Mermaid-Syntaxfehler in Zeile {n}, Spalte {q}: 	Error de sintaxis de Mermaid en la línea {n}, columna {q}: 	Erreur de syntaxe Mermaid à la ligne {n}, colonne {q} : 	Errore di sintassi Mermaid alla riga {n}, colonna {q}: 	Erro de sintaxe Mermaid na linha {n}, coluna {q}: 
+opt.sec.appearance	Appearance	外观	外観	모양	Darstellung	Apariencia	Apparence	Aspetto	Aparência
+opt.sec.open	Opening Files	打开文件	ファイルを開く	파일 열기	Dateien öffnen	Abrir archivos	Ouverture des fichiers	Apertura dei file	Abrir arquivos
+opt.sec.session	Session and Saving	会话与保存	セッションと保存	세션 및 저장	Sitzung und Speichern	Sesión y guardado	Session et enregistrement	Sessione e salvataggio	Sessão e salvamento
+opt.sec.search	Search	搜索	検索	검색	Suche	Búsqueda	Recherche	Ricerca	Pesquisa
+opt.sec.layout	Layout and Indentation	排版与缩进	レイアウトとインデント	레이아웃 및 들여쓰기	Layout und Einrückung	Diseño y sangría	Mise en page et indentation	Layout e rientro	Layout e recuo
+opt.sec.typing	Typing	输入	入力	입력	Eingabe	Escritura	Saisie	Digitazione	Digitação
+opt.sec.mouse	Mouse	鼠标	マウス	마우스	Maus	Ratón	Souris	Mouse	Mouse
+opt.sec.dictionary	Dictionary	词典	辞書	사전	Wörterbuch	Diccionario	Dictionnaire	Dizionario	Dicionário
+opt.personal_empty	No words added yet	尚未添加任何单词	まだ単語がありません	아직 추가된 단어가 없습니다	Noch keine Wörter hinzugefügt	Aún no se han añadido palabras	Aucun mot ajouté pour l'instant	Nessuna parola aggiunta	Nenhuma palavra adicionada
+opt.no_keys	No shortcut	无快捷键	ショートカットなし	단축키 없음	Kein Tastenkürzel	Sin atajo	Aucun raccourci	Nessuna scorciatoia	Nenhum atalho
+print.sec.content	Printed Content	打印内容	印刷内容	인쇄 내용	Druckinhalt	Contenido impreso	Contenu imprimé	Contenuto stampato	Conteúdo impresso
+print.sec.header_footer	Header and Footer	页眉与页脚	ヘッダーとフッター	머리글 및 바닥글	Kopf- und Fußzeile	Encabezado y pie de página	En-tête et pied de page	Intestazione e piè di pagina	Cabeçalho e rodapé
+status.options_open	Close the Options dialog first	请先关闭选项对话框	先にオプションダイアログを閉じてください	먼저 옵션 대화 상자를 닫으세요	Schließen Sie zuerst den Optionen-Dialog	Cierre primero el cuadro de opciones	Fermez d’abord la boîte de dialogue Options	Chiudi prima la finestra Opzioni	Feche primeiro a caixa de diálogo Opções
+num.base	Base:	进制：	基数：	진법:	Basis:	Base:	Base :	Base:	Base:
+num.align	Alignment:	对齐：	配置：	정렬:	Ausrichtung:	Alineación:	Alignement :	Allineamento:	Alinhamento:
+sort.order	Order:	顺序：	順序：	순서:	Reihenfolge:	Orden:	Ordre :	Ordine:	Ordem:
+fif.scope	Where to Search	搜索范围	検索範囲	검색 범위	Suchbereich	Ámbito de búsqueda	Portée de la recherche	Ambito di ricerca	Escopo da pesquisa
+fif.match	Matching	匹配方式	照合方法	일치 방법	Abgleich	Coincidencia	Correspondance	Corrispondenza	Correspondência
+fif.whole_word	Whole words only	全字匹配	単語単位で検索	단어 단위로	Nur ganze Wörter	Solo palabras completas	Mots entiers uniquement	Solo parole intere	Somente palavras inteiras
+fif.regex	Use regular expressions (Regex)	使用正则表达式（Regex）	正規表現を使用（Regex）	정규식 사용(Regex)	Reguläre Ausdrücke verwenden (Regex)	Usar expresiones regulares (Regex)	Utiliser les expressions régulières (Regex)	Usa espressioni regolari (Regex)	Usar expressões regulares (Regex)
+fif.case	Match case	区分大小写	大文字小文字を区別	대소문자 구분	Groß-/Kleinschreibung	Distinguir mayúsculas	Respecter la casse	Distingui maiuscole	Diferenciar maiúsculas

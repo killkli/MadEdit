@@ -36,6 +36,22 @@ const CJK_FALLBACKS: &[&str] = &[
     "Droid Sans Fallback",
 ];
 
+/// Hangul fallbacks, used only when the CJK fallback has no Hangul (PingFang TC, Microsoft
+/// JhengHei, ...); otherwise 한국어 in the language menu draws as empty boxes. AppleGothic comes
+/// before Apple SD Gothic Neo because it is about 15 MB instead of 55 MB.
+const HANGUL_FALLBACKS: &[&str] = &[
+    "AppleGothic",
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    "Noto Sans CJK KR",
+    "Noto Sans KR",
+    "NanumGothic",
+    "UnDotum",
+];
+
+/// Probe character for Hangul coverage.
+const HANGUL_PROBE: char = '한';
+
 /// 沒有 CJK 字型時，Mermaid 圖表改用的無襯線字型
 const DIAGRAM_LATIN_FONTS: &[&str] = &["Inter", "Helvetica", "Arial", "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans"];
 
@@ -96,14 +112,24 @@ impl FontManager {
         None
     }
 
-    /// 載入字型家族的一般字重字型檔
-    fn load_family(&mut self, name: &str) -> Option<FontData> {
+    /// Loads the family's regular face and reports whether it has a Hangul glyph, read from
+    /// the already loaded bytes so no font is loaded twice.
+    fn load_family_probe(&mut self, name: &str) -> Option<(FontData, bool)> {
         let family = self.collection.family_by_name(name)?;
         let font = family.default_font()?;
         let blob = font.load(None)?;
+        let has_hangul = font.charmap_index().charmap(blob.data()).and_then(|m| m.map(HANGUL_PROBE)).is_some_and(|gid| gid != 0);
         let mut data = FontData::from_owned(blob.data().to_vec());
         data.index = font.index();
-        Some(data)
+        Some((data, has_hangul))
+    }
+
+    /// First installed Hangul fallback that really has Hangul glyphs.
+    fn load_hangul_fallback(&mut self) -> Option<FontData> {
+        HANGUL_FALLBACKS
+            .iter()
+            .filter_map(|name| self.load_family_probe(name))
+            .find_map(|(data, has_hangul)| has_hangul.then_some(data))
     }
 
     /// 依設定的編輯區字型重建 egui 字型定義；`requested` 為空字串時自動挑選
@@ -113,31 +139,52 @@ impl FontManager {
 
         let wanted = if requested.is_empty() { self.default_editor_family() } else { requested.to_string() };
         self.editor_family = String::new();
+        let mut editor_has_hangul = false;
         if !wanted.is_empty()
-            && let Some(data) = self.load_family(&wanted)
+            && let Some((data, has_hangul)) = self.load_family_probe(&wanted)
         {
             defs.font_data.insert("editor-main".into(), Arc::new(data));
             editor_chain.push("editor-main".into());
             self.editor_family = wanted;
+            editor_has_hangul = has_hangul;
         }
 
         // 編輯區字型與 CJK 後備字型相同時直接共用已載入的資料，介面仍須補上 CJK
+        let mut cjk_has_hangul = false;
         let cjk_key = match self.cjk_family.clone() {
-            Some(cjk) if cjk == self.editor_family => Some("editor-main"),
-            Some(cjk) => self.load_family(&cjk).map(|data| {
+            Some(cjk) if cjk == self.editor_family => {
+                cjk_has_hangul = editor_has_hangul;
+                Some("editor-main")
+            }
+            Some(cjk) => self.load_family_probe(&cjk).map(|(data, has_hangul)| {
                 defs.font_data.insert("cjk".into(), Arc::new(data));
                 editor_chain.push("cjk".into());
+                cjk_has_hangul = has_hangul;
                 "cjk"
             }),
             None => None,
         };
-        if let Some(key) = cjk_key {
-            // 介面字型：預設字型之後立即以 CJK 補字（emoji 仍排在最後）
-            for fam in [FontFamily::Proportional, FontFamily::Monospace] {
-                if let Some(list) = defs.families.get_mut(&fam) {
-                    list.insert(1.min(list.len()), key.into());
+        let mut ui_fallbacks: Vec<&str> = cjk_key.into_iter().collect();
+        if !cjk_has_hangul && let Some(data) = self.load_hangul_fallback() {
+            defs.font_data.insert("hangul".into(), Arc::new(data));
+            editor_chain.push("hangul".into());
+            ui_fallbacks.push("hangul");
+        }
+        // 介面字型：預設字型之後立即以 CJK 補字（emoji 仍排在最後）
+        for fam in [FontFamily::Proportional, FontFamily::Monospace] {
+            if let Some(list) = defs.families.get_mut(&fam) {
+                for (i, key) in ui_fallbacks.iter().enumerate() {
+                    list.insert((1 + i).min(list.len()), key.to_string());
                 }
             }
+        }
+
+        // UI symbols such as ▾ ▼ ● exist only in egui's bundled monospace font (Hack), so it is the
+        // last fallback for proportional UI text too; otherwise they draw as empty boxes.
+        if let Some(list) = defs.families.get_mut(&FontFamily::Proportional)
+            && !list.iter().any(|f| f == "Hack")
+        {
+            list.push("Hack".into());
         }
 
         // 編輯區字型鏈：使用者字型 → CJK → egui 內建等寬字型與 emoji
@@ -167,5 +214,21 @@ mod tests {
         ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
         let ok = ctx.fonts(|f| f.definitions().families[&FontFamily::Proportional].contains(&"editor-main".to_string()));
         assert!(ok, "介面字型鏈缺少 CJK 字型");
+    }
+
+    /// The language menu always lists 한국어, so the UI font chain must cover Hangul whenever
+    /// any Korean-capable font is installed, even if the CJK fallback (PingFang TC) lacks it.
+    #[test]
+    fn test_ui_draws_hangul_when_a_korean_font_is_installed() {
+        let mut fm = FontManager::new();
+        let installed = HANGUL_FALLBACKS.iter().any(|n| fm.collection.family_by_name(n).is_some());
+        if !installed {
+            return;
+        }
+        let ctx = egui::Context::default();
+        fm.apply(&ctx, "");
+        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
+        let ok = ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(14.0), HANGUL_PROBE));
+        assert!(ok, "UI font chain has no Hangul glyph");
     }
 }

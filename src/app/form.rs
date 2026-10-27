@@ -11,6 +11,14 @@ pub const ACCENT: Color32 = Color32::from_rgb(37, 99, 235);
 /// Height of one row: switches, combo boxes and number fields all fit with room to spare.
 const ROW_HEIGHT: f32 = 30.0;
 
+/// An icon-only button (such as × or a toolbar icon) showing `tip` on hover and announced as
+/// `name` by screen readers, which would otherwise read the icon character or nothing at all.
+pub fn icon_button(ui: &mut Ui, button: egui::Button<'_>, tip: &str, name: &str) -> Response {
+    let response = ui.add(button).on_hover_text(tip);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), name));
+    response
+}
+
 /// The label without its trailing colon; rows separate label and value by position instead.
 pub fn bare(label: &str) -> &str {
     label.trim_end().trim_end_matches([':', '：']).trim_end()
