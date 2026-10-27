@@ -279,7 +279,10 @@ pub struct Settings {
     pub always_on_top: bool,
 
     // ── 一般 ──
+    /// 新文件與「強制使用預設編碼」採用的編碼
     pub default_encoding: String,
+    /// 內容不是合法 UTF-8 時優先嘗試的編碼
+    pub fallback_encoding: String,
     pub enforce_default_encoding: bool,
     /// 超過此大小（MB）的檔案只以十六進位模式開啟
     pub max_text_file_mb: u64,
@@ -373,7 +376,8 @@ impl Default for Settings {
             show_statusbar: true,
             always_on_top: false,
 
-            default_encoding: "Big5".into(),
+            default_encoding: "UTF-8".into(),
+            fallback_encoding: "Big5".into(),
             enforce_default_encoding: false,
             max_text_file_mb: 100,
             open_view_mode: OpenViewMode::Auto,
@@ -471,9 +475,24 @@ impl Settings {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Self::default(), None),
             Err(e) => return (Self::default(), Some(Self::corrupt_message(path, &e.to_string()))),
         };
-        match serde_json::from_str(&text) {
-            Ok(s) => (s, None),
+        match serde_json::from_str::<Self>(&text) {
+            Ok(mut s) => {
+                s.migrate_encodings(&text);
+                (s, None)
+            }
             Err(e) => (Self::default(), Some(Self::corrupt_message(path, &e.to_string()))),
+        }
+    }
+
+    /// 舊版設定沒有 fallback 編碼，且預設編碼（如 Big5）實際上只是偵測失敗時的備援：
+    /// 把它移到 fallback，預設編碼改為 UTF-8。強制使用預設編碼的使用者維持原設定。
+    fn migrate_encodings(&mut self, raw: &str) {
+        let has_fallback = serde_json::from_str::<serde_json::Value>(raw).is_ok_and(|v| v.get("fallback_encoding").is_some());
+        if has_fallback || self.enforce_default_encoding {
+            return;
+        }
+        if self.default_encoding != "UTF-8" {
+            self.fallback_encoding = std::mem::replace(&mut self.default_encoding, "UTF-8".into());
         }
     }
 
@@ -546,6 +565,17 @@ mod tests {
         let d = std::env::temp_dir().join(format!("madedit_settings_{}_{}", std::process::id(), name));
         let _ = std::fs::remove_dir_all(&d);
         d
+    }
+
+    #[test]
+    fn test_legacy_default_encoding_moves_to_fallback() {
+        let path = std::env::temp_dir().join(format!("madedit-enc-migrate-{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"default_encoding":"Big5"}"#).unwrap();
+        let (s, err) = Settings::load_from(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(err.is_none());
+        assert_eq!(s.default_encoding, "UTF-8");
+        assert_eq!(s.fallback_encoding, "Big5");
     }
 
     #[test]

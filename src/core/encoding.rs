@@ -134,9 +134,11 @@ fn guess_utf16(sample: &[u8]) -> Option<&'static Encoding> {
 
 /// 自動偵測編碼並解碼
 ///
-/// 順序：BOM → （強制預設編碼）→ 無 BOM 的 UTF-16（含大量 NUL 的資料雖是合法 UTF-8，但幾乎不會是 UTF-8 文字）→ 嚴格 UTF-8 → 預設編碼 →
-/// 常見東亞編碼中第一個可無誤解碼者 → 預設編碼（含錯誤）。
-pub fn detect_and_decode(bytes: &[u8], default: &'static Encoding, enforce_default: bool) -> Decoded {
+/// 順序：BOM → （強制預設編碼）→ 無 BOM 的 UTF-16（含大量 NUL 的資料雖是合法 UTF-8，但幾乎不會是 UTF-8 文字）→ 嚴格 UTF-8 →
+/// fallback 編碼 → 預設編碼 → 常見東亞編碼中第一個可無誤解碼者 → fallback 編碼（含錯誤）。
+///
+/// `default` 是新文件與「強制使用預設編碼」採用的編碼；`fallback` 只在內容不是合法 UTF-8 時才派上用場。
+pub fn detect_and_decode(bytes: &[u8], default: &'static Encoding, fallback: &'static Encoding, enforce_default: bool) -> Decoded {
     if let Some((enc, _)) = Encoding::for_bom(bytes) {
         return decode_with(bytes, enc);
     }
@@ -158,6 +160,7 @@ pub fn detect_and_decode(bytes: &[u8], default: &'static Encoding, enforce_defau
         };
     }
     let candidates = [
+        fallback,
         default,
         encoding_rs::BIG5,
         encoding_rs::GB18030,
@@ -174,7 +177,7 @@ pub fn detect_and_decode(bytes: &[u8], default: &'static Encoding, enforce_defau
             return d;
         }
     }
-    decode_with(bytes, default)
+    decode_with(bytes, fallback)
 }
 
 /// 編碼失敗資訊：目標編碼無法表示的字元
@@ -283,25 +286,36 @@ mod tests {
 
     #[test]
     fn test_detect_bom_utf8_and_fallback() {
-        let d = detect_and_decode(&[0xFF, 0xFE, b'H', 0, b'i', 0], encoding_rs::BIG5, false);
+        let d = detect_and_decode(&[0xFF, 0xFE, b'H', 0, b'i', 0], encoding_rs::UTF_8, encoding_rs::BIG5, false);
         assert_eq!(d.encoding, encoding_rs::UTF_16LE);
         assert!(d.has_bom);
         assert_eq!(d.text, "Hi");
 
-        let d = detect_and_decode("中文".as_bytes(), encoding_rs::BIG5, false);
+        let d = detect_and_decode("中文".as_bytes(), encoding_rs::UTF_8, encoding_rs::BIG5, false);
         assert_eq!(d.encoding, encoding_rs::UTF_8);
 
         let (big5, _, _) = encoding_rs::BIG5.encode("繁體中文");
-        let d = detect_and_decode(&big5, encoding_rs::BIG5, false);
+        let d = detect_and_decode(&big5, encoding_rs::UTF_8, encoding_rs::BIG5, false);
         assert_eq!(d.encoding, encoding_rs::BIG5);
         assert_eq!(d.text, "繁體中文");
         assert!(!d.had_errors);
     }
 
     #[test]
+    fn test_fallback_encoding_used_only_for_non_utf8() {
+        let (gbk, _, _) = encoding_rs::GBK.encode("简体中文测试");
+        let d = detect_and_decode(&gbk, encoding_rs::UTF_8, encoding_rs::GBK, false);
+        assert_eq!(d.encoding, encoding_rs::GBK);
+        assert_eq!(d.text, "简体中文测试");
+
+        let d = detect_and_decode("中文".as_bytes(), encoding_rs::UTF_8, encoding_rs::GBK, false);
+        assert_eq!(d.encoding, encoding_rs::UTF_8);
+    }
+
+    #[test]
     fn test_utf16_without_bom_guess() {
         let bytes: Vec<u8> = "hello world".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
-        let d = detect_and_decode(&bytes, encoding_rs::BIG5, false);
+        let d = detect_and_decode(&bytes, encoding_rs::UTF_8, encoding_rs::BIG5, false);
         assert_eq!(d.encoding, encoding_rs::UTF_16LE);
         assert_eq!(d.text, "hello world");
         assert!(!looks_binary(&bytes));

@@ -163,7 +163,8 @@ impl App {
             return;
         }
         crate::core::settings::Settings::push_history(&mut self.settings.recent_dirs, opts.directory.clone());
-        let default_enc = encoding::encoding_for_name(&self.settings.default_encoding).unwrap_or(encoding_rs::BIG5);
+        let default_enc = encoding::encoding_for_name(&self.settings.default_encoding).unwrap_or(encoding_rs::UTF_8);
+        let fallback_enc = encoding::encoding_for_name(&self.settings.fallback_encoding).unwrap_or(encoding_rs::BIG5);
         let (tx, rx) = channel();
         let opened = Arc::new(Mutex::new(opened));
         self.fif.opened = Arc::clone(&opened);
@@ -188,7 +189,7 @@ impl App {
                 if bytes.len() > 64 * 1024 * 1024 || encoding::looks_binary(&bytes) {
                     continue;
                 }
-                let d = encoding::detect_and_decode(&bytes, default_enc, false);
+                let d = encoding::detect_and_decode(&bytes, default_enc, fallback_enc, false);
                 match &replace {
                     None => {
                         for (li, line) in d.text.lines().enumerate() {

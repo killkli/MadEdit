@@ -258,7 +258,8 @@ impl App {
 
     pub fn open_options(&self) -> OpenOptions {
         OpenOptions {
-            default_encoding: encoding::encoding_for_name(&self.settings.default_encoding).unwrap_or(encoding_rs::BIG5),
+            default_encoding: encoding::encoding_for_name(&self.settings.default_encoding).unwrap_or(encoding_rs::UTF_8),
+            fallback_encoding: encoding::encoding_for_name(&self.settings.fallback_encoding).unwrap_or(encoding_rs::BIG5),
             enforce_default_encoding: self.settings.enforce_default_encoding,
             max_text_size: self.settings.max_text_file_mb.max(1) * 1024 * 1024,
         }

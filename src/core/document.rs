@@ -41,6 +41,8 @@ struct UndoRecord {
 #[derive(Debug, Clone)]
 pub struct OpenOptions {
     pub default_encoding: &'static Encoding,
+    /// 內容不是合法 UTF-8 時優先嘗試的編碼
+    pub fallback_encoding: &'static Encoding,
     pub enforce_default_encoding: bool,
     /// 超過此大小（位元組）的檔案只以十六進位模式開啟（不整份解碼為文字）
     pub max_text_size: u64,
@@ -49,7 +51,8 @@ pub struct OpenOptions {
 impl Default for OpenOptions {
     fn default() -> Self {
         Self {
-            default_encoding: encoding_rs::BIG5,
+            default_encoding: encoding_rs::UTF_8,
+            fallback_encoding: encoding_rs::BIG5,
             enforce_default_encoding: false,
             max_text_size: 100 * 1024 * 1024,
         }
@@ -209,7 +212,7 @@ impl Document {
 
     /// 由位元組載入文字內容（偵測編碼與換行）
     fn load_bytes(&mut self, bytes: Vec<u8>, opts: &OpenOptions) {
-        let decoded = encoding::detect_and_decode(&bytes, opts.default_encoding, opts.enforce_default_encoding);
+        let decoded = encoding::detect_and_decode(&bytes, opts.default_encoding, opts.fallback_encoding, opts.enforce_default_encoding);
         self.apply_decoded(decoded);
         self.pristine_bytes = Some(bytes);
     }
@@ -882,6 +885,7 @@ mod tests {
         let opts = OpenOptions {
             enforce_default_encoding: true,
             default_encoding: encoding_rs::BIG5,
+            fallback_encoding: encoding_rs::BIG5,
             ..Default::default()
         };
         let mut doc = Document::open(&p, &opts).unwrap();

@@ -313,6 +313,7 @@ opt.keys	Keys	按键	キー	키	Tasten	Teclas	Raccourcis	Tasti	Teclas
 opt.spell	Spelling	拼写检查	スペル	맞춤법	Rechtschreibung	Ortografía	Orthographe	Ortografia	Ortografia
 opt.ui_language	Language:	界面语言：	表示言語：	언어:	Sprache:	Idioma:	Langue :	Lingua:	Idioma:
 opt.default_enc	Default encoding:	默认编码：	既定の文字コード：	기본 인코딩:	Standardkodierung:	Codificación predeterminada:	Encodage par défaut :	Codifica predefinita:	Codificação padrão:
+opt.fallback_enc	Fallback encoding (when not UTF-8):	备援编码（非 UTF-8 时）：	フォールバック文字コード（UTF-8 以外）：	대체 인코딩(UTF-8 아닐 때):	Ausweichkodierung (wenn nicht UTF-8):	Codificación alternativa (si no es UTF-8):	Encodage de repli (si non UTF-8) :	Codifica di riserva (se non UTF-8):	Codificação alternativa (se não for UTF-8):
 opt.enforce_enc	Always use the default encoding (do not detect)	一律使用默认编码打开（不自动检测）	常に既定の文字コードで開く（自動判定しない）	항상 기본 인코딩으로 열기(자동 감지 안 함)	Immer die Standardkodierung verwenden (nicht erkennen)	Usar siempre la codificación predeterminada (sin detectar)	Toujours utiliser l'encodage par défaut (sans détection)	Usa sempre la codifica predefinita (senza rilevamento)	Usar sempre a codificação padrão (sem detetar)
 opt.max_mb	Text mode size limit (MB):	文本模式文件大小上限（MB）：	テキストモードの上限（MB）：	텍스트 모드 크기 제한(MB):	Größenlimit für Textmodus (MB):	Límite del modo texto (MB):	Limite du mode texte (Mo) :	Limite modalità testo (MB):	Limite do modo de texto (MB):
 opt.open_mode	Open mode:	打开模式：	開くモード：	열기 모드:	Öffnungsmodus:	Modo de apertura:	Mode d'ouverture :	Modalità di apertura:	Modo de abertura:

@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-27
+
+### 變更
+
+- 預設編碼改為 UTF-8，並新增「備援編碼」選項（預設 Big5），僅在內容不是合法 UTF-8 時使用；舊設定的預設編碼會自動移到備援編碼。
+
 ## [0.6.1] - 2026-10-27
 
 ### 修正
@@ -87,7 +93,8 @@
 ### 新增
 - 專案起步。Slint 時期完成編碼、自繪編輯區、大檔引擎、列塊選取、搜尋取代、語法突顯、跳行、換行格式、書籤、外部變更監控與經典介面。
 
-[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/tenyi/MadEdit/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/tenyi/MadEdit/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/tenyi/MadEdit/compare/v0.5.24...v0.6.0
 [0.5.24]: https://github.com/tenyi/MadEdit/compare/v0.5.23...v0.5.24

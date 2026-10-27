@@ -665,6 +665,7 @@ impl App {
         ];
         let l_lang = self.t("opt.ui_language", "介面語言：");
         let l_def_enc = self.t("opt.default_enc", "預設編碼：");
+        let l_fallback_enc = self.t("opt.fallback_enc", "備援編碼（非 UTF-8 時）：");
         let l_enforce = self.t("opt.enforce_enc", "一律使用預設編碼開檔（不自動偵測）");
         let l_max = self.t("opt.max_mb", "文字模式檔案大小上限（MB）：");
         let l_open = self.t("opt.open_mode", "開檔模式：");
@@ -705,6 +706,9 @@ impl App {
                         ui.end_row();
                         ui.label(l_def_enc);
                         encoding_combo(ui, "def-enc", &mut draft.default_encoding);
+                        ui.end_row();
+                        ui.label(l_fallback_enc);
+                        encoding_combo(ui, "fallback-enc", &mut draft.fallback_encoding);
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut draft.enforce_default_encoding, l_enforce);
