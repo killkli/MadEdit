@@ -117,6 +117,10 @@ make build             # 編譯最佳化正式版（cargo build --release --lock
 
 `make help` 會列出全部目標。`cargo check`、`cargo test`、`cargo run` 仍然可以直接使用。
 
+核心／介面測試、經檢視的離屏截圖基準（`make test-visual`）、獨立執行的 1 GiB
+回歸測試（`make test-large`），以及可重現的效能報告與基準比較（`make bench`），
+請參閱[本機測試說明](docs/testing.md)。
+
 編譯完成後，可於 `target/release/MadEdit`（Windows 為 `target/release/MadEdit.exe`）取得獨立執行檔。
 
 ### macOS 建置

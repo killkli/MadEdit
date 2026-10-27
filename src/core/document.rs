@@ -878,26 +878,243 @@ mod tests {
     }
 
     #[test]
+    fn test_encoding_bom_newline_roundtrip_matrix() {
+        let dir = crate::test_support::TempDir::new("encoding-matrix");
+        let p = dir.path().join("roundtrip.txt");
+        let mut cases = 0;
+        for (enc, supports_bom) in [
+            (encoding_rs::UTF_8, true),
+            (encoding_rs::UTF_16LE, true),
+            (encoding_rs::UTF_16BE, true),
+            (encoding_rs::BIG5, false),
+            (encoding_rs::GB18030, false),
+            (encoding_rs::SHIFT_JIS, false),
+            (encoding_rs::WINDOWS_1252, false),
+        ] {
+            // The three East Asian encodings share these characters; Windows-1252 has its own fixture.
+            let lines = if enc == encoding_rs::WINDOWS_1252 {
+                ["café", "naïve", ""]
+            } else {
+                ["中文", "日本語", ""]
+            };
+            for bom in [false, true] {
+                if bom && !supports_bom {
+                    continue;
+                }
+                // Build the byte oracle independently of MadEdit's encode_text wrapper.
+                let fixture_bytes = |text: &str| {
+                    let mut bytes = match (enc, bom) {
+                        (e, true) if e == encoding_rs::UTF_8 => vec![0xEF, 0xBB, 0xBF],
+                        (e, true) if e == encoding_rs::UTF_16LE => vec![0xFF, 0xFE],
+                        (e, true) if e == encoding_rs::UTF_16BE => vec![0xFE, 0xFF],
+                        _ => Vec::new(),
+                    };
+                    if enc == encoding_rs::UTF_16LE || enc == encoding_rs::UTF_16BE {
+                        for unit in text.encode_utf16() {
+                            bytes.extend(if enc == encoding_rs::UTF_16LE {
+                                unit.to_le_bytes()
+                            } else {
+                                unit.to_be_bytes()
+                            });
+                        }
+                    } else {
+                        let (body, _, errors) = enc.encode(text);
+                        assert!(!errors);
+                        bytes.extend_from_slice(&body);
+                    }
+                    bytes
+                };
+                for newline in [NewLineFormat::Unix, NewLineFormat::Dos, NewLineFormat::Mac] {
+                    cases += 1;
+                    let text = lines.join(newline.newline_str());
+                    let original = fixture_bytes(&text);
+                    fs::write(&p, &original).unwrap();
+                    let opts = OpenOptions {
+                        default_encoding: enc,
+                        enforce_default_encoding: true,
+                        ..Default::default()
+                    };
+                    let mut doc = Document::open(&p, &opts).unwrap();
+                    // BOM-less UTF-16 can initially be classified as binary; this matrix edits text.
+                    doc.set_mode(EditMode::Text).unwrap();
+                    let case = format!("{}, BOM={bom}, {newline:?}", enc.name());
+                    assert_eq!(doc.encoding, enc, "{case}");
+                    assert_eq!(doc.has_bom, bom, "{case}");
+                    assert_eq!(doc.newline, newline, "{case}");
+                    assert!(!doc.has_decode_error, "{case}");
+                    assert_eq!(doc.editor.lines, lines, "{case}");
+                    // Editing invalidates pristine_bytes, exercising the encoder on save.
+                    doc.editor.set_caret(1, 0);
+                    let hint = doc.selection_hint();
+                    doc.edit(EditKind::Other, hint, |e| e.insert_text("A"));
+                    doc.save(None, false).unwrap();
+                    let changed = [
+                        lines[0].to_string(),
+                        format!("A{}", lines[1]),
+                        String::new(),
+                    ]
+                    .join(newline.newline_str());
+                    assert_eq!(fs::read(&p).unwrap(), fixture_bytes(&changed), "{case}");
+                    assert!(doc.undo(), "{case}");
+                    doc.save(None, false).unwrap();
+                    assert_eq!(fs::read(&p).unwrap(), original, "{case}");
+                }
+            }
+        }
+        assert_eq!(cases, 30);
+    }
+
+    #[test]
+    fn test_generated_edits_undo_redo_match_snapshots() {
+        use crate::test_support::Rng;
+        for seed in [1, 42, 0x2026_1028] {
+            let mut rng = Rng(seed);
+            let mut doc = Document::default();
+            let mut expected = Vec::<char>::new();
+            let mut history = Vec::new();
+            let position = |chars: &[char]| {
+                let line = chars.iter().filter(|&&c| c == '\n').count();
+                let col = chars.iter().rev().take_while(|&&c| c != '\n').count();
+                TextPosition::new(line, col)
+            };
+            for step in 0..150 {
+                let start = rng.below(expected.len() + 1);
+                let end = (start + rng.below(8)).min(expected.len());
+                let added = ["a", "中", "🙂", "\n", "\t", "x\ny"][rng.below(6)];
+                let before = expected.iter().collect::<String>();
+                let selection =
+                    Selection::new(position(&expected[..start]), position(&expected[..end]));
+                doc.editor.selection = selection;
+                let hint = doc.selection_hint();
+                doc.edit(EditKind::Other, hint, |e| e.insert_text(added));
+                expected.splice(start..end, added.chars());
+                let after = expected.iter().collect::<String>();
+                let caret = position(&expected[..start + added.chars().count()]);
+                let after_selection = Selection::new(caret, caret);
+                assert_eq!(
+                    doc.editor.lines.join("\n"),
+                    after,
+                    "seed={seed}, step={step}"
+                );
+                assert_eq!(
+                    doc.editor.selection, after_selection,
+                    "seed={seed}, step={step}"
+                );
+                if before != after {
+                    history.push((before, selection, after, after_selection));
+                }
+            }
+            for (before, selection, _, _) in history.iter().rev() {
+                assert!(doc.undo(), "seed={seed}");
+                assert_eq!(&doc.editor.lines.join("\n"), before);
+                assert_eq!(&doc.editor.selection, selection);
+            }
+            assert!(!doc.undo());
+            assert!(!doc.is_modified());
+            for (_, _, after, selection) in &history {
+                assert!(doc.redo(), "seed={seed}");
+                assert_eq!(&doc.editor.lines.join("\n"), after);
+                assert_eq!(&doc.editor.selection, selection);
+            }
+            assert!(!doc.redo());
+            assert!(doc.is_modified());
+        }
+    }
+
+    #[test]
+    #[ignore = "streams a 1 GiB file; run make test-large explicitly"]
+    fn test_gib_file_random_access_edit_and_streaming_save() {
+        use std::io::{Read, Seek, SeekFrom};
+        let dir = crate::test_support::TempDir::new("gib-file");
+        let source = dir.path().join("source.bin");
+        let target = dir.path().join("saved.bin");
+        let len = (1 << 30) + 17;
+        let mut file = fs::File::create(&source).unwrap();
+        file.set_len(len).unwrap();
+        for (at, bytes) in [(0, b"HEAD"), (len / 2, b"MIDL"), (len - 4, b"LAST")] {
+            file.seek(SeekFrom::Start(at)).unwrap();
+            file.write_all(bytes).unwrap();
+        }
+        drop(file);
+        let mut doc = Document::open(&source, &OpenOptions::default()).unwrap();
+        assert!(doc.hex_only);
+        assert!(doc.pristine_bytes.is_none());
+        assert_eq!(doc.editor.lines, [""]);
+        let hex = doc.hex.as_mut().unwrap();
+        assert_eq!(hex.len(), len as usize);
+        assert_eq!(hex.data.read_slice(len as usize - 4, 4), b"LAST");
+        hex.move_to(65534, false);
+        hex.type_bytes(b"EDIT");
+        hex.move_to(len as usize - 4, false);
+        hex.type_bytes(b"TAIL");
+        assert_eq!(hex.data.read_slice(65532, 8), b"\0\0EDIT\0\0");
+        assert!(doc.is_modified());
+        doc.save(Some(&target), false).unwrap();
+        assert!(!doc.is_modified());
+        assert_eq!(fs::metadata(&target).unwrap().len(), len);
+        // Check every byte in bounded chunks, including the large zero-filled gaps.
+        let markers = [
+            (0, b"HEAD"),
+            (65534, b"EDIT"),
+            (len as usize / 2, b"MIDL"),
+            (len as usize - 4, b"TAIL"),
+        ];
+        let mut saved = fs::File::open(&target).unwrap();
+        let mut actual = vec![0; 1024 * 1024];
+        let mut expected = vec![0; actual.len()];
+        let mut offset = 0;
+        while offset < len as usize {
+            let count = actual.len().min(len as usize - offset);
+            saved.read_exact(&mut actual[..count]).unwrap();
+            expected.fill(0);
+            for (at, bytes) in markers {
+                for (i, byte) in bytes.iter().enumerate() {
+                    if (offset..offset + count).contains(&(at + i)) {
+                        expected[at + i - offset] = *byte;
+                    }
+                }
+            }
+            assert!(
+                actual[..count] == expected[..count],
+                "stream mismatch at offset {offset}"
+            );
+            offset += count;
+        }
+        assert_eq!(saved.read(&mut [0]).unwrap(), 0);
+    }
+
+    #[test]
     fn test_decode_error_blocks_save_and_convert_but_reinterpret_recovers() {
-        let p = temp_path("gbk.txt");
-        let (gbk, _, _) = encoding_rs::GBK.encode("简体中文测试");
-        fs::write(&p, &gbk).unwrap();
+        let dir = crate::test_support::TempDir::new("decode-error");
+        let p = dir.path().join("latin.txt");
+        // An incomplete UTF-8 sequence is valid Windows-1252, so recovery is lossless.
+        let original = b"caf\xE9";
+        fs::write(&p, original).unwrap();
         let opts = OpenOptions {
             enforce_default_encoding: true,
-            default_encoding: encoding_rs::BIG5,
+            default_encoding: encoding_rs::UTF_8,
             fallback_encoding: encoding_rs::BIG5,
             ..Default::default()
         };
         let mut doc = Document::open(&p, &opts).unwrap();
-        if doc.has_decode_error {
-            assert!(matches!(doc.save(None, false), Err(SaveError::DecodeErrors)));
-            assert!(doc.convert_encoding(encoding_rs::UTF_8, false).is_err());
-        }
-        doc.reinterpret(encoding_rs::GBK).unwrap();
-        assert_eq!(doc.editor.lines, vec!["简体中文测试"]);
+        assert!(
+            doc.has_decode_error,
+            "the fixture must exercise the save guard"
+        );
+        assert!(matches!(
+            doc.save(None, false),
+            Err(SaveError::DecodeErrors)
+        ));
+        assert!(doc.convert_encoding(encoding_rs::UTF_8, false).is_err());
+        assert_eq!(fs::read(&p).unwrap(), original);
+        assert_eq!(doc.encoding, encoding_rs::UTF_8);
+        assert!(doc.has_decode_error);
+        doc.reinterpret(encoding_rs::WINDOWS_1252).unwrap();
+        assert_eq!(doc.editor.lines, vec!["café"]);
         assert!(!doc.has_decode_error);
         assert!(!doc.is_modified());
-        let _ = fs::remove_file(&p);
+        doc.save(None, false).unwrap();
+        assert_eq!(fs::read(&p).unwrap(), original);
     }
 
     #[test]

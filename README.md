@@ -117,6 +117,10 @@ make build             # optimized release build (cargo build --release --locked
 
 `make help` lists all targets. `cargo check`, `cargo test` and `cargo run` still work directly.
 
+See [local testing](docs/testing.md) for focused core/UI tests, reviewed offscreen
+baselines (`make test-visual`), the explicit 1 GiB regression (`make test-large`),
+and reproducible performance reports with baseline comparison (`make bench`).
+
 After building, the standalone executable is at `target/release/MadEdit` (`target/release/MadEdit.exe` on Windows).
 
 ### Building on macOS

@@ -79,7 +79,7 @@ fn test_external_open_reuses_tabs_and_preserves_unsaved_text() {
 #[test]
 #[ignore]
 fn benchmark_markdown_preview_ui() {
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
     use super::mdpreview::Placement;
     let path = std::path::PathBuf::from(std::env::var_os("MADEDIT_MD_BENCH_FILE").expect("請設定 MADEDIT_MD_BENCH_FILE"));
     let mut first = Vec::new();
@@ -120,13 +120,8 @@ fn benchmark_markdown_preview_ui() {
             h.render().expect("預覽截圖失敗").save(out).unwrap();
         }
     }
-    let report = |name: &str, mut samples: Vec<Duration>| {
-        samples.sort();
-        println!("{name}: median={:.3} ms p90={:.3} ms", samples[samples.len() / 2].as_secs_f64() * 1000.0, samples[samples.len() * 9 / 10].as_secs_f64() * 1000.0);
-    };
-    println!("包含開檔、字型、圖表點陣化與預覽排版；每項 9 次有效樣本");
-    report("首次開檔與預覽", first);
-    report("輸入內文與更新預覽", edit);
+    crate::test_support::report_benchmark("markdown_ui.open", first);
+    crate::test_support::report_benchmark("markdown_ui.edit", edit);
 }
 
 /// 以含超長單行的文件量測開檔、輸入、移動游標、選取與捲動的畫面更新耗時；不含原生視窗與 GPU 呈現。
@@ -134,7 +129,7 @@ fn benchmark_markdown_preview_ui() {
 #[test]
 #[ignore]
 fn benchmark_long_line_editing() {
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     use crate::core::settings::WrapMode;
 
@@ -196,17 +191,10 @@ fn benchmark_long_line_editing() {
             }
             assert!(h.state_mut().doc().version > 0, "量測的文件必須實際開啟並編輯");
         }
-        let report = |name: &str, mut v: Vec<Duration>| {
-            v.sort();
-            println!("{name}: median={:.2} ms p90={:.2} ms", v[v.len() / 2].as_secs_f64() * 1000.0, v[v.len() * 9 / 10].as_secs_f64() * 1000.0);
-        };
-        println!("--- {wrap:?} ---");
-        report("open+render", open);
-        report("keystroke", typing);
-        report("End caret", caret);
-        report("Shift+End select", select);
-        report("5x PageDown", scroll);
-        report("click", click);
+        for (name, values) in [("open", open), ("keystroke", typing), ("end", caret),
+            ("selection", select), ("page_down", scroll), ("click", click)] {
+            crate::test_support::report_benchmark(&format!("long_line.{wrap:?}.{name}"), values);
+        }
     }
 
     samples(WrapMode::NoWrap, &path);
@@ -268,7 +256,13 @@ fn test_typing_enter_backspace_and_undo() {
     assert_eq!(text(&mut h), "abc\nx");
     h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     h.run_steps(2);
-    assert_ne!(text(&mut h), "abc\nx", "復原應改變內容");
+    // Typing and the following backspace form one undo group.
+    assert_eq!(text(&mut h), "abc\n");
+    assert_eq!(h.state().doc().editor.selection.head, crate::core::editor::TextPosition::new(1, 0));
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+    h.run_steps(2);
+    assert_eq!(text(&mut h), "abc\nx");
+    assert_eq!(h.state().doc().editor.selection.head, crate::core::editor::TextPosition::new(1, 1));
 }
 
 #[test]

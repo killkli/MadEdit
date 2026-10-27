@@ -4,6 +4,8 @@
 mod app;
 mod core;
 mod single_instance;
+#[cfg(test)]
+mod test_support;
 #[cfg(target_os = "macos")]
 mod macos;
 
