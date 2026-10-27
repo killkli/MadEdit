@@ -275,7 +275,7 @@ pub struct EditorState {
     pub clipboard_is_block: bool,
     pub bookmarks: BTreeSet<usize>,
     pub overwrite_mode: bool,
-    /// 狀態列數值快取：(錨點, 游標, 文件版本, Tab 寬) → (視覺欄, 字元位置, 選取字數)
+    /// 狀態列數值快取：（錨點、游標、文件版本、Tab 寬）→（視覺欄、字元位置、選取字數）
     status_cache: Option<((TextPosition, TextPosition, u64, usize), (usize, usize, usize))>,
 }
 

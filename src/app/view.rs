@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::i18n;
 use crate::app::commands::C;
 use crate::app::fonts::EDITOR_FAMILY;
+use crate::core::content_hash;
 use crate::core::document::{Document, EditKind};
 use crate::core::editor::{
     char_col_to_visual_col, char_visual_columns, tab_columns_at, tab_size, visual_col_to_char_col,
@@ -88,25 +89,27 @@ pub fn line_xs(line: &str, fixed: bool, widths: &CharWidths) -> Vec<f32> {
     xs
 }
 
-// ── 自動換行快取 ────────────────────────────────────────────────
-
-/// 逐 8 位元組混合的內容雜湊（FxHash 變體），供換行與拼字快取偵測行內容變更
-fn line_hash(line: &str) -> u64 {
-    const MUL: u64 = 0x517c_c1b7_2722_0a95;
-    let mut hash: u64 = 0x9e37_79b9_7f4a_7c15;
-    let bytes = line.as_bytes();
-    let mut chunks = bytes.chunks_exact(8);
-    for c in &mut chunks {
-        hash = (hash.rotate_left(5) ^ u64::from_le_bytes(c.try_into().unwrap())).wrapping_mul(MUL);
-    }
-    let rem = chunks.remainder();
-    if !rem.is_empty() {
-        let mut tail = [0u8; 8];
-        tail[..rem.len()].copy_from_slice(rem);
-        hash = (hash.rotate_left(5) ^ u64::from_le_bytes(tail)).wrapping_mul(MUL);
-    }
-    hash ^ (bytes.len() as u64).wrapping_mul(MUL)
+/// 水平可見的字元範圍 `[起, 迄)`，左右各留邊界以減少捲動時重解析
+///
+/// `xs` 是整行的每字元 x 座標（單調遞增），因此可用二分搜尋取得視窗邊界。
+fn visible_chars(xs: &[f32], row_start: usize, row_end: usize, scroll_x: f32, width: f32, rtl: bool) -> (usize, usize) {
+    const MARGIN: f32 = 64.0;
+    // 右到左模式下行首貼齊右緣，可見範圍對應的 x 區間會鏡射
+    let (left, right) = if rtl {
+        (scroll_x - width - MARGIN, scroll_x + MARGIN)
+    } else {
+        (scroll_x - MARGIN, scroll_x + width + MARGIN)
+    };
+    let last = row_end.min(xs.len().saturating_sub(1));
+    let first = row_start.min(last);
+    // 視覺列以列首字元為 x 原點（自動換行時同一行的每一列都從 0 起算）
+    let base = xs[first];
+    let lo = xs.partition_point(|x| *x < left + base).clamp(first, last);
+    let hi = xs.partition_point(|x| *x <= right + base).clamp(lo, last);
+    (lo, hi)
 }
+
+// ── 自動換行快取 ────────────────────────────────────────────────
 
 #[derive(Clone, PartialEq)]
 struct WrapKey {
@@ -193,7 +196,20 @@ type LineLayout = std::rc::Rc<(Vec<char>, Vec<f32>)>;
 /// 每幀各邏輯行的版面快取；超長行只量測一次，繪製與滑鼠／游標計算共用
 #[derive(Default)]
 struct FrameLayout {
-    lines: HashMap<usize, LineLayout>,
+    /// 本幀的文件版本（由 [`ViewState::begin_frame`] 設定）
+    version: u64,
+    /// 版面參數（等寬格網、字型、縮排）：改變時整份清空
+    params: Option<(bool, (u32, String), usize)>,
+    lines: HashMap<usize, LayoutEntry>,
+}
+
+/// 一行本幀的版面，附內容版本與雜湊以便跨幀沿用
+struct LayoutEntry {
+    version: u64,
+    hash: u64,
+    layout: LineLayout,
+    /// 本幀是否用到；上一幀沒用到就丟棄（記憶體只保留看得到的行）
+    used: bool,
 }
 
 pub struct ViewState {
@@ -303,13 +319,13 @@ impl ViewState {
         }
         let max_w = lay.wrap_width.max(widths.cell_w * 4.0);
         for (slot, line) in self.wrap.per_line.iter_mut().zip(lines.iter()) {
-            let hash = line_hash(line);
+            let hash = content_hash(line);
             if slot.as_ref().is_some_and(|w| w.hash == hash) {
                 continue;
             }
             let chars: Vec<char> = line.chars().collect();
             let xs = line_xs(line, lay.fixed, widths);
-            // wrap_line 的第一個起始是 0，breaks 只存後續斷點（串接時補回行首 0）
+            // wrap_line 的第一個起始是 0，breaks 只存後續斷行點（串接時補回行首 0）
             let breaks = wrap_line(&xs, &chars, max_w)
                 .into_iter()
                 .skip(1)
@@ -408,18 +424,43 @@ impl ViewState {
         r
     }
 
+    /// 每幀開始：丟掉上一幀沒用到的行版面，更新文件版本與版面參數
+    ///
+    /// 超長行的版面（字元陣列 + 每字元 x 座標）建一次就要數毫秒，因此跨幀沿用：
+    /// 只有真的被改到的行（內容雜湊不同）才重建。
+    pub fn begin_frame(&mut self, version: u64, fixed: bool, widths: &CharWidths) {
+        let mut frame = self.frame.borrow_mut();
+        frame.lines.retain(|_, e| e.used);
+        for e in frame.lines.values_mut() {
+            e.used = false;
+        }
+        let params = (fixed, widths.key.clone(), tab_size());
+        if frame.params.as_ref() != Some(&params) {
+            frame.lines.clear();
+            frame.params = Some(params);
+        }
+        frame.version = version;
+    }
+
     /// 取得一行本幀的版面資料（字元陣列與每字元 x 座標），同一幀內共用
     fn line_layout(&self, ed: &EditorState, line: usize, fixed: bool, widths: &CharWidths) -> LineLayout {
         let mut frame = self.frame.borrow_mut();
-        if let Some(l) = frame.lines.get(&line) {
-            return std::rc::Rc::clone(l);
+        let version = frame.version;
+        if let Some(e) = frame.lines.get_mut(&line) {
+            // 版本未變＝內容沒被編輯；版本變了則以內容雜湊確認這一行是否真的改了
+            if e.version == version || e.hash == content_hash(&ed.lines[line]) {
+                e.version = version;
+                e.used = true;
+                return std::rc::Rc::clone(&e.layout);
+            }
         }
+        let hash = content_hash(&ed.lines[line]);
         let layout: LineLayout = std::rc::Rc::new((ed.lines[line].chars().collect(), line_xs(&ed.lines[line], fixed, widths)));
-        frame.lines.insert(line, std::rc::Rc::clone(&layout));
+        frame.lines.insert(line, LayoutEntry { version, hash, layout: std::rc::Rc::clone(&layout), used: true });
         layout
     }
 
-    /// 清除本幀的行版面快取（內容編輯後必須呼叫）
+    /// 清除行版面快取（內容編輯後必須呼叫）
     pub fn clear_frame_layout(&self) {
         self.frame.borrow_mut().lines.clear();
     }
@@ -852,7 +893,6 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
     let settings = env.settings;
     let mut lay = Layout::new(settings, doc.mode);
     let ctx = ui.ctx().clone();
-    view.clear_frame_layout();
 
     // 量測可見範圍的字元（含行號與控制字元符號）；取樣有上限，避免超長行每幀掃整份文件
     let first_guess = view.top_row.min(doc.editor.lines.len().saturating_sub(1));
@@ -913,6 +953,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         WrapMode::ByColumn => settings.wrap_column.max(1) as f32 * widths.cell_w,
     };
     view.update_wrap(doc, &lay, widths);
+    view.begin_frame(doc.version, lay.fixed, widths);
     view.visible_rows = ((text_rect.height() / lay.row_h).floor() as usize).max(1);
     doc.editor.viewport.visible_line_count = view.visible_rows;
 
@@ -1204,6 +1245,26 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
     let last_row = (first_row + vis + 1).min(total_rows);
     let first_line = view.row_info(&doc.editor, first_row).0;
     let last_line = if last_row > first_row { view.row_info(&doc.editor, last_row - 1).0 } else { first_line };
+    // 每行水平可見的字元範圍：超長行只解析這段視窗，成本與行長無關
+    let mut windows: Vec<(usize, usize, usize)> = Vec::with_capacity(last_line + 1 - first_line);
+    for row in first_row..last_row {
+        let line = view.row_line(&doc.editor, row);
+        let start = view.row_start(&doc.editor, row);
+        let layout = view.line_layout(&doc.editor, line, lay.fixed, widths);
+        let row_end = if row + 1 < last_row && view.row_line(&doc.editor, row + 1) == line {
+            view.row_start(&doc.editor, row + 1)
+        } else {
+            layout.0.len()
+        };
+        let (lo, hi) = visible_chars(&layout.1, start, row_end, view.scroll_x, text_rect.width(), lay.rtl);
+        match windows.last_mut() {
+            Some(w) if w.0 == line => {
+                w.1 = w.1.min(lo);
+                w.2 = w.2.max(hi);
+            }
+            _ => windows.push((line, lo, hi)),
+        }
+    }
     let spans = doc.syntax_cache.highlight(
         &doc.editor.lines,
         first_line,
@@ -1211,6 +1272,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         &doc.syntax,
         env.theme_name,
         env.is_dark,
+        &windows,
     );
     if doc.syntax_cache.has_pending() {
         // 分時解析尚未完成：要求下一幀續跑，把其餘行補上顏色
@@ -1251,7 +1313,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         // 拼字檢查每行一次（以內容雜湊快取，不複製整行文字當鍵）
         spell_ranges.clear();
         if settings.spell_check && let Some(sc) = env.spell {
-            let hash = line_hash(&ed.lines[line]);
+            let hash = content_hash(&ed.lines[line]);
             if let Some(r) = view.spell_cache.get(&hash) {
                 spell_ranges = r.clone();
             } else {
@@ -1270,6 +1332,10 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
         } else {
             let mut v: Vec<Color32> = Vec::with_capacity(chars.len());
             for sp in line_spans {
+                if sp.skip_chars > 0 {
+                    // 超長行只解析可見視窗：視窗之前的字元以前景色顯示
+                    v.resize(v.len() + sp.skip_chars, fg);
+                }
                 let c = rgb(sp.color_rgb);
                 v.extend(std::iter::repeat_n(c, sp.text.chars().count()));
             }
@@ -1647,6 +1713,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             ed.select_range(TextPosition::new(line, s), TextPosition::new(line, e));
             ed.insert_text(&word);
         });
+        view.clear_frame_layout();
         view.spell_cache.clear();
     }
     if out.add_word.is_some() {
@@ -1675,12 +1742,12 @@ mod tests {
     }
 
     #[test]
-    fn line_hash_detects_content_changes() {
-        assert_eq!(line_hash("hello"), line_hash("hello"));
-        assert_ne!(line_hash("hello"), line_hash("hellp"));
+    fn content_hash_detects_content_changes() {
+        assert_eq!(content_hash("hello"), content_hash("hello"));
+        assert_ne!(content_hash("hello"), content_hash("hellp"));
         // 長度相同但內容不同、以及長度不同的情況都要區分
-        assert_ne!(line_hash("abc"), line_hash("abd"));
-        assert_ne!(line_hash("abc"), line_hash("abcd"));
+        assert_ne!(content_hash("abc"), content_hash("abd"));
+        assert_ne!(content_hash("abc"), content_hash("abcd"));
     }
 
     #[test]

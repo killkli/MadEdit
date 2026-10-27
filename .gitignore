@@ -2,3 +2,8 @@
 
 # macOS App 打包產物
 /dist/
+
+# 長行效能樣本：example.js 由 scripts/make_example_js.py 產生；私人檔案不要提交
+/example.js
+/example.private.js
+__pycache__/

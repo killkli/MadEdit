@@ -796,3 +796,34 @@ fn 另存檔名去除前後空白與結尾句點() {
     assert_eq!(t("/a/.hidden"), PathBuf::from("/a/.hidden"));
     assert_eq!(t("/a /b.txt"), PathBuf::from("/a /b.txt"));
 }
+
+/// 含全形字的超長行水平捲動：視窗起點的位元組格線會落在多位元組字元中間，不得 panic
+#[test]
+fn test_cjk_long_line_horizontal_scroll() {
+    let mut h = harness();
+    // 一長串全形字（字串）：視窗起點會落在多位元組字元中間
+    let line = format!("let s = \"{}\";", "中文內容測試".repeat(4_000));
+    {
+        let doc = h.state_mut().doc_mut();
+        doc.syntax = "Rust".into();
+        doc.syntax_cache.clear();
+    }
+    h.event(Event::Paste(line.clone()));
+    h.run_steps(3);
+    let chars = h.state().doc().editor.line_char_count(0);
+    assert_eq!(chars, line.chars().count());
+    // 逐段把游標移到行內各處：畫面捲動會推進可見視窗，沿途每個視窗都要能切片與解析
+    for step in 0..=32 {
+        let col = chars * step / 32;
+        h.state_mut().doc_mut().editor.set_caret(0, col);
+        h.state_mut().tab_mut().view.ensure_visible = true;
+        h.run_steps(1);
+        assert_eq!(h.state().doc().editor.selection.head.col, col);
+    }
+    // 回到行首：視窗反向移動也不得 panic
+    h.state_mut().doc_mut().editor.set_caret(0, 0);
+    h.state_mut().tab_mut().view.ensure_visible = true;
+    h.run_steps(2);
+    assert_eq!(h.state().doc().editor.lines.len(), 1, "水平捲動不會產生新行");
+}
+
