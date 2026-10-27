@@ -70,13 +70,12 @@ impl App {
         }
     }
 
-    /// 顯示 Markdown 預覽（並排時為編輯區右側或下方的面板，否則為獨立原生視窗），內容隨文件版本與深淺色主題自動更新；
+    /// 顯示 Markdown 預覽分頁或並排面板，內容隨文件版本與深淺色主題自動更新；
     /// 並排面板必須在 CentralPanel 之前呼叫
     pub fn show_markdown_preview(&mut self, ui: &mut egui::Ui) {
         use super::mdpreview::Placement;
         let ctx = ui.ctx().clone();
         let lang = self.ui_lang();
-        let title = self.t("md.title", "Markdown 預覽");
         let tab = self.tab_mut();
         let Some(mut pv) = tab.md_preview.take() else { return };
         // 相對路徑圖片以文件所在資料夾為基準
@@ -86,18 +85,8 @@ impl App {
         // 編輯區（扣除選單、工具列、狀態列後）剩下的範圍，並排時各佔一半
         let area = ui.available_rect_before_wrap();
         let action = match pv.placement {
-            Placement::Window => {
-                let builder = egui::ViewportBuilder::default()
-                    .with_title(format!("{title} - {}", tab.doc.display_name()))
-                    .with_inner_size([820.0, 900.0])
-                    .with_min_inner_size([360.0, 280.0]);
-                let mut action = super::mdpreview::MdAction::None;
-                ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("madedit-md-preview"), builder, |ui, _class| {
-                    let next = pv.ui(ui, top_line, fraction, lang);
-                    // 原生視窗同一幀可能多次排版，保留先前回報的捲動／關閉動作。
-                    if next != super::mdpreview::MdAction::None { action = next; }
-                });
-                action
+            Placement::Tab => {
+                pv.ui(ui, top_line, fraction, lang)
             }
             placement => {
                 // 左右與上下用不同的面板識別，各自記住使用者拖曳後的大小
@@ -157,11 +146,14 @@ impl App {
             tab.view.scroll_to_source(&tab.doc.editor, line, fraction);
             let (line, fraction) = tab.view.top_line(&tab.doc.editor);
             pv.acknowledge_scroll(line, fraction);
-            // 獨立預覽視窗的事件也必須喚醒主視窗，讓來源位置立即更新。
             ctx.request_repaint();
         }
         if action != super::mdpreview::MdAction::Close {
+            self.preview_tab_active = pv.placement == Placement::Tab;
             self.tab_mut().md_preview = Some(pv);
+        } else {
+            self.preview_tab_active = false;
+            self.focus_editor = true;
         }
     }
 
@@ -170,7 +162,7 @@ impl App {
         if self.macros.recording {
             self.macros.record_command(c);
         }
-        let editable = !self.doc().read_only;
+        let editable = !self.doc().read_only && !self.is_preview_tab();
         let hex = self.doc().mode == EditMode::Hex;
         match c {
             // ── 檔案 ──
@@ -220,8 +212,14 @@ impl App {
                 }
             }
             C::Close => {
-                let id = self.doc().id;
-                self.request_close(vec![id], false);
+                if self.is_preview_tab() {
+                    self.tab_mut().md_preview = None;
+                    self.preview_tab_active = false;
+                    self.focus_editor = true;
+                } else {
+                    let id = self.doc().id;
+                    self.request_close(vec![id], false);
+                }
             }
             C::CloseAll => {
                 let ids = self.tabs.iter().map(|t| t.doc.id).collect();
@@ -262,11 +260,11 @@ impl App {
             }
 
             // ── 編輯 ──
-            C::Undo => {
+            C::Undo if !self.is_preview_tab() => {
                 self.doc_mut().undo();
                 self.tab_mut().view.ensure_visible = true;
             }
-            C::Redo => {
+            C::Redo if !self.is_preview_tab() => {
                 self.doc_mut().redo();
                 self.tab_mut().view.ensure_visible = true;
             }
@@ -647,7 +645,11 @@ impl App {
                 if !ctx.is_loader_installed(super::mdpreview::DiagramLoader::ID) {
                     super::mdpreview::DiagramLoader::install(ctx, self.fonts.diagram_font());
                 }
-                self.tab_mut().md_preview = Some(super::mdpreview::MarkdownPreview::new());
+                let pv = self.tab_mut().md_preview.get_or_insert_with(super::mdpreview::MarkdownPreview::new);
+                if pv.placement != super::mdpreview::Placement::Tab {
+                    pv.set_placement(super::mdpreview::Placement::Tab);
+                }
+                self.activate_view(self.active, true);
             }
             C::PreviewHtml => {
                 let html = print::preview_html(self.doc(), false);
@@ -771,25 +773,23 @@ impl App {
             // ── 視窗 ──
             C::ToggleWindow => {
                 let p = self.prev_active.min(self.tabs.len() - 1);
-                self.activate(p);
+                self.activate_view(p, self.prev_preview_tab);
             }
-            C::PreviousWindow => {
-                let n = self.tabs.len();
-                self.activate((self.active + n - 1) % n);
+            C::PreviousWindow | C::NextWindow => {
+                let pages = self.tab_pages();
+                let current = pages.iter().position(|p| *p == (self.active, self.is_preview_tab())).unwrap_or(0);
+                let step = if c == C::NextWindow { 1 } else { pages.len() - 1 };
+                self.activate_page((current + step) % pages.len());
             }
-            C::NextWindow => {
-                let n = self.tabs.len();
-                self.activate((self.active + 1) % n);
-            }
-            C::SwitchTab1 => self.activate(0),
-            C::SwitchTab2 => self.activate(1),
-            C::SwitchTab3 => self.activate(2),
-            C::SwitchTab4 => self.activate(3),
-            C::SwitchTab5 => self.activate(4),
-            C::SwitchTab6 => self.activate(5),
-            C::SwitchTab7 => self.activate(6),
-            C::SwitchTab8 => self.activate(7),
-            C::SwitchLastTab => self.activate(self.tabs.len() - 1),
+            C::SwitchTab1 => self.activate_page(0),
+            C::SwitchTab2 => self.activate_page(1),
+            C::SwitchTab3 => self.activate_page(2),
+            C::SwitchTab4 => self.activate_page(3),
+            C::SwitchTab5 => self.activate_page(4),
+            C::SwitchTab6 => self.activate_page(5),
+            C::SwitchTab7 => self.activate_page(6),
+            C::SwitchTab8 => self.activate_page(7),
+            C::SwitchLastTab => self.activate_page(self.tab_pages().len() - 1),
             C::WindowList => self.dialog = Some(Dialog::WindowList),
             C::About => self.dialog = Some(Dialog::About),
 

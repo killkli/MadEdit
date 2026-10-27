@@ -453,7 +453,7 @@ fn scroll_preview(h: &mut Harness<'static, App>, delta: f32) {
 fn test_markdown_preview_scrolls_editor_without_feedback_or_selection_change() {
     use super::mdpreview::Placement;
     use crate::core::editor::{Selection, TextPosition};
-    for placement in [Placement::Right, Placement::Bottom, Placement::Window] {
+    for placement in [Placement::Right, Placement::Bottom, Placement::Tab] {
         let mut h = harness();
         h.state_mut().doc_mut().syntax = "Markdown".into();
         h.state_mut().doc_mut().editor.set_text(&(0..150).map(|i| format!("## Heading {i}\n\nParagraph {i}\n\n")).collect::<String>());
@@ -633,6 +633,95 @@ fn test_markdown_preview_follows_active_tab() {
     let pv = h.state_mut().tab_mut().md_preview.as_ref().expect("切回後應恢復預覽");
     assert_eq!(pv.placement, Placement::Right);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 預覽分頁共享來源、支援切換與關閉，且不能新增原生視窗或修改隱藏的來源。
+#[test]
+fn test_markdown_preview_tab_reuses_source_and_never_opens_a_viewport() {
+    let mut h = harness();
+    h.state_mut().doc_mut().syntax = "Markdown".into();
+    type_text(&mut h, "# Preview heading");
+    let source_id = h.state().doc().id;
+    let source_name = format!("{} *", h.state().doc().display_name());
+    let preview_name = format!("{} — Markdown 預覽", h.state().doc().display_name());
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(5);
+    assert!(h.state().is_preview_tab());
+    assert_eq!(h.state().tabs.len(), 1, "預覽不得複製來源文件");
+    assert_eq!(h.state().tab_pages(), vec![(0, false), (0, true)]);
+    assert_eq!(h.output().viewport_output.len(), 1, "預覽不能建立額外原生視窗");
+    h.get_by_label(&preview_name);
+    h.get_by_label("Preview heading");
+    // 預覽分頁不能讓貼上、輸入或復原修改隱藏中的來源文件。
+    h.event(Event::Paste("should not edit".into()));
+    type_text(&mut h, "should not edit");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run_steps(2);
+    assert_eq!(text(&mut h), "# Preview heading");
+    h.get_by_label(&source_name).click();
+    h.run_steps(3);
+    assert!(!h.state().is_preview_tab());
+    type_text(&mut h, " updated");
+    h.get_by_label(&preview_name).click();
+    h.run_steps(5);
+    h.get_by_label("Preview heading updated");
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(3);
+    assert_eq!(h.state().tab_pages().len(), 2, "重複開啟只選取既有預覽");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num1);
+    h.run_steps(2);
+    assert!(!h.state().is_preview_tab());
+    h.key_press_modifiers(if cfg!(target_os = "macos") { Modifiers::CTRL } else { Modifiers::COMMAND }, Key::Tab);
+    h.run_steps(2);
+    assert!(h.state().is_preview_tab(), "切換分頁須包含預覽");
+    h.state_mut().pending.push(C::Close);
+    h.run_steps(3);
+    assert!(!h.state().is_preview_tab());
+    assert!(h.state_mut().tab_mut().md_preview.is_none());
+    assert_eq!(h.state().doc().id, source_id);
+    assert!(h.state().doc().is_modified());
+    assert_eq!(text(&mut h), "# Preview heading updated");
+    assert!(h.state().confirm.is_none(), "關閉預覽不應關閉或詢問儲存來源");
+}
+
+/// 在分頁與並排間切換，並確認關閉來源時不留下預覽，也不影響其他文件。
+#[test]
+fn test_markdown_preview_tab_layout_and_document_lifetime() {
+    let mut h = harness();
+    h.state_mut().doc_mut().syntax = "Markdown".into();
+    type_text(&mut h, "# First");
+    let first_id = h.state().doc().id;
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(4);
+    h.get_by_label("左右並排").click();
+    h.run_steps(5);
+    assert!(!h.state().is_preview_tab());
+    assert_eq!(h.state().tab_pages().len(), 1);
+    h.get_by_label("獨立分頁").click();
+    h.run_steps(5);
+    assert!(h.state().is_preview_tab());
+    assert_eq!(h.state().tab_pages().len(), 2);
+    h.state_mut().pending.push(C::New);
+    h.run_steps(3);
+    h.state_mut().doc_mut().syntax = "Markdown".into();
+    type_text(&mut h, "# Second");
+    let second_id = h.state().doc().id;
+    h.state_mut().pending.push(C::PreviewMarkdown);
+    h.run_steps(4);
+    assert_eq!(h.state().tab_pages().len(), 4);
+    assert_eq!(h.output().viewport_output.len(), 1);
+    // 關閉別份來源時，仍在閱讀的預覽要跟著原文件，而不是跟著陣列索引。
+    h.state_mut().close_now(first_id);
+    h.run_steps(3);
+    assert!(h.state().is_preview_tab());
+    assert_eq!(h.state().doc().id, second_id);
+    h.get_by_label("Second");
+    h.state_mut().activate(0);
+    h.state_mut().close_now(second_id);
+    h.run_steps(3);
+    assert!(!h.state().is_preview_tab());
+    assert_eq!(h.state().tab_pages().len(), 1, "關閉來源必須移除它的預覽分頁");
+    assert!(h.state().tabs.iter().all(|t| t.md_preview.is_none()));
 }
 
 /// Markdown 預覽只對 Markdown 檔開啟：其他檔案即使以快捷鍵觸發也不會開

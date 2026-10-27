@@ -89,7 +89,10 @@ pub struct App {
     pub settings: Settings,
     pub tabs: Vec<Tab>,
     pub active: usize,
+    /// 預覽與來源共用文件，只另外記錄目前選取的是哪一種檢視。
+    preview_tab_active: bool,
     prev_active: usize,
+    prev_preview_tab: bool,
     fonts: FontManager,
     font_applied: Option<String>,
     widths: CharWidths,
@@ -143,7 +146,9 @@ impl App {
             settings,
             tabs: Vec::new(),
             active: 0,
+            preview_tab_active: false,
             prev_active: 0,
+            prev_preview_tab: false,
             fonts: FontManager::new(),
             font_applied: None,
             widths: CharWidths::default(),
@@ -291,10 +296,38 @@ impl App {
     }
 
     fn activate(&mut self, idx: usize) {
-        if idx < self.tabs.len() && idx != self.active {
+        self.activate_view(idx, false);
+    }
+
+    fn activate_view(&mut self, idx: usize, preview: bool) {
+        if idx >= self.tabs.len() {
+            return;
+        }
+        let preview = preview && self.tabs[idx].md_preview.as_ref().is_some_and(|pv| pv.placement == mdpreview::Placement::Tab);
+        if idx != self.active || preview != self.is_preview_tab() {
             self.prev_active = self.active;
-            self.active = idx;
-            self.focus_editor = true;
+            self.prev_preview_tab = self.is_preview_tab();
+        }
+        self.active = idx;
+        self.preview_tab_active = preview;
+        self.focus_editor = !preview;
+    }
+
+    fn is_preview_tab(&self) -> bool {
+        self.preview_tab_active && self.tabs[self.active].md_preview.as_ref()
+            .is_some_and(|pv| pv.placement == mdpreview::Placement::Tab)
+    }
+
+    fn tab_pages(&self) -> Vec<(usize, bool)> {
+        self.tabs.iter().enumerate().flat_map(|(i, tab)| {
+            let preview = tab.md_preview.as_ref().is_some_and(|pv| pv.placement == mdpreview::Placement::Tab);
+            std::iter::once((i, false)).chain(preview.then_some((i, true)))
+        }).collect()
+    }
+
+    fn activate_page(&mut self, page: usize) {
+        if let Some((index, preview)) = self.tab_pages().get(page).copied() {
+            self.activate_view(index, preview);
         }
     }
 
@@ -545,6 +578,9 @@ impl App {
 
     fn close_now(&mut self, id: u64) {
         let Some(i) = self.index_of(id) else { return };
+        if i == self.active {
+            self.preview_tab_active = false;
+        }
         self.remember_caret(i);
         self.tabs.remove(i);
         if self.tabs.is_empty() {
@@ -670,7 +706,7 @@ impl App {
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let focused = ctx.memory(|m| m.focused());
-        let editor_focus = focused.is_none() || self.editor_has_focus(ctx);
+        let editor_focus = !self.is_preview_tab() && (focused.is_none() || self.editor_has_focus(ctx));
         let mut fired: Vec<C> = Vec::new();
         let mut alt_fired = false;
         let mut pasted: Option<String> = None;
@@ -815,8 +851,11 @@ impl App {
     fn tab_bar(&mut self, ui: &mut egui::Ui) {
         let mut activate = None;
         let mut close = None;
+        let mut close_preview = None;
         let mut menu_cmd: Option<(usize, C)> = None;
         let unsaved = self.t("st.unsaved", "尚未儲存").to_string();
+        let preview_title = self.t("md.title", "Markdown 預覽").to_string();
+        let preview_active = self.is_preview_tab();
         egui::ScrollArea::horizontal().id_salt("tabs").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -828,12 +867,12 @@ impl App {
                     if t.doc.read_only {
                         name.push_str(" 🔒");
                     }
-                    let selected = i == self.active;
+                    let selected = i == self.active && !preview_active;
                     let resp = ui.add(egui::Button::selectable(selected, name)).on_hover_text(
                         t.doc.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| unsaved.clone()),
                     );
                     if resp.clicked() {
-                        activate = Some(i);
+                        activate = Some((i, false));
                     }
                     if resp.middle_clicked() {
                         close = Some(t.doc.id);
@@ -856,11 +895,30 @@ impl App {
                         close = Some(t.doc.id);
                     }
                     ui.separator();
+                    if t.md_preview.as_ref().is_some_and(|pv| pv.placement == mdpreview::Placement::Tab) {
+                        let name = format!("{} — {preview_title}", t.doc.display_name());
+                        let resp = ui.add(egui::Button::selectable(i == self.active && preview_active, name));
+                        if resp.clicked() {
+                            activate = Some((i, true));
+                        }
+                        if resp.middle_clicked() || ui.add(egui::Button::new("×").small().frame(false))
+                            .on_hover_text(self.t("md.close", "關閉預覽")).clicked() {
+                            close_preview = Some(i);
+                        }
+                        ui.separator();
+                    }
                 }
             });
         });
-        if let Some(i) = activate {
-            self.activate(i);
+        if let Some((i, preview)) = activate {
+            self.activate_view(i, preview);
+        }
+        if let Some(i) = close_preview {
+            self.tabs[i].md_preview = None;
+            if i == self.active {
+                self.preview_tab_active = false;
+                self.focus_editor = true;
+            }
         }
         if let Some(id) = close {
             self.request_close(vec![id], false);
@@ -1136,7 +1194,7 @@ impl eframe::App for App {
         // Ctrl/⌘ + 滾輪縮放字型
         let zoom = ctx.input(|i| if i.modifiers.command { i.smooth_scroll_delta().y } else { 0.0 });
         // 滑鼠在並排的 Markdown 預覽上時，Ctrl+滾輪交給預覽自己縮放
-        let over_preview = self.tabs[self.active].md_preview.as_ref().is_some_and(|p| p.docked() && ui.rect_contains_pointer(p.rect));
+        let over_preview = self.is_preview_tab() || self.tabs[self.active].md_preview.as_ref().is_some_and(|p| p.docked() && ui.rect_contains_pointer(p.rect));
         if zoom != 0.0 && ui.rect_contains_pointer(ui.max_rect()) && !over_preview {
             self.settings.font_size = (self.settings.font_size + zoom.signum()).clamp(6.0, 72.0);
         }
@@ -1165,8 +1223,10 @@ impl eframe::App for App {
         if self.fif.show_results {
             egui::Panel::bottom("fif-results").resizable(true).default_size(180.0).show(ui, |ui| self.find_results_panel(ui));
         }
-        // 並排的 Markdown 預覽面板要在 CentralPanel 之前，獨立視窗版本放這裡也無妨
-        self.show_markdown_preview(ui);
+        // 並排面板先分配空間；獨立預覽分頁則在中央區域繪製。
+        if self.tab_mut().md_preview.as_ref().is_some_and(|pv| pv.docked()) {
+            self.show_markdown_preview(ui);
+        }
         // 分隔線的拖曳範圍會跨入編輯區；留出抓取空間，避免稍後建立的捲軸搶走事件。
         let mut editor_margin = egui::Margin::ZERO;
         if let Some(pv) = &self.tabs[self.active].md_preview {
@@ -1174,14 +1234,18 @@ impl eframe::App for App {
             match pv.placement {
                 mdpreview::Placement::Right => editor_margin.right = gap,
                 mdpreview::Placement::Bottom => editor_margin.bottom = gap,
-                mdpreview::Placement::Window => {}
+                mdpreview::Placement::Tab => {}
             }
         }
         egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(editor_margin)).show(ui, |ui| {
-            self.disk_banner(ui);
-            self.find_bar(ui);
-            self.goto_bar(ui);
-            self.editor_area(ui);
+            if self.is_preview_tab() {
+                self.show_markdown_preview(ui);
+            } else {
+                self.disk_banner(ui);
+                self.find_bar(ui);
+                self.goto_bar(ui);
+                self.editor_area(ui);
+            }
         });
 
         self.show_dialogs(&ctx);

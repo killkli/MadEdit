@@ -47,7 +47,7 @@ The original C++ / wxWidgets **MadEdit** is a classic tool for many developers a
 - ` ```mermaid ` blocks are rendered as diagrams by [**fermaid**](https://github.com/tenyi/fermaid), with no browser or Node.js needed.
   fermaid is a pure-Rust Mermaid rendering engine the author built specifically for the Markdown preview. It supports all current Mermaid diagram types and produces preview images quickly.
 - Relative image paths resolve against the document's folder. PNG, JPEG, GIF, WebP and SVG are supported.
-- Switch between a **separate window**, **side by side** or **top and bottom** layout. In split layouts the preview and editor each take half, and the preview can **scroll in sync** with the editor.
+- Open the preview in a **separate tab in the main window**, or switch to **side by side** or **top and bottom**. Closing the preview tab keeps the source document open. In split layouts the preview and editor each take half, and the preview can **scroll in sync** with the editor.
 - Zoom (`Ctrl` / `⌘` + scroll wheel or trackpad pinch) and fit diagrams to width; high-contrast colors (pure black background in dark mode, pure white in light mode).
 - Preview state is kept per tab and follows tab switches.
 - You can also "Preview as HTML", which hands the page to the system browser.

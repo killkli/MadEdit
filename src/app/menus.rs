@@ -465,15 +465,17 @@ impl App {
         self.item(ui, C::WindowList);
         ui.separator();
         let mut go = None;
-        for (i, t) in self.tabs.iter().enumerate() {
-            let name = format!("{} {}{}", i + 1, t.doc.display_name(), if t.doc.is_modified() { " *" } else { "" });
-            if ui.button(check_label(i == self.active, &name)).clicked() {
+        for (i, (index, preview)) in self.tab_pages().into_iter().enumerate() {
+            let doc = &self.tabs[index].doc;
+            let suffix = if preview { format!(" — {}", self.t("md.title", "Markdown 預覽")) } else { String::new() };
+            let name = format!("{} {}{}{}", i + 1, doc.display_name(), if doc.is_modified() { " *" } else { "" }, suffix);
+            if ui.button(check_label(index == self.active && preview == self.is_preview_tab(), &name)).clicked() {
                 go = Some(i);
                 ui.close();
             }
         }
         if let Some(i) = go {
-            self.activate(i);
+            self.activate_page(i);
         }
     }
 

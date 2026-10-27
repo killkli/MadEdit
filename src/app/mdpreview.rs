@@ -312,7 +312,7 @@ fn source_position(anchors: &[(usize, f32)], y: f32) -> Option<(usize, f32)> {
     Some((line.floor() as usize, line.fract()))
 }
 
-/// Markdown 預覽視窗狀態（每個分頁各自一份，只顯示目前分頁的預覽）
+/// Markdown 預覽狀態（每份文件各自一份，只顯示目前選取的預覽）
 pub struct MarkdownPreview {
     /// 已建立內容時的條件；任一變動就重建
     built: Option<BuildKey>,
@@ -325,7 +325,7 @@ pub struct MarkdownPreview {
     zoom: f32,
     /// 符合寬度：圖表依視窗寬度重新排版，仍太寬才縮小
     fit_width: bool,
-    /// 擺放方式：獨立視窗、編輯區右側或下方
+    /// 擺放方式：獨立分頁、編輯區右側或下方
     pub placement: Placement,
     /// 剛切換成並排，下一幀把面板設回編輯區的一半大小
     pub(super) reset_size: bool,
@@ -367,8 +367,8 @@ struct BuildKey {
 /// 預覽的擺放方式（類似 Visual Studio 的分割視窗）
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Placement {
-    /// 獨立原生視窗
-    Window,
+    /// 主視窗內的獨立預覽分頁
+    Tab,
     /// 左右並排：預覽在編輯區右側
     Right,
     /// 上下並排：預覽在編輯區下方
@@ -393,7 +393,7 @@ impl MarkdownPreview {
             source_lines: 0,
             zoom: 1.0,
             fit_width: true,
-            placement: Placement::Window,
+            placement: Placement::Tab,
             reset_size: false,
             dock_geometry: None,
             resize_started: false,
@@ -521,7 +521,7 @@ impl MarkdownPreview {
 
     /// 是否與編輯區並排（停靠在主視窗內）
     pub fn docked(&self) -> bool {
-        self.placement != Placement::Window
+        self.placement != Placement::Tab
     }
 
     /// 切換擺放方式；並排時設為編輯區的一半大小，同步選擇保持不變。
@@ -568,7 +568,7 @@ impl MarkdownPreview {
             ui.checkbox(&mut self.fit_width, t("md.fit_width", "符合寬度")).on_hover_text(t("md.fit_width_tip", "圖表依視窗寬度重新排版"));
             ui.separator();
             let choices = [
-                (Placement::Window, t("md.window", "獨立視窗"), t("md.window_tip", "以獨立視窗顯示預覽")),
+                (Placement::Tab, t("md.tab", "獨立分頁"), t("md.tab_tip", "以主視窗內的獨立分頁顯示預覽")),
                 (Placement::Right, t("md.right", "左右並排"), t("md.right_tip", "預覽放在編輯區右側，各佔一半")),
                 (Placement::Bottom, t("md.bottom", "上下並排"), t("md.bottom_tip", "預覽放在編輯區下方，各佔一半")),
             ];
@@ -581,10 +581,7 @@ impl MarkdownPreview {
                 self.synced_line = None;
                 self.preview_source = None;
             }
-            if self.docked() {
-                // 並排時沒有視窗標題列可關，另給關閉按鈕
-                close = ui.button("×").on_hover_text(t("md.close", "關閉預覽")).clicked();
-            }
+            close = ui.button("×").on_hover_text(t("md.close", "關閉預覽")).clicked();
             if !self.image_uris.is_empty() && ui.button(t("md.reload_images", "重新載入圖片")).on_hover_text(t("md.reload_images_tip", "圖片檔案更新或補回後，重新讀取圖片")).clicked() {
                 self.reload_images(ui.ctx());
             }
@@ -595,8 +592,8 @@ impl MarkdownPreview {
     /// 繪製預覽內容；`top_line` 是編輯區目前第一個可見的行（從 0 起算）
     pub fn ui(&mut self, ui: &mut egui::Ui, top_line: usize, fraction: f32, lang: Lang) -> MdAction {
         self.rect = ui.max_rect();
-        // 獨立視窗才看視窗關閉與 Esc；並排時這些屬於主視窗與編輯區
-        if !self.docked() && ui.ctx().input(|i| i.viewport().close_requested() || i.key_pressed(egui::Key::Escape)) {
+        // 預覽分頁的 Esc 只關預覽；主視窗的關閉要求仍交給 App 處理未儲存確認。
+        if !self.docked() && ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
             return MdAction::Close;
         }
         let close = egui::Panel::top("md-preview-toolbar").show(ui, |ui| {
@@ -647,7 +644,7 @@ impl MarkdownPreview {
         let zoom = self.zoom;
         let mut anchors = Vec::with_capacity(self.items.len() * 2 + 1);
         let mut avail_w = self.avail_w;
-        // 內容區自己鋪底色（獨立視窗沒有 CentralPanel，否則淺色模式下會露出深色的視窗底），並提高文字對比
+        // 預覽分頁與並排面板共用高對比底色，避免受到外層面板底色影響。
         let dark = ui.visuals().dark_mode;
         let fill = egui::Frame::new().fill(if dark { Color32::BLACK } else { Color32::WHITE });
         let output = egui::CentralPanel::default().frame(fill).show(ui, |ui| area.show(ui, |ui| {
@@ -1249,12 +1246,12 @@ mod tests {
     }
 
     #[test]
-    fn test_window_preview_reverse_scroll_and_reflow_keep_reading_position() {
+    fn test_tab_preview_reverse_scroll_and_reflow_keep_reading_position() {
         let text: String = (0..100).map(|i| format!("## Heading {i}\n\nParagraph {i}\n\n")).collect();
         let mut h = preview_harness(text, 0);
-        h.state_mut().preview.set_placement(Placement::Window);
+        h.state_mut().preview.set_placement(Placement::Tab);
         h.run_steps(8);
-        // 獨立視窗與並排使用相同 UI；在無原生視窗的測試中直接送入其內容區事件。
+        // 分頁與並排使用相同 UI，直接送入內容區事件以驗證閱讀位置。
         h.hover_at(egui::pos2(250.0, 300.0));
         h.event(egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, -600.0),
