@@ -1293,9 +1293,9 @@ checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
 
 [[package]]
 name = "fermaid"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a61420921610b402133b2263b9120232a70c090640fdd5035d584ae5be1904"
+checksum = "7d41a3e24ea4e032a9a619cfd42c8babfb568d0d90d1cd656ac6a490f4bba54f"
 
 [[package]]
 name = "find-msvc-tools"
@@ -5507,7 +5507,3 @@ dependencies = [
  "syn 3.0.9",
  "winnow",
 ]
-
-[[patch.unused]]
-name = "accesskit_macos"
-version = "0.27.1"
