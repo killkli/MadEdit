@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+- In the Markdown preview, a table inside a block quote (`> | a | b |`) ran together as a single paragraph of cell text. It now renders as a table inside the quote.
+
 ## [0.6.5] - 2026-10-28
 
 ### Changed
