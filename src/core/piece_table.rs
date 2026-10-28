@@ -382,7 +382,8 @@ mod tests {
 
     #[test]
     fn test_file_backed_source_survives_truncation() {
-        let path = std::env::temp_dir().join(format!("madedit_pt_{}.bin", std::process::id()));
+        let dir = crate::test_support::TempDir::new("truncation");
+        let path = dir.path().join("source.bin");
         let data: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
         std::fs::write(&path, &data).unwrap();
         let pt = PieceTable::open_file(File::open(&path).unwrap()).unwrap();
@@ -391,11 +392,85 @@ mod tests {
         // 資料以 251 為週期重複，第一個匹配位於 150000 % 251
         assert_eq!(pt.find(&data[150_000..150_004], 0, pt.len()), Some(150_000 % 251));
 
+        let pt = PieceTable::open_file(File::open(&path).unwrap()).unwrap();
+        assert_eq!(pt.read_slice(70_000, 10), &data[70_000..70_010]);
+
         // 外部截短檔案後讀取不應崩潰，缺少的資料以 0 補齊
         std::fs::write(&path, &data[..1000]).unwrap();
         let tail = pt.read_slice(190_000, 16);
-        assert_eq!(tail.len(), 16);
-        let _ = std::fs::remove_file(&path);
+        assert_eq!(tail, vec![0; 16]);
+        // Page zero was never cached: its surviving prefix and missing suffix must agree.
+        let across_eof = pt.read_slice(990, 32);
+        assert_eq!(&across_eof[..10], &data[990..1000]);
+        assert_eq!(&across_eof[10..], &[0; 22]);
+        let across_page = pt.read_slice(2 * PAGE_SIZE - 8, 24);
+        // A page fetched before truncation remains cached; a new page is zero-filled.
+        assert_eq!(&across_page[..8], &data[2 * PAGE_SIZE - 8..2 * PAGE_SIZE]);
+        assert_eq!(&across_page[8..], &[0; 16]);
+    }
+
+    #[test]
+    fn test_generated_operations_match_byte_vector() {
+        use crate::test_support::{Rng, TempDir};
+        for seed in [1, 42, 0x2026_1028] {
+            for file_backed in [false, true] {
+                let dir = TempDir::new("piece-model");
+                let mut expected: Vec<u8> =
+                    (0..2 * PAGE_SIZE + 17).map(|i| (i % 251) as u8).collect();
+                let mut table = if file_backed {
+                    let path = dir.path().join("source.bin");
+                    std::fs::write(&path, &expected).unwrap();
+                    PieceTable::open_file(File::open(path).unwrap()).unwrap()
+                } else {
+                    PieceTable::from_bytes(expected.clone())
+                };
+                let mut rng = Rng(seed);
+                for step in 0..300 {
+                    let at = match step % 5 {
+                        0 => 0,
+                        1 => expected.len(),
+                        2 => PAGE_SIZE.min(expected.len()),
+                        _ => rng.below(expected.len() + 17),
+                    };
+                    let count = rng.below(65);
+                    if rng.below(2) == 0 {
+                        let bytes: Vec<u8> = (0..count).map(|_| rng.below(256) as u8).collect();
+                        table.insert(at, &bytes);
+                        expected.splice(at.min(expected.len())..at.min(expected.len()), bytes);
+                    } else {
+                        table.delete(at, count);
+                        let start = at.min(expected.len());
+                        expected.drain(start..(start + count).min(expected.len()));
+                    }
+                    assert_eq!(table.len(), expected.len(), "seed={seed}, step={step}");
+                    assert_eq!(
+                        table.collect_bytes(),
+                        expected,
+                        "seed={seed}, step={step}, file={file_backed}"
+                    );
+                    let start = rng.below(expected.len() + 17);
+                    let end = (start + rng.below(100)).min(expected.len());
+                    assert_eq!(
+                        table.read_slice(start, end.saturating_sub(start)),
+                        expected[start.min(expected.len())..end]
+                    );
+                    if step % 30 == 0 {
+                        let mut streamed = Vec::new();
+                        table.write_to(&mut streamed).unwrap();
+                        assert_eq!(streamed, expected);
+                        let pattern = &expected[expected.len() / 2..expected.len() / 2 + 3];
+                        assert_eq!(
+                            table.find(pattern, 0, table.len()),
+                            expected.windows(3).position(|w| w == pattern)
+                        );
+                        assert_eq!(
+                            table.rfind(pattern, table.len()),
+                            expected.windows(3).rposition(|w| w == pattern)
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

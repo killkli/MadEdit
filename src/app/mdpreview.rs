@@ -958,7 +958,7 @@ mod tests {
     #[test]
     #[ignore]
     fn benchmark_preview_refresh() {
-        use std::time::{Duration, Instant};
+        use std::time::Instant;
         let path = PathBuf::from(std::env::var_os("MADEDIT_MD_BENCH_FILE").expect("請設定 MADEDIT_MD_BENCH_FILE"));
         let text = std::fs::read_to_string(&path).unwrap();
         let base_dir = path.parent().map(Path::to_path_buf);
@@ -988,13 +988,9 @@ mod tests {
                 edit.push(elapsed);
             }
         }
-        let report = |name: &str, mut samples: Vec<Duration>| {
-            samples.sort();
-            println!("{name}: median={:.3} ms p90={:.3} ms", samples[samples.len() / 2].as_secs_f64() * 1000.0, samples[samples.len() * 9 / 10].as_secs_f64() * 1000.0);
-        };
-        println!("文件：{} bytes，{diagrams} 張 Mermaid；每項 21 次有效樣本", text.len());
-        report("首次建立預覽內容", first);
-        report("修改一般內文", edit);
+        println!("Fixture: {} bytes, {diagrams} Mermaid diagrams", text.len());
+        crate::test_support::report_benchmark("markdown_refresh.open", first);
+        crate::test_support::report_benchmark("markdown_refresh.edit", edit);
     }
 
     #[test]

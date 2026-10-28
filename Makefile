@@ -2,12 +2,13 @@
 # 開發用 check / test / run / build；打包用 dist-*。發行步驟見 README.md。
 
 CARGO ?= cargo
+PYTHON ?= python3
 DIST ?= dist
 VERSION := $(shell sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)
 HOST_ARCH := $(shell uname -m | sed -e 's/amd64/x86_64/' -e 's/arm64/aarch64/' -e 's/x64/x86_64/')
 ARCH ?= $(HOST_ARCH)
 
-.PHONY: help check test run build dist dist-linux dist-appimage dist-macos dist-windows release-notes clean
+.PHONY: help check test test-core test-ui test-visual test-large test-tools bench run build dist dist-linux dist-appimage dist-macos dist-windows release-notes clean
 
 .DEFAULT_GOAL := help
 
@@ -17,6 +18,12 @@ help:
 	@echo "開發："
 	@echo "  make check              cargo check"
 	@echo "  make test               cargo test"
+	@echo "  make test-core          core regression and model tests"
+	@echo "  make test-ui            headless egui interaction tests"
+	@echo "  make test-visual        compare offscreen visual baselines"
+	@echo "  make test-large         stream and verify a 1 GiB file"
+	@echo "  make test-tools         benchmark report/comparison tests"
+	@echo "  make bench              save release benchmark samples and metadata"
 	@echo "  make run                cargo run"
 	@echo "  make build              cargo build --release --locked"
 	@echo ""
@@ -36,7 +43,25 @@ check:
 	$(CARGO) check
 
 test:
-	$(CARGO) test
+	$(CARGO) test --locked
+
+test-core:
+	$(CARGO) test --locked core::
+
+test-ui:
+	$(CARGO) test --locked app::
+
+test-visual:
+	$(CARGO) test --locked app::visual_tests::visual_regression_scenes -- --ignored --exact --test-threads=1
+
+test-large:
+	$(CARGO) test --locked test_gib_file_random_access_edit_and_streaming_save -- --ignored --test-threads=1
+
+test-tools:
+	$(PYTHON) -m unittest discover -s scripts -p 'test_benchmark.py'
+
+bench:
+	$(PYTHON) scripts/benchmark.py --cargo "$(CARGO)" $(BENCH_ARGS)
 
 run:
 	$(CARGO) run
