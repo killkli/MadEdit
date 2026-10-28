@@ -8,16 +8,38 @@
   "json": {
     "indentWidth": 4
   },
+  "malva": {},
+  "markup": {},
+  "yaml": {},
   "markdown": {},
   "toml": {},
+  "graphql": {},
+  "sql": {},
+  "dockerfile": {},
+  "shfmt": {},
   "clangFormat": {},
   "ruff": {},
+  "gofumpt": {},
+  "mago": {},
+  "stylua": {},
+  "csharpier": {},
   "plugins": [
     "./plugins/clang-format.wasm",
     "./plugins/typescript.wasm",
     "./plugins/json.wasm",
+    "./plugins/malva.wasm",
+    "./plugins/markup.wasm",
+    "./plugins/yaml.wasm",
     "./plugins/markdown.wasm",
     "./plugins/toml.wasm",
-    "./plugins/ruff.wasm"
+    "./plugins/graphql.wasm",
+    "./plugins/sql.wasm",
+    "./plugins/dockerfile.wasm",
+    "./plugins/shfmt.wasm",
+    "./plugins/ruff.wasm",
+    "./plugins/gofumpt.wasm",
+    "./plugins/mago.wasm",
+    "./plugins/stylua.wasm",
+    "./plugins/csharpier.wasm"
   ]
 }

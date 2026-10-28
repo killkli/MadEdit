@@ -11,18 +11,32 @@
 - `dprint.entitlements` — macOS helper 簽章用的最小權限
   （`com.apple.security.cs.allow-unsigned-executable-memory`，wasmtime 需要）。
 
-收錄的語言（經典、離線可用，clang-format 為必要項）：
+收錄的語言（經典＋常用、離線可用，clang-format 為必要項）：
 
-| 插件 | 副檔名 |
+| 插件 | 副檔名／檔名 |
 | --- | --- |
 | clang-format | c cc cpp cxx h hh hpp hxx m mm |
 | typescript | ts tsx js jsx mjs cjs mts cts |
 | json | json jsonc |
+| malva | css scss sass less |
+| markup | html vue svelte astro xml svg jinja j2 twig njk vto mustache hbs handlebars wsdl xsd xslt xsl |
+| yaml | yaml yml |
 | markdown | md markdown |
 | toml | toml |
+| graphql | graphql gql |
+| sql | sql |
+| dockerfile | dockerfile（`Dockerfile` 檔名） |
+| shfmt | sh bash zsh mksh bats（`.bashrc`、`.zshrc` 等檔名） |
 | ruff | py |
+| gofumpt | go |
+| mago | php |
+| stylua | lua luau |
+| csharpier | cs csx csproj props targets slnx config xaml axaml（`.xml` 由 markup 優先） |
 
-Rust 沒有收錄：dprint 對 Rust 仍是轉呼外部 `rustfmt`，未隨附。
+17 支插件解壓後約 56 MB；全部為離線 Wasm，首次使用時由 dprint 編譯到使用者快取。
+
+Rust 沒有收錄：dprint 對 Rust 仍是轉呼外部 `rustfmt`，未隨附。Java/Ruby 沒有
+現成的 dprint 插件。
 
 已知限制：`clangFormat` 區段必須留空——clang-format 0.2.1 的 Wasm 插件不接受
 區段內的選項（任何鍵都會回報 configuration error）；縮排與行寬來自全域的

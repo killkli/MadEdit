@@ -18,14 +18,39 @@ use std::time::Duration;
 
 use super::document::Document;
 
-/// 每支插件支援的副檔名（與 assets/formatters/dprint.json 的插件一致）
+/// 各插件支援的副檔名（與 assets/formatters/dprint.json 的插件一致；先到先得）
 pub const LANGUAGES: &[(&str, &[&str])] = &[
     ("clang-format", &["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "m", "mm"]),
     ("typescript", &["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"]),
     ("json", &["json", "jsonc"]),
-    ("markdown", &["md", "markdown"]),
+    ("malva", &["css", "scss", "sass", "less"]),
+    ("markup", &["html", "vue", "svelte", "astro", "xml", "svg", "jinja", "jinja2", "j2", "twig", "njk", "vto", "mustache", "hbs", "handlebars", "wsdl", "xsd", "xslt", "xsl"]),
+    ("yaml", &["yaml", "yml"]),
     ("toml", &["toml"]),
+    ("markdown", &["md", "markdown"]),
+    ("graphql", &["graphql", "gql"]),
+    ("sql", &["sql"]),
+    ("dockerfile", &["dockerfile"]),
+    ("shfmt", &["sh", "bash", "zsh", "mksh", "bats"]),
     ("ruff", &["py"]),
+    ("gofumpt", &["go"]),
+    ("mago", &["php"]),
+    ("stylua", &["lua", "luau"]),
+    // csharpier 也收 xml，但 markup 排在前面（dprint.json 的插件順序相同），.xml 由 markup 接手
+    ("csharpier", &["cs", "csx", "csproj", "props", "targets", "slnx", "config", "xaml", "axaml"]),
+];
+
+/// 無副檔名（或點開頭）檔案的對應，與 dprint 的 fileNames 概念相同
+pub const FILE_NAMES: &[(&str, &str)] = &[
+    ("Dockerfile", "dockerfile"),
+    (".bashrc", "shfmt"),
+    (".bash_profile", "shfmt"),
+    (".bash_logout", "shfmt"),
+    (".zshenv", "shfmt"),
+    (".zprofile", "shfmt"),
+    (".zshrc", "shfmt"),
+    (".zlogin", "shfmt"),
+    (".zlogout", "shfmt"),
 ];
 
 /// 格式化大型文件（含首次插件編譯）的上限
@@ -36,6 +61,10 @@ pub fn plugin_for_extension(ext: &str) -> Option<&'static str> {
     LANGUAGES.iter().find(|(_, exts)| exts.contains(&ext.as_str())).map(|(plugin, _)| *plugin)
 }
 
+pub fn plugin_for_file_name(name: &str) -> Option<&'static str> {
+    FILE_NAMES.iter().find(|(file, _)| *file == name).map(|(_, plugin)| *plugin)
+}
+
 /// 沒有檔名時，依目前語法名稱推回代表副檔名（對應 syntax.rs 的 syntect 名稱）
 pub fn extension_for_syntax(syntax: &str) -> Option<&'static str> {
     match syntax.trim() {
@@ -44,10 +73,17 @@ pub fn extension_for_syntax(syntax: &str) -> Option<&'static str> {
         "Objective-C" => Some("m"),
         "JavaScript" => Some("js"),
         "JSON" => Some("json"),
-        // 本程式把 TOML 交給 YAML 語法
-        "YAML" => Some("toml"),
+        // TOML 檔案也使用 YAML 語法；未存檔時以更常用的 YAML 為準（存檔後走副檔名）
+        "YAML" => Some("yaml"),
         "Markdown" => Some("md"),
         "Python" => Some("py"),
+        "CSS" => Some("css"),
+        "SCSS" => Some("scss"),
+        "HTML" => Some("html"),
+        "XML" => Some("xml"),
+        "SQL" => Some("sql"),
+        "PHP" => Some("php"),
+        "Bourne Again Shell (bash)" => Some("sh"),
         _ => None,
     }
 }
@@ -114,13 +150,13 @@ fn cache_dir() -> Option<PathBuf> {
 
 /// 以 dprint 格式化整份文字。`file_name` 決定使用哪支插件與語言規則。
 pub fn format_text(text: &str, file_name: &str) -> Result<String, String> {
-    let ext = Path::new(file_name)
+    let path = Path::new(file_name);
+    let plugin = path
         .extension()
         .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .ok_or_else(|| "無法判斷檔案類型（沒有副檔名）。".to_string())?;
-    let plugin = plugin_for_extension(&ext)
-        .ok_or_else(|| format!("dprint 沒有支援 .{ext} 的格式化插件（支援：{}）。", supported_summary()))?;
+        .and_then(plugin_for_extension)
+        .or_else(|| path.file_name().and_then(|n| n.to_str()).and_then(plugin_for_file_name))
+        .ok_or_else(|| format!("dprint 沒有支援「{file_name}」的格式化插件（支援：{}）。", supported_summary()))?;
     let (helper, config) = find_helper().ok_or_else(|| {
         "找不到 dprint。此版本未內建格式化工具；請改用「帶 DPRINT」版本，或自行安裝 dprint 並確認它在 PATH 中。".to_string()
     })?;
@@ -208,6 +244,23 @@ mod tests {
         for ext in ["c", "h", "cc", "cpp", "cxx", "hpp"] {
             assert_eq!(plugin_for_extension(ext), Some("clang-format"), "{ext}");
         }
+        // 常用語言
+        assert_eq!(plugin_for_extension("css"), Some("malva"));
+        assert_eq!(plugin_for_extension("less"), Some("malva"));
+        assert_eq!(plugin_for_extension("html"), Some("markup"));
+        assert_eq!(plugin_for_extension("SVG"), Some("markup"));
+        assert_eq!(plugin_for_extension("vue"), Some("markup"));
+        assert_eq!(plugin_for_extension("yml"), Some("yaml"));
+        assert_eq!(plugin_for_extension("graphql"), Some("graphql"));
+        assert_eq!(plugin_for_extension("sql"), Some("sql"));
+        assert_eq!(plugin_for_extension("dockerfile"), Some("dockerfile"));
+        assert_eq!(plugin_for_extension("zsh"), Some("shfmt"));
+        assert_eq!(plugin_for_extension("go"), Some("gofumpt"));
+        assert_eq!(plugin_for_extension("php"), Some("mago"));
+        assert_eq!(plugin_for_extension("luau"), Some("stylua"));
+        assert_eq!(plugin_for_extension("cs"), Some("csharpier"));
+        // .xml 同時在 markup 與 csharpier 的範圍，先到先得交給 markup
+        assert_eq!(plugin_for_extension("xml"), Some("markup"));
         // 未收錄的語言必須明確拒絕，不能靠 dprint 原樣返回
         assert_eq!(plugin_for_extension("rs"), None);
         assert_eq!(plugin_for_extension("txt"), None);
@@ -215,9 +268,21 @@ mod tests {
     }
 
     #[test]
+    fn test_plugin_for_file_name_matches_dockerfile_and_dotfiles() {
+        assert_eq!(plugin_for_file_name("Dockerfile"), Some("dockerfile"));
+        assert_eq!(plugin_for_file_name(".zshrc"), Some("shfmt"));
+        assert_eq!(plugin_for_file_name(".bashrc"), Some("shfmt"));
+        assert_eq!(plugin_for_file_name("Makefile"), None);
+    }
+
+    #[test]
     fn test_extension_for_syntax_and_stdin_file_name() {
         assert_eq!(extension_for_syntax("C++"), Some("cpp"));
-        assert_eq!(extension_for_syntax("YAML"), Some("toml")); // TOML 檔案使用 YAML 語法
+        // TOML 檔案也用 YAML 語法；未存檔時先按 YAML 處理（存檔後走副檔名）
+        assert_eq!(extension_for_syntax("YAML"), Some("yaml"));
+        assert_eq!(extension_for_syntax("CSS"), Some("css"));
+        assert_eq!(extension_for_syntax("HTML"), Some("html"));
+        assert_eq!(extension_for_syntax("Bourne Again Shell (bash)"), Some("sh"));
         assert_eq!(extension_for_syntax("Rust"), None);
 
         let mut doc = Document::default();
