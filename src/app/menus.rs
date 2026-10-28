@@ -125,6 +125,14 @@ impl App {
             menu(ui, self.t("menu.help", "說明(H)"), |ui| {
                 self.item(ui, C::KeyboardShortcuts);
                 ui.separator();
+                if ui.add_enabled(!self.updates.busy(), Button::new(self.t("updates.check", "檢查更新"))).clicked() {
+                    self.start_update_check(ui.ctx(), true);
+                    ui.close();
+                }
+                let label = self.t("updates.auto", "自動檢查更新（每日）");
+                if ui.checkbox(&mut self.settings.auto_check_updates, label).changed() {
+                    self.save_settings();
+                }
                 self.item(ui, C::About);
             });
             // Zoom, theme and quick search sit at the right end of the menu bar, so the toolbar

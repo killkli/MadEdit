@@ -1,6 +1,7 @@
 //! egui 主程式：多文件分頁、選單、工具列、狀態列、對話框與快捷鍵派送
 
 mod actions;
+mod updates;
 pub mod commands;
 mod i18n;
 mod icons;
@@ -90,6 +91,7 @@ pub enum Confirm {
 }
 
 pub struct App {
+    updates: updates::UpdateState,
     pub instance: Option<crate::single_instance::Instance>,
     pub settings: Settings,
     pub tabs: Vec<Tab>,
@@ -164,6 +166,7 @@ impl App {
         #[cfg(target_os = "macos")]
         crate::macos::attach_context(&cc.egui_ctx);
         let mut app = Self {
+            updates: updates::UpdateState::default(),
             instance: None,
             settings,
             tabs: Vec::new(),
@@ -1334,6 +1337,7 @@ impl eframe::App for App {
             self.run(&ctx, c);
         }
         self.periodic(&ctx);
+        self.poll_updates(&ctx);
 
         let show_bars = !self.post_it;
         self.quick_in_menubar = false;
@@ -1349,6 +1353,7 @@ impl eframe::App for App {
         if self.settings.show_statusbar && show_bars {
             egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
         }
+        self.update_banner(ui);
         if self.fif.show_results {
             egui::Panel::bottom("fif-results").resizable(true).default_size(180.0).show(ui, |ui| self.find_results_panel(ui));
         }

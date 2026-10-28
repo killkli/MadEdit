@@ -6,6 +6,8 @@ rust-version = "1.99"
 repository = "https://github.com/tenyi/MadEdit"
 
 [dependencies]
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+semver = "1"
 arboard = "3"
 chrono = "0.4"
 dirs = "7"

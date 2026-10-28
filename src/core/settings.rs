@@ -242,6 +242,9 @@ impl Default for FindInFilesOptions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub auto_check_updates: bool,
+    pub last_update_check: u64,
+    pub skipped_update: String,
     // ── 檢視 ──
     /// 編輯區字型（空字串表示自動挑選）
     pub font_family: String,
@@ -345,6 +348,9 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            auto_check_updates: true,
+            last_update_check: 0,
+            skipped_update: String::new(),
             font_family: String::new(),
             font_size: 14.0,
             fixed_width: false,
