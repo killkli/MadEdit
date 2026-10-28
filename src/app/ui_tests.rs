@@ -90,6 +90,8 @@ fn benchmark_markdown_preview_ui() {
             let mut app = App::new(cc, vec![path.clone()], None);
             app.run(&cc.egui_ctx, C::PreviewMarkdown);
             app.tab_mut().md_preview.as_mut().unwrap().set_placement(Placement::Right);
+            // Opening preview activates its tab; typing measurements require the source editor.
+            app.activate_view(app.active, false);
             app
         });
         h.run_steps(5);
