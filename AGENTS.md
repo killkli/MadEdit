@@ -5,6 +5,8 @@ This document is written for AI agents taking over the project. It gives the ful
 ## Documentation Language
 
 - Write all content in `ChangeLog.md` in English, including headings and release entries. GitHub Release notes are extracted directly from this file.
+- Each released version section also carries a `### 繁體中文` block below the English entries, a faithful Traditional Chinese translation of the same items under `#### 新增` / `#### 變更` / `#### 修正`. Most users read the Chinese notes, so keep both in sync when a release section changes.
+- The translation block must not contain a heading that starts with `## [`, because `scripts/changelog_notes.sh` ends a version section at that marker.
 
 ---
 
