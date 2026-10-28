@@ -23,13 +23,20 @@ pub(super) const SUBMENU_MIN_WIDTH: f32 = 180.0;
 /// popup's top and the window bottom: egui menus never scroll on their own, so long menus
 /// (View, font sizes, all encodings) used to run off the window.
 fn menu<'a>(ui: &mut egui::Ui, title: impl egui::IntoAtoms<'a>, add: impl FnOnce(&mut egui::Ui)) {
-    let min_width = if egui::containers::menu::is_in_menu(ui) { SUBMENU_MIN_WIDTH } else { MENU_MIN_WIDTH };
+    let submenu = egui::containers::menu::is_in_menu(ui);
+    let min_width = if submenu { SUBMENU_MIN_WIDTH } else { MENU_MIN_WIDTH };
+    // Submenus may move above their parent item to fit the screen. Deriving their height
+    // from that moving popup position makes height and placement oscillate every frame.
+    // Give them the viewport height; top-level menus keep the room below the menu bar.
+    let top = if submenu { ui.ctx().content_rect().top() } else {
+        ui.next_widget_position().y + ui.spacing().interact_size.y
+    };
+    let room = (ui.ctx().content_rect().bottom() - top - 12.0).max(160.0);
     ui.menu_button(title, |ui| {
         ui.set_min_width(min_width);
         // A popup's first (sizing) pass is capped at 400 pt and later passes at the last frame's
         // size, so `max_height` alone would freeze long menus there; `min_scrolled_height` lets
         // them grow to the room below (short menus still shrink to their content).
-        let room = (ui.ctx().content_rect().bottom() - ui.next_widget_position().y - 12.0).max(160.0);
         egui::ScrollArea::vertical().max_height(room).min_scrolled_height(room).show(ui, |ui| {
             ui.set_min_width(min_width);
             add(ui);

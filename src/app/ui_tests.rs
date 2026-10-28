@@ -403,6 +403,42 @@ fn test_options_ok_keeps_theme_picked_from_toolbar() {
 }
 
 #[test]
+fn test_recent_files_submenu_stays_in_place_near_window_bottom() {
+    for height in [500.0, 700.0, 900.0] {
+        let mut h = harness();
+        h.set_size(egui::vec2(1000.0, height));
+        h.state_mut().settings.recent_files = (0..25)
+            .map(|i| std::path::PathBuf::from(format!("/tmp/recent-{i:02}.txt")))
+            .collect();
+        h.run_steps(3);
+        h.get_by_label("檔案(F)").click();
+        h.run_steps(3);
+        h.get_by_label("　 最近使用的檔案").click();
+        h.run_steps(5);
+        let first = h.get_by_label("1 /tmp/recent-00.txt").rect();
+        for _ in 0..20 {
+            h.run_steps(1);
+            let current = h.get_by_label("1 /tmp/recent-00.txt").rect();
+            assert!((current.top() - first.top()).abs() < 1.0,
+                "子選單不應在每幀跳動（視窗高度 {height}）：{first:?} → {current:?}");
+        }
+        // A stable popup must still allow reaching entries below its visible area.
+        h.event(Event::PointerMoved(first.center()));
+        h.event(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -2000.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(15);
+        let last = h.get_by_label("25 /tmp/recent-24.txt").rect();
+        assert!(last.top() >= 0.0 && last.bottom() <= height,
+            "捲動後的最後一項應在視窗內：{last:?}，視窗高度 {height}");
+    }
+}
+
+#[test]
 fn test_short_menus_keep_the_shared_minimum_width() {
     let mut h = harness();
     // Help has a single item; without the floor its popup shrank to that item's width.

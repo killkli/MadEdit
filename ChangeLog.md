@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Building from source needs Rust 1.99 or newer (required by latex-rust, the math renderer).
 
 ### Fixed
+- Long submenus such as Recent Files no longer flicker between vertical positions near the bottom of the window.
 - In the Markdown preview, a table inside a block quote (`> | a | b |`) ran together as a single paragraph of cell text. It now renders as a table inside the quote.
 
 ## [0.6.5] - 2026-10-28
