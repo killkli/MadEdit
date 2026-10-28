@@ -45,6 +45,3 @@ embed-resource = "3.0.6"
 [dev-dependencies]
 egui_kittest = { version = "0.37.0", features = ["eframe", "wgpu"] }
 
-# 保留 AccessKit 無障礙支援，回補尚未發行的 macOS KVO 修正（見 vendor/README.md）。
-[patch.crates-io]
-accesskit_macos = { path = "vendor/accesskit_macos" }

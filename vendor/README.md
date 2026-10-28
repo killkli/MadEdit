@@ -1,6 +1,6 @@
 # AccessKit macOS KVO 修正回補
 
-本目錄保留 `accesskit_macos 0.27.1` 的來源與 MIT／Apache-2.0 授權，供 MadEdit 透過根目錄的 `[patch.crates-io]` 使用。保留既有 AccessKit 無障礙支援；不修改本機 Cargo registry。
+本目錄保留 `accesskit_macos 0.27.1` 的回補來源、測試與 MIT／Apache-2.0 授權，供後續驗證參考。MadEdit 現使用正式發行的 `accesskit_macos 0.27.2`；其 `src/subclass.rs` 與本目錄的回補完全相同。
 
 ## 原因與上游來源
 
@@ -23,9 +23,9 @@ Touch Bar 的 AppKit 處理器會以 KVO 觀察第一回應者的 `nextResponder
 在 macOS 專案根目錄執行：
 
 ```bash
-cargo test -p accesskit_macos --test integration
+cargo test --manifest-path vendor/accesskit_macos/Cargo.toml --test integration
 ```
 
 八項測試涵蓋無障礙初始查詢、處理器釋放、一般類別還原、KVO 觀察者在 Drop 後正常移除、Drop 後回呼與 adapter 重建。AppKit 必須在主執行緒執行，因此不能換成一般 Rust 測試 harness。
 
-當 eframe／accesskit_winit 的相依版本可採用包含上述 commit 的正式 `accesskit_macos` 發行版後，先移除根目錄 patch 並更新 `Cargo.lock`，通過這組 KVO 測試與真實 Touch Bar Mac 的視窗關閉、開存檔及退出操作後，即可刪除本目錄。
+正式版 `0.27.2` 已包含上述修正，根目錄 patch 已移除。通過這組 KVO 測試與真實 Touch Bar Mac 的視窗關閉、開存檔及退出操作後，即可刪除本目錄。
