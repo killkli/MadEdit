@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-28
+
 ### Added
 - Picking a proportional editor font while fixed-width mode is on asks whether to turn the mode off, since wide letters such as m and W overlap their neighbours in it.
 
@@ -143,7 +145,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 - Initial project. The Slint version implemented encoding support, a custom-drawn editor, a large-file engine, rectangular selection, find and replace, syntax highlighting, go-to-line, line endings, bookmarks, external change monitoring and the classic UI.
 
-[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/tenyi/MadEdit/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/tenyi/MadEdit/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/tenyi/MadEdit/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/tenyi/MadEdit/compare/v0.6.0...v0.6.1
