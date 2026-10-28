@@ -9,6 +9,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 - The Markdown preview body text uses 16pt, so long documents are easier to read.
 
+### Fixed
+- With a proportional font and fixed-width mode off, long lines drifted from the caret and selection and showed a gap before the next differently drawn character (such as the closing quote after a base64 string). Each character is now drawn at its own laid-out position.
+
 ## [0.6.4] - 2026-10-28
 
 ### Added

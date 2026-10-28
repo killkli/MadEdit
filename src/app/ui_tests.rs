@@ -1435,6 +1435,39 @@ fn installed_proportional_font(h: &mut Harness<'static, App>) -> Option<String> 
         .map(str::to_string)
 }
 
+/// Proportional layout must draw each glyph at the x the caret and selection use. egui kerns a
+/// multi-character run, so a long run drawn as one string drifted from those positions and left
+/// a visible gap before the next run (a closing quote after a base64 string).
+#[test]
+fn test_proportional_text_is_drawn_at_layout_positions() {
+    let mut h = harness();
+    let Some(font) = installed_proportional_font(&mut h) else {
+        eprintln!("skipped: no known proportional font installed");
+        return;
+    };
+    h.state_mut().settings.font_family = font;
+    h.state_mut().settings.fixed_width = false;
+    h.run_steps(3);
+    type_text(&mut h, "\"AVAWAVTo Yo Wa LT=\"");
+    h.run_steps(2);
+    assert_eq!(text(&mut h), "\"AVAWAVTo Yo Wa LT=\"");
+    let rect = h.state_mut().tabs[0].view.text_rect;
+    let mut drawn = String::new();
+    let mut shapes: Vec<&egui::Shape> = h.output().shapes.iter().map(|c| &c.shape).collect();
+    while let Some(shape) = shapes.pop() {
+        match shape {
+            egui::Shape::Vec(v) => shapes.extend(v.iter()),
+            // The first row's glyphs start a fraction of a point above the text area.
+            egui::Shape::Text(t) if rect.expand(2.0).contains(t.pos) && t.galley.text().chars().any(|c| "AVWTLoaY\"=".contains(c)) => {
+                assert_eq!(t.galley.text().chars().count(), 1, "run {:?} drawn as one string", t.galley.text());
+                drawn.push_str(t.galley.text());
+            }
+            _ => {}
+        }
+    }
+    assert!(drawn.contains('=') && drawn.matches('"').count() == 2, "editor text not found among shapes: {drawn:?}");
+}
+
 #[test]
 fn test_proportional_font_in_fixed_width_mode_offers_to_turn_it_off() {
     let mut h = harness();

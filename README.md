@@ -29,7 +29,7 @@ The original C++ / wxWidgets **MadEdit** is a classic tool for many developers a
   - Supports jumping to a hex offset (such as `0x1A40`) and hex byte pattern search (such as `4D 5A 90`).
 
 ### 2. Fonts and input methods
-- Pick any system font and size for the editor (proportional fonts included). CJK characters automatically fall back to a system CJK font.
+- Pick any system font and size for the editor (proportional fonts included). CJK characters automatically fall back to a system CJK font. With a proportional font, turn off fixed-width mode (View > Font); MadEdit offers to do so when you pick one. A monospaced font draws slightly faster, because a proportional font is drawn one character at a time to keep the caret and selection aligned.
 - Supports macOS input methods (Zhuyin, Cangjie, etc.) with preedit display and candidate window positioning.
 - The UI language follows the system, or can be set under "View → Interface Language" and in Options to English, 繁體中文, 简体中文, 日本語, 한국어, Deutsch, Español, Français, Italiano or Português. Language names are always written in their own language.
 

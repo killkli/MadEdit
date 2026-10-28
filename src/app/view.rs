@@ -1454,7 +1454,7 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             }
         }
 
-        // 文字：依語法色彩分段；等寬模式下字寬與格網相符的連續字元合併繪製
+        // 文字：依語法色彩分段；等寬模式下字寬與格網相符的連續字元合併繪製（比例模式逐字繪製）
         let mut run = String::new();
         let mut run_x = 0.0f32;
         let mut run_color = fg;
@@ -1496,7 +1496,11 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
             }
             let gw = widths.get(c);
             let grid_ok = (gw - w).abs() < 0.05;
-            if lay.rtl || !grid_ok {
+            // Proportional layout draws every glyph at its own x. egui lays a run out with pair
+            // kerning, which `xs` (summed advances, shared with the caret, selection and
+            // wrapping) does not have, so a long run drifted from them: 11 px over a 360-char
+            // base64 line in Noto Sans TC, showing as a gap before the next run.
+            if lay.rtl || !grid_ok || !lay.fixed {
                 flush(&mut run, run_x, run_color);
                 // 字寬與格子不同（例如 CJK 後備字型）：在格子內置中
                 let px = sx(xa, w) + ((w - gw) / 2.0).max(0.0);
