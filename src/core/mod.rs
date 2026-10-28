@@ -1,5 +1,6 @@
 pub mod chinese;
 mod chinese_tables;
+pub mod dprint;
 pub mod document;
 pub mod editor;
 pub mod encoding;

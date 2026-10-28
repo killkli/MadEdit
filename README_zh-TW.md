@@ -59,7 +59,7 @@
 - **編輯**：書籤行操作、Hex 字串互轉、縮排、註解、大小寫、全半形、Tab 與空白互轉、遞增數字、排序、欄位對齊。
 - **搜尋**：純文字 / 大小寫 / 全字 / Regex / Hex 搜尋取代、在多個檔案中尋找／取代、跳至對應括號。
 - **檢視**：自動換行、行號、書籤欄、尺標、控制字元、目前行、欄位提示線、系統／淺色／深色主題、Markdown／HTML 預覽。
-- **巨集與工具**：巨集錄製播放、快捷鍵重新指派與可篩選的快捷鍵一覽（說明 > 鍵盤快捷鍵，F1）、拼字檢查、字數統計、簡繁與日文漢字轉換、JSON／XML 格式化。
+- **巨集與工具**：巨集錄製播放、快捷鍵重新指派與可篩選的快捷鍵一覽（說明 > 鍵盤快捷鍵，F1）、拼字檢查、字數統計、簡繁與日文漢字轉換、JSON／XML 格式化，以及以 dprint 為基礎的格式化（工具 > 文字轉換／格式化 >「dprint 格式化」），支援 C/C++/Objective-C（clang-format）、JavaScript/TypeScript、JSON/JSONC、CSS/SCSS、HTML/XML/SVG/Vue/Svelte、YAML、Markdown、TOML、GraphQL、SQL、Dockerfile、Shell、Python、Go、PHP、Lua、C#。
 
 ### 7. macOS 原生整合
 - 支援 Finder「打開方式」與拖曳到 Dock 圖示開檔（含中文、空白、百分比檔名），執行中開檔會在同一個 App 新增分頁。
@@ -183,6 +183,8 @@ macOS 打包回歸測試：`./scripts/test_macos_bundle.sh`（不覆寫已安裝
 
 每個發行檔旁有同名 `.sha256`。Linux 壓縮檔解壓後可執行 `./MadEdit`，或 `./install.sh` 安裝到 `~/.local`。AppImage 加上執行權限後直接執行，需要系統上的 Vulkan 或 OpenGL 驅動。Windows 解壓後執行 `MadEdit.exe`。macOS 打開 DMG，把 `MadEdit.app` 拖進「應用程式」。
 
+**每個平臺都有兩種版本。** 上表是「乾淨版」，不含任何格式化工具；每個檔案都有對應的 `-dprint` 版（例如 `MadEdit-<版本>-macOS-arm64-dprint.dmg`、`MadEdit-<版本>-linux-x86_64-dprint.AppImage`、`MadEdit-<版本>-windows-x86_64-dprint.zip`），額外附帶固定版本的 dprint 執行檔與 Wasm 插件：C/C++（clang-format）、JavaScript/TypeScript、JSON/JSONC、CSS/SCSS、HTML/XML/SVG/Vue/Svelte、YAML、Markdown、TOML、GraphQL、SQL、Dockerfile、Shell、Python、Go、PHP、Lua、C#，「工具 > dprint 格式化」離線即可使用。乾淨版在 PATH 上找得到 `dprint` 時同樣可用這個命令；不支援的副檔名會顯示訊息拒絕。自行打包時，在任何 `make dist-*` 加 `MADEDIT_WITH_FORMATTER=1`（Windows 腳本用 `-WithFormatter`）即會產生 `-dprint` 版；`make formatters` 會把固定版本的 dprint 下載到 `target/formatters`，打包腳本需要時也會自動執行。
+
 ### Windows 自行打包
 
 在 Windows 上（x64 或 ARM 會依本機架構命名）：
@@ -230,7 +232,7 @@ make dist-appimage ARCH=x86_64
    git push origin v0.6.0
    ```
    標籤版本必須與 `Cargo.toml` 相同（`v0.6.0` 對應 `0.6.0`）。不一致，或 ChangeLog 沒有該章節時，工作流程會在開始打包前停止。
-5. Actions 完成後，Release 頁會出現 Linux（x64 / ARM 的 tar.gz 與 AppImage）、macOS DMG（Apple Silicon 與 Intel）與 Windows zip（x64 / ARM），說明文字就是 ChangeLog 的該章節。
+5. Actions 完成後，Release 頁會出現 Linux（x64 / ARM 的 tar.gz 與 AppImage）、macOS DMG（Apple Silicon 與 Intel）與 Windows zip（x64 / ARM），每種都有乾淨版與 `-dprint` 版，說明文字就是 ChangeLog 的該章節。
 
 只想試打包、不建立 Release 時，可在 GitHub 的 Actions 頁手動執行 Release workflow。產物會留在該次執行的 artifact，不會發佈。
 
