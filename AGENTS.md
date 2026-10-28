@@ -25,12 +25,13 @@ This document is written for AI agents taking over the project. It gives the ful
 
 ## 2. Core Technology Choices
 
-- **Language**: Rust (Edition 2024; egui / eframe 0.37 needs Rust 1.95 or newer)
+- **Language**: Rust (Edition 2024; latex-rust needs Rust 1.99 or newer, egui / eframe 0.37 needs 1.95)
 - **GUI framework**: [eframe / egui](https://github.com/emilk/egui) (v0.37), rewritten from Slint in 2026-10 (see [ADR 0011](docs/adr/0011-egui-rewrite.md))
   - Why: it can measure width per character and supports any system font the user picks (proportional fonts included); input method events (`Event::Ime`) go straight to the custom-drawn editor.
   - The editor, hex view, scrollbars and ruler are all custom-drawn (`src/app/view.rs`, `src/app/hexview.rs`).
 - **System fonts**: `fontique` enumerates and loads system fonts; CJK characters automatically fall back to a system CJK font.
 - **Markdown preview**: `egui_commonmark` renders Markdown. `fermaid` (pure Rust) turns ```mermaid blocks into SVG, written with the actual colors from `Palette` (resvg does not support CSS variables), then rasterized through a custom loader (`mdpreview::DiagramLoader`; the resvg font database holds a single CJK font and does not load all system fonts) for display. `egui_extras` enables only `svg`, not `svg_text` (which would load all system fonts).
+- **Markdown math**: `latex-rust` (pure Rust) lays out `$…$` / `$$…$$` into an SVG of STIX Two Math glyph outlines, drawn through the same `DiagramLoader` as Mermaid (`src/app/mdmath.rs`, hooked in with egui_commonmark's `render_math_fn`). Use only its SVG output: its `egui` feature pins egui 0.36.2. The math font has no CJK glyphs and the crate has no font fallback, so a top-level `\text{…}` with non-ASCII text is cut out and drawn as egui text; anything else it cannot render shows the TeX source.
 - **Version alignment**: `fontique` must match the version eframe uses internally (currently 0.11.1); otherwise the fontconfig features conflict on Linux and the build fails.
 - **Emoji glyphs**: egui 0.37 only bundles its emoji fonts behind the `monochrome_emoji_fonts` feature, so `egui` is listed directly in `Cargo.toml` just to enable it (keep its version equal to eframe's). Without it, 🔒 and other emoji draw as empty boxes.
 - **System clipboard**: `arboard`; **syntax highlighting**: `syntect` with the Oniguruma regex backend (`regex-onig`; `onig_sys` builds the bundled C sources, so a C compiler is required); **spell check**: `spellbook` (Hunspell dictionaries).
@@ -93,6 +94,7 @@ MadEdit/
 │   │   ├── macros.rs       # Macro recording and playback (JSON step list)
 │   │   ├── print.rs        # Print content model and HTML printing (handed to the browser)
 │   │   ├── preview.rs      # In-app print preview window (A4 pages, paging, zoom)
+│   │   ├── mdmath.rs       # LaTeX math in the Markdown preview (latex-rust SVG, baseline-aligned inline, centred display)
 │   │   ├── mdpreview.rs    # In-app Markdown preview (egui_commonmark + fermaid for ```mermaid diagrams; zoom, fit width, relative-path images; switchable between a separate tab in the main window, side by side or top and bottom, each taking half in split layouts and following the editor scroll)
 │   │   ├── fonts.rs        # System font enumeration and the egui font chain
 │   │   ├── ui_tests.rs     # egui_kittest keyboard / input method interaction tests
@@ -204,6 +206,7 @@ Run them from the project root (use PowerShell on Windows; bash or zsh on macOS 
  - Menus go through the `menu` helper in `menus.rs`: top-level menus are at least 240 pt wide, submenus and context menus 180 pt, and every popup scrolls when it would run past the window bottom (egui menus never scroll on their own). Context menus reuse `check_label` so their text lines up with the main menus.
  - The View menu is hierarchical (`view_menu` in `menus.rs`): edit modes, Encoding / Syntax, then Font ▸ / Layout ▸ / Show ▸ submenus, Preview as ▸, and window chrome (language, theme, toolbars, full screen, always on top, post-it). Put new view toggles into the matching submenu rather than the top level.
  - When the CJK fallback lacks Hangul (PingFang TC, Microsoft JhengHei), `fonts.rs` adds a Korean fallback (AppleGothic first, it is much smaller than Apple SD Gothic Neo), checked through the font's character map. Known cost: on such systems about 15 MB more font data stays in memory from startup, because 한국어 is always listed in the language menu and Korean text in the editor needs it too.
+ - egui_commonmark draws a block quote's events without its table handling, so a top-level quote that holds a table is stored as `Content::Quote` (`unquote_table_block` strips the `>` markers) and the preview draws the quote bar itself (`quote_frame`). Quotes nested inside it still go through egui_commonmark.
  - Markdown preview tables use a zero minimum column width, because egui's Grid paints stripes at the minimum width while the frame wraps only real content. egui_commonmark forces `item_spacing.x` to 0, so the column gap stays narrow.
  - Toolbar icons (`icons.rs`) are loaded twice: the original art for the light theme, and a dark variant where the black silhouette (outlines and solid black bodies connected to the outside, such as the Find binoculars) is lightened with its hue kept; dark strokes drawn on a light fill inside the icon (text lines, the rim around the lenses) stay dark. Textures use nearest magnification but linear minification, because the 32 px art is shrunk to 16 pt on 1x displays. `test_every_icon_is_visible_on_both_themes` measures outline contrast against both panels and rejects solid patches that blend into the dark panel, so new icons are checked automatically; `MADEDIT_ICON_MONTAGE=out.png cargo test montage -- --ignored` renders every icon on both themes.
  - `MADEDIT_SHOT_CLICK=label1,label2` makes the screenshot test click widgets by exact label (for example `檢視(V)` to capture an open menu).

@@ -46,6 +46,7 @@
 - 從「檢視 → 預覽為 → 以 Markdown 預覽」或工具列預覽按鈕開啟，在 App 內直接繪製 Markdown（`egui_commonmark`）；目前檔案不是 Markdown 時按鈕停用。
 - ` ```mermaid ` 區塊以 [**fermaid**](https://github.com/tenyi/fermaid) 轉成圖表顯示，不需瀏覽器或 Node.js。
   fermaid 是本專案作者為 Markdown 預覽特別開發的純 Rust Mermaid 繪製引擎，支援目前 Mermaid 的所有圖表類型，能快速產生預覽圖。
+- LaTeX 數學式（行內 `$…$`、置中區塊 `$$…$$`）以同為純 Rust 的 [`latex-rust`](https://crates.io/crates/latex-rust) 繪製；最外層 `\text{…}` 裡的中文以預覽字型顯示，無法繪製的式子顯示 TeX 原始碼。
 - 相對路徑圖片以文件所在資料夾為基準，支援 PNG、JPEG、GIF、WebP 與 SVG。
 - 預設在主視窗內的**獨立分頁**開啟，也可切換**左右並排**或**上下並排**；關閉預覽分頁會保留來源文件。並排時與編輯區各佔一半，並可**同步捲動**跟隨編輯區。
 - 支援縮放（`Ctrl` / `⌘` + 滾輪或觸控板捏合）與圖表符合寬度；高對比配色（深色純黑底、淺色純白底）。
@@ -103,7 +104,7 @@ MadEdit/
 ## 🚀 建置與執行指南
 
 ### 環境需求
-- **Rust 工具鏈**：Rust `1.95` 或以上版本（egui / eframe 0.37 的最低需求）
+- **Rust 工具鏈**：Rust `1.99` 或以上版本（Markdown 預覽繪製數學式所用的 latex-rust 的最低需求）
 - 支援平台：**Windows**、**macOS**、**Linux**
 
 ### 開發與測試指令
@@ -243,6 +244,7 @@ make dist-appimage ARCH=x86_64
 | **系統字型** | [`fontique`](https://crates.io/crates/fontique) | 列舉並載入系統字型 |
 | **Markdown 預覽** | [`egui_commonmark`](https://crates.io/crates/egui_commonmark) | 在 App 內繪製 Markdown |
 | **Mermaid 圖表** | [`fermaid`](https://github.com/tenyi/fermaid) + [`resvg`](https://crates.io/crates/resvg) | 自製純 Rust Mermaid 引擎，支援所有 Mermaid 圖表類型，轉為 SVG 並點陣化 |
+| **數學式** | [`latex-rust`](https://crates.io/crates/latex-rust) | 純 Rust 的 LaTeX 數學式排版，輸出 SVG（內附 STIX Two Math 字型），與圖表一樣點陣化 |
 | **macOS 整合** | [`objc2`](https://crates.io/crates/objc2) | Finder／Dock 開檔與結束事件 |
 | **字元編碼** | [`encoding_rs`](https://crates.io/crates/encoding_rs) | 多語系字元編碼轉換與無損驗證 |
 | **語法突顯** | [`syntect`](https://crates.io/crates/syntect) | Sublime Text 語法定義與主題 |

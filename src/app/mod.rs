@@ -12,6 +12,7 @@ pub mod fonts;
 pub mod hexview;
 mod macros;
 mod menus;
+mod mdmath;
 mod mdpreview;
 mod preview;
 mod print;

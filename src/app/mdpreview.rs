@@ -181,6 +181,34 @@ fn reference_definitions(parser: &pulldown_cmark::Parser<'_>) -> String {
     defs
 }
 
+/// egui_commonmark draws the events inside a block quote one by one without its table
+/// handling, so a quoted table comes out as one run of cell text. For a top-level quote
+/// that holds a table, return its content with the `>` markers removed; the preview then
+/// draws the quote bar itself and renders the content as ordinary Markdown.
+fn unquote_table_block(block: &str) -> Option<String> {
+    use pulldown_cmark::{Event, Options, Parser, Tag};
+    let mut events = Parser::new_ext(block, Options::ENABLE_TABLES);
+    if !matches!(events.next(), Some(Event::Start(Tag::BlockQuote(_)))) {
+        return None;
+    }
+    if !events.any(|e| matches!(e, Event::Start(Tag::Table(_)))) {
+        return None;
+    }
+    // Strip one quote level per line: up to three spaces of indent, `>`, and one optional
+    // space. Lazy continuation lines have no marker and are kept as they are.
+    let lines: Vec<&str> = block
+        .lines()
+        .map(|line| {
+            let rest = line.trim_start_matches(' ');
+            match rest.strip_prefix('>') {
+                Some(quoted) if line.len() - rest.len() <= 3 => quoted.strip_prefix(' ').unwrap_or(quoted),
+                _ => line,
+            }
+        })
+        .collect();
+    Some(lines.join("\n"))
+}
+
 /// 是否為相對路徑圖片位址：沒有協定（`xxx://`、`data:`）、不是絕對路徑、不是 Windows 磁碟機路徑
 fn is_relative_image_url(url: &str) -> bool {
     let b = url.as_bytes();
@@ -267,6 +295,8 @@ struct Diagram {
 /// 單一片段的繪製資料
 enum Content {
     Markdown(String),
+    /// A block quote holding a table: the quote content without its `>` markers
+    Quote(String),
     Diagram(Arc<Diagram>),
     /// Mermaid 語法錯誤：位置、訊息與原始碼（位置文字於繪製時依介面語言組合）
     Error { line: u32, column: u32, message: String, source: String },
@@ -288,7 +318,7 @@ const BODY_FONT_SIZE: f32 = 16.0;
 /// 符合寬度時，重新排版用的寬度以此為單位量化，避免拖曳視窗邊緣時每個像素都重繪
 const WIDTH_BUCKET: f32 = 32.0;
 /// Mermaid 圖表的 uri 前綴，只有這類 uri 交給 [`DiagramLoader`]
-const DIAGRAM_URI_PREFIX: &str = "bytes://mermaid-";
+pub(super) const DIAGRAM_URI_PREFIX: &str = "bytes://mermaid-";
 /// 圖表點陣化倍率上限（避免高倍縮放時產生過大的貼圖）
 const RASTER_MAX: f32 = 6.0;
 
@@ -321,6 +351,8 @@ pub struct MarkdownPreview {
     built: Option<BuildKey>,
     items: Vec<Item>,
     cache: CommonMarkCache,
+    /// Shared with the 'static math callback egui_commonmark takes.
+    math: std::rc::Rc<super::mdmath::MathCache>,
     image_uris: Vec<String>,
     /// 文件結尾也要有錨點，最後一個長段落／圖表才能在區塊內繼續捲動。
     source_lines: usize,
@@ -392,6 +424,7 @@ impl MarkdownPreview {
             built: None,
             items: Vec::new(),
             cache: CommonMarkCache::default(),
+            math: Default::default(),
             image_uris: Vec::new(),
             source_lines: 0,
             zoom: 1.0,
@@ -468,7 +501,11 @@ impl MarkdownPreview {
                             image_uris.extend(uris);
                             block
                         } else { block };
-                        items.push(Item { line: piece.line + off, end_line: (piece.line + end).min(piece_end), content: Content::Markdown(block) });
+                        let content = match unquote_table_block(&block) {
+                            Some(inner) => Content::Quote(inner),
+                            None => Content::Markdown(block),
+                        };
+                        items.push(Item { line: piece.line + off, end_line: (piece.line + end).min(piece_end), content });
                     }
                 }
                 Segment::Mermaid(src) => {
@@ -519,6 +556,9 @@ impl MarkdownPreview {
         }
         self.image_uris = image_uris;
         self.items = items;
+        if self.built.as_ref().is_some_and(|old| old.dark != key.dark) {
+            self.math.clear(ctx);
+        }
         self.built = Some(key);
         self.source_lines = source_lines;
         self.anchors.clear();
@@ -665,12 +705,13 @@ impl MarkdownPreview {
             let mut prev_markdown = false;
             for item in &self.items {
                 // 區塊分開繪製後，補回原本的段落間距，再記錄實際起始位置。
-                if prev_markdown && matches!(item.content, Content::Markdown(_)) {
+                let markdown = matches!(item.content, Content::Markdown(_) | Content::Quote(_));
+                if prev_markdown && markdown {
                     ui.add_space(ui.text_style_height(&egui::TextStyle::Body));
                 }
                 anchors.push((item.line, ui.cursor().min.y - origin));
                 match &item.content {
-                    Content::Markdown(m) => {
+                    Content::Markdown(m) | Content::Quote(m) => {
                         // 每個區塊各自一個 id：egui_commonmark 的表格 id 只在單次 show 內遞增，
                         // 多個區塊共用同一個 ui id 時，不同表格會共用 Grid 欄寬而文字互相覆蓋
                         ui.push_id(item.line, |ui| {
@@ -680,7 +721,16 @@ impl MarkdownPreview {
                             // Columns then hug their text; egui_commonmark forces item_spacing.x
                             // to 0, so the column gap cannot be widened from here.
                             ui.spacing_mut().interact_size.x = 0.0;
-                            CommonMarkViewer::new().explicit_image_uri_scheme(true).show(ui, &mut self.cache, m);
+                            let cache = std::rc::Rc::clone(&self.math);
+                            let math = move |ui: &mut egui::Ui, tex: &str, inline: bool| cache.show(ui, tex, inline);
+                            let viewer = CommonMarkViewer::new().explicit_image_uri_scheme(true).render_math_fn(Some(&math));
+                            if matches!(item.content, Content::Quote(_)) {
+                                quote_frame(ui, |ui| {
+                                    viewer.show(ui, &mut self.cache, m);
+                                });
+                            } else {
+                                viewer.show(ui, &mut self.cache, m);
+                            }
                         });
                     }
                     Content::Diagram(d) => {
@@ -714,7 +764,7 @@ impl MarkdownPreview {
                     }
                 }
                 anchors.push((item.end_line, ui.cursor().min.y - origin));
-                prev_markdown = matches!(item.content, Content::Markdown(_));
+                prev_markdown = markdown;
             }
             if !self.items.is_empty() {
                 anchors.push((self.source_lines, ui.cursor().min.y - origin));
@@ -753,6 +803,18 @@ impl MarkdownPreview {
 
 /// Background of the preview tab and side panel: pure black or white for the highest contrast.
 /// Mermaid diagrams paint their edge-label patches in the same color, so both must use this.
+/// Same look as egui_commonmark's block quote: a 10 pt indent with a bar on its left.
+fn quote_frame(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let bar = ui.painter().add(egui::Shape::Noop);
+    let rect = egui::Frame::new()
+        .outer_margin(egui::Margin { left: 10, ..Default::default() })
+        .show(ui, add_contents)
+        .response
+        .rect;
+    let stroke = egui::Stroke::new(3.0, ui.visuals().weak_text_color());
+    ui.painter().set(bar, egui::Shape::line_segment([rect.left_top() + egui::vec2(0.0, 5.0), rect.left_bottom() - egui::vec2(0.0, 5.0)], stroke));
+}
+
 fn preview_fill(dark: bool) -> Color32 {
     if dark { Color32::BLACK } else { Color32::WHITE }
 }
@@ -1248,6 +1310,15 @@ mod tests {
         assert_eq!(b.len(), 2, "{b:?}");
         assert!(b[0].2.starts_with("| a | b |") && b[0].2.contains("| 1 | 2 |"));
         assert!(b[1].2.contains("[r]: <https://x.com> \"標題\""), "{}", b[1].2);
+    }
+
+    #[test]
+    fn test_quoted_table_is_unquoted_for_rendering() {
+        let md = "> **說明**：段落\n>\n> | a | b |\n> | :--- | --- |\n> | 1 | 2 |\n";
+        let inner = unquote_table_block(md).expect("quote with a table");
+        assert_eq!(inner, "**說明**：段落\n\n| a | b |\n| :--- | --- |\n| 1 | 2 |");
+        assert!(unquote_table_block("> 只有文字\n> 第二行\n").is_none());
+        assert!(unquote_table_block("| a |\n|---|\n| 1 |\n").is_none());
     }
 
     #[test]
