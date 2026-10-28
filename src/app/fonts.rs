@@ -200,6 +200,15 @@ impl FontManager {
     }
 }
 
+/// Whether the active editor font is proportional, judged by its own Latin glyphs: in a
+/// monospaced font "i" and "M" have the same advance. Measured through egui, so it reflects
+/// the font egui really draws with (fonts set by `FontManager::apply` count from the next frame).
+pub fn editor_is_proportional(ctx: &egui::Context) -> bool {
+    let font = egui::FontId::new(14.0, FontFamily::Name(EDITOR_FAMILY.into()));
+    let (narrow, wide) = ctx.fonts_mut(|f| (f.glyph_width(&font, 'i'), f.glyph_width(&font, 'M')));
+    (wide - narrow).abs() > 0.5
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

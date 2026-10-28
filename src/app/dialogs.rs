@@ -344,6 +344,7 @@ impl App {
                 if apply {
                     self.settings.font_family = family.clone();
                     self.settings.font_size = *size;
+                    self.save_settings();
                     close = true;
                 }
             }
@@ -1392,6 +1393,28 @@ impl App {
                         }
                     });
                 });
+            }
+            Confirm::ProportionalFont => {
+                let mut choice = None;
+                modal.show(ctx, |ui| {
+                    let body = self.t("confirm.proportional_body", "目前字型為比例字型，建議關閉等寬模式。等寬模式下，m、W 等較寬的字母會與相鄰的字重疊。");
+                    confirm_body(ui, opened, self.t("confirm.proportional_title", "比例字型"), &[body]);
+                    footer(ui, |ui| {
+                        if primary_button(ui, self.t("btn.fixed_off", "關閉等寬模式")).clicked() {
+                            choice = Some(true);
+                        }
+                        if ui.button(self.t("btn.keep_fixed", "保持等寬模式")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                            choice = Some(false);
+                        }
+                    });
+                });
+                if let Some(off) = choice {
+                    keep = false;
+                    if off {
+                        self.settings.fixed_width = false;
+                        self.save_settings();
+                    }
+                }
             }
             Confirm::Close { ids, exit } => {
                 let id = ids[0];

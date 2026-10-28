@@ -347,7 +347,7 @@ impl Default for Settings {
         Self {
             font_family: String::new(),
             font_size: 14.0,
-            fixed_width: true,
+            fixed_width: false,
             tab_size: 4,
             indent_size: 4,
             line_spacing: 100,

@@ -499,6 +499,7 @@ impl App {
                         let first = f.chars().next().unwrap_or(' ').to_ascii_uppercase();
                         if pred(first) && ui.button(check_label(f == fam, &f)).clicked() {
                             self.settings.font_family = f.clone();
+                            self.save_settings();
                             ui.close();
                         }
                     }
@@ -510,6 +511,7 @@ impl App {
             for n in 1..=72 {
                 if ui.button(check_label(s.font_size as i32 == n, &n.to_string())).clicked() {
                     self.settings.font_size = n as f32;
+                    self.save_settings();
                     ui.close();
                 }
             }
@@ -533,6 +535,7 @@ impl App {
             for n in 1..=16 {
                 if ui.button(check_label(s.tab_size == n, &n.to_string())).clicked() {
                     self.settings.tab_size = n;
+                    self.save_settings();
                     ui.close();
                 }
             }
@@ -542,6 +545,7 @@ impl App {
             for n in (100..=250).step_by(5) {
                 if ui.button(check_label(s.line_spacing == n, &format!("{n}%"))).clicked() {
                     self.settings.line_spacing = n;
+                    self.save_settings();
                     ui.close();
                 }
             }

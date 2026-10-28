@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- Picking a proportional editor font while fixed-width mode is on asks whether to turn the mode off, since wide letters such as m and W overlap their neighbours in it.
+
+### Changed
+- Fixed-width mode is off by default. Existing settings files keep their choice; Column mode still uses the fixed grid.
+- View preferences changed from the View menu, the toolbar, shortcuts or Ctrl+wheel zoom (wrapping, line numbers, control characters, font, size, tab width, line spacing, fixed-width mode and so on) are saved at once instead of only on a normal exit.
+
+### Fixed
+- With fixed-width mode off, a newly opened file could still lay out characters on the fixed grid (letters overlapping in proportional fonts) until the mode was toggled. Characters not yet measured now get their real width at once, and all widths are measured again after the editor font changes.
+
 ## [0.6.3] - 2026-10-27
 
 ### Added

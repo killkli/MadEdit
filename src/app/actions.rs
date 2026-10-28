@@ -24,6 +24,37 @@ enum Scope {
     Whole,
 }
 
+/// View commands that flip a saved preference. They are written to the settings file at once,
+/// like the theme, so the choice survives even when the app does not exit normally.
+fn saves_view_preference(c: C) -> bool {
+    matches!(
+        c,
+        C::AlwaysOnTop
+            | C::ZoomIn
+            | C::ZoomOut
+            | C::FixedWidthMode
+            | C::NoWrap
+            | C::WrapByWindow
+            | C::WrapByColumn
+            | C::DisplayLineNumber
+            | C::DisplayBookmark
+            | C::Display80ColHint
+            | C::ShowRuler
+            | C::ShowEndOfLine
+            | C::ShowTabChar
+            | C::ShowSpaceChar
+            | C::ShowAllChar
+            | C::RightToLeft
+            | C::MarkActiveLine
+            | C::MarkBracePair
+            | C::SpellCheck
+            | C::TypewriterMode
+            | C::ToggleToolbar
+            | C::ToggleMenubar
+            | C::ToggleStatusbar
+    )
+}
+
 /// 以新內容取代列塊選取範圍：自 `first_line` 起逐行，將 [min_vcol, max_vcol) 的片段換成 `texts` 的對應項
 fn insert_block(ed: &mut EditorState, first_line: usize, min_vcol: usize, texts: Vec<String>) {
     let b = ed.selection.visual_bounds(ed);
@@ -171,6 +202,9 @@ impl App {
             }
         };
         self.dispatch(ctx, c);
+        if saves_view_preference(c) {
+            self.save_settings();
+        }
         if let Some(mut st) = options {
             if c == C::KeyboardShortcuts {
                 st.tab = super::dialogs::OPTIONS_KEYS_TAB;

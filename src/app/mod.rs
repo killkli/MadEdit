@@ -84,6 +84,8 @@ pub enum Confirm {
     CreateNew { path: PathBuf },
     /// 一般訊息
     Message { title: String, text: String },
+    /// A proportional editor font was picked while fixed-width mode is on: offer to turn it off.
+    ProportionalFont,
 }
 
 pub struct App {
@@ -97,6 +99,8 @@ pub struct App {
     prev_preview_tab: bool,
     fonts: FontManager,
     font_applied: Option<String>,
+    /// The editor font was replaced this frame; checked next frame, once the fonts are active.
+    fonts_changed: bool,
     widths: CharWidths,
     /// Toolbar icon textures: (light theme, dark theme). See `icons.rs`.
     icons: HashMap<&'static str, (TextureHandle, TextureHandle)>,
@@ -168,6 +172,7 @@ impl App {
             prev_preview_tab: false,
             fonts: FontManager::new(),
             font_applied: None,
+            fonts_changed: false,
             widths: CharWidths::default(),
             icons: HashMap::new(),
             status: None,
@@ -673,6 +678,17 @@ impl App {
         self.settings.theme = choice;
         self.apply_theme(ctx);
         let _ = self.settings.save();
+    }
+
+    /// Writes the settings file now, for preferences changed outside the Options dialog
+    /// (View menu, toolbar, shortcuts). Screenshot runs use default settings and never save.
+    pub fn save_settings(&self) {
+        if self.screenshot.is_some() {
+            return;
+        }
+        if let Err(e) = self.settings.save() {
+            eprintln!("無法儲存設定：{e}");
+        }
     }
 
     /// The theme icon and View > Toggle Theme: switch to the opposite of the theme shown now
@@ -1259,11 +1275,22 @@ impl eframe::App for App {
             self.pending.push(C::Exit);
         }
 
+        // The fonts set last frame are active now. Widths measured in that frame came from the
+        // old font, so measure again; and a proportional font in fixed-width mode overlaps
+        // wide letters such as "m", so suggest turning the mode off.
+        if self.fonts_changed {
+            self.fonts_changed = false;
+            self.widths.invalidate();
+            if self.settings.fixed_width && self.confirm.is_none() && fonts::editor_is_proportional(&ctx) {
+                self.confirm = Some(Confirm::ProportionalFont);
+            }
+        }
         // 字型：設定改變時重建
         if self.font_applied.as_deref() != Some(self.settings.font_family.as_str()) {
             let fam = self.settings.font_family.clone();
             self.fonts.apply(&ctx, &fam);
             self.font_applied = Some(fam);
+            self.fonts_changed = true;
         }
 
         // 拖放開檔
@@ -1296,6 +1323,7 @@ impl eframe::App for App {
         let over_preview = self.is_preview_tab() || self.tabs[self.active].md_preview.as_ref().is_some_and(|p| p.docked() && ui.rect_contains_pointer(p.rect));
         if zoom != 0.0 && ui.rect_contains_pointer(ui.max_rect()) && !over_preview {
             self.settings.font_size = (self.settings.font_size + zoom.signum()).clamp(6.0, 72.0);
+            self.save_settings();
         }
 
         self.handle_shortcuts(&ctx);

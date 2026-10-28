@@ -27,11 +27,23 @@ use crate::core::textops;
 
 // ── 字寬快取 ────────────────────────────────────────────────────
 
+/// Width cache key: (font size bits, family, font generation). The generation is bumped by
+/// [`CharWidths::invalidate`] when the font data itself is replaced under the same name.
+type WidthKey = (u32, String, u32);
+
 /// 編輯區字型的逐字字寬快取（字型或字級改變時清空）
 #[derive(Default)]
 pub struct CharWidths {
-    key: (u32, String),
-    map: HashMap<char, f32>,
+    key: WidthKey,
+    /// Interior mutability so that `get` can measure a character it has not seen yet:
+    /// layout code only holds `&CharWidths`, and a width guessed from the cell size would be
+    /// cached in the line layout and wrap caches (keyed by line content) and never corrected.
+    map: std::cell::RefCell<HashMap<char, f32>>,
+    /// Context and font used by `get` to measure on demand; `None` in unit tests that fill
+    /// the widths by hand, where unknown characters fall back to the cell grid.
+    measure: Option<(egui::Context, FontId)>,
+    /// Bumped by `invalidate`; part of the key so every cache keyed on it is rebuilt.
+    generation: u32,
     pub cell_w: f32,
     pub space_w: f32,
     pub text_h: f32,
@@ -40,13 +52,15 @@ pub struct CharWidths {
 impl CharWidths {
     /// 確認字型設定並量測尚未快取的字元
     pub fn prepare(&mut self, ctx: &egui::Context, font: &FontId, family: &str, chars: impl Iterator<Item = char>) {
-        let key = (font.size.to_bits(), family.to_string());
+        let key = (font.size.to_bits(), family.to_string(), self.generation);
         if key != self.key {
             self.key = key;
-            self.map.clear();
+            self.map.get_mut().clear();
             self.cell_w = 0.0;
         }
-        let missing: HashSet<char> = chars.filter(|c| !self.map.contains_key(c)).collect();
+        self.measure = Some((ctx.clone(), font.clone()));
+        let map = self.map.get_mut();
+        let missing: HashSet<char> = chars.filter(|c| !map.contains_key(c)).collect();
         if missing.is_empty() && self.cell_w > 0.0 {
             return;
         }
@@ -58,13 +72,29 @@ impl CharWidths {
             }
             for c in missing {
                 let w = if c == '\t' { 0.0 } else { f.glyph_width(font, c) };
-                self.map.insert(c, w);
+                map.insert(c, w);
             }
         });
     }
 
+    /// Forgets every measured width. Call it once the new fonts are active (the frame after
+    /// `Context::set_fonts`): widths measured in the frame of the change came from the old font.
+    pub fn invalidate(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+
     pub fn get(&self, c: char) -> f32 {
-        self.map.get(&c).copied().unwrap_or(self.cell_w * char_visual_columns(c) as f32)
+        if let Some(w) = self.map.borrow().get(&c) {
+            return *w;
+        }
+        let Some((ctx, font)) = &self.measure else {
+            return self.cell_w * char_visual_columns(c) as f32;
+        };
+        // Measure now instead of guessing: the guess (cell width) is what made proportional
+        // fonts overlap in a freshly opened file until the layout caches were cleared.
+        let w = if c == '\t' { 0.0 } else { ctx.fonts_mut(|f| f.glyph_width(font, c)) };
+        self.map.borrow_mut().insert(c, w);
+        w
     }
 }
 
@@ -116,7 +146,7 @@ struct WrapKey {
     doc_id: u64,
     width_bits: u32,
     fixed: bool,
-    font: (u32, String),
+    font: WidthKey,
     tab: usize,
 }
 
@@ -199,7 +229,7 @@ struct FrameLayout {
     /// 本幀的文件版本（由 [`ViewState::begin_frame`] 設定）
     version: u64,
     /// 版面參數（等寬格網、字型、縮排）：改變時整份清空
-    params: Option<(bool, (u32, String), usize)>,
+    params: Option<(bool, WidthKey, usize)>,
     lines: HashMap<usize, LayoutEntry>,
 }
 
@@ -1728,7 +1758,7 @@ mod tests {
 
     fn widths() -> CharWidths {
         let mut w = CharWidths::default();
-        w.key = (f32::to_bits(14.0), "test".to_string());
+        w.key = (f32::to_bits(14.0), "test".to_string(), 0);
         w.cell_w = 10.0;
         w.space_w = 10.0;
         w.text_h = 14.0;
@@ -1740,6 +1770,25 @@ mod tests {
         lay.wrap = wrap;
         lay.wrap_width = 100.0;
         lay
+    }
+
+    /// A character missing from the sampled set must get its real width, not the cell width:
+    /// the line layout and wrap caches keep whatever width they were built with.
+    #[test]
+    fn unsampled_char_is_measured_not_guessed() {
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            let font = FontId::proportional(14.0);
+            let mut w = CharWidths::default();
+            w.prepare(ui.ctx(), &font, "proportional", "0".chars());
+            let real = ui.ctx().fonts_mut(|f| f.glyph_width(&font, 'm'));
+            assert!((real - w.cell_w).abs() > 0.5, "test font must be proportional");
+            assert!((w.get('m') - real).abs() < 0.01, "'m' measured {} instead of {real}", w.get('m'));
+            let xs = line_xs("mm", false, &w);
+            assert!((xs[2] - 2.0 * real).abs() < 0.01);
+        });
+        // The font atlas upload is not rendered anywhere in this test.
+        out.textures_delta.clear();
     }
 
     #[test]

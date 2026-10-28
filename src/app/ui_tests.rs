@@ -1426,6 +1426,40 @@ fn test_highlighting_dialog_applies_the_ui_theme_at_once() {
     assert_eq!(h.state_mut().settings.theme, crate::core::settings::ThemeChoice::Dark);
 }
 
+/// First installed proportional font from a list common on Windows, macOS and Linux.
+fn installed_proportional_font(h: &mut Harness<'static, App>) -> Option<String> {
+    let families = &h.state_mut().fonts.families;
+    ["Arial", "Segoe UI", "Helvetica", "DejaVu Sans", "Liberation Sans", "Noto Sans"]
+        .into_iter()
+        .find(|f| families.iter().any(|n| n == f))
+        .map(str::to_string)
+}
+
+#[test]
+fn test_proportional_font_in_fixed_width_mode_offers_to_turn_it_off() {
+    let mut h = harness();
+    let Some(font) = installed_proportional_font(&mut h) else {
+        eprintln!("skipped: no known proportional font installed");
+        return;
+    };
+    assert!(!h.state_mut().settings.fixed_width, "fixed-width mode is off by default");
+    // Off: picking a proportional font asks nothing.
+    h.state_mut().settings.font_family = font.clone();
+    h.run_steps(3);
+    assert!(h.state_mut().confirm.is_none());
+    // On: picking it again (after another font) asks to turn the mode off, and the button does.
+    h.state_mut().settings.fixed_width = true;
+    h.state_mut().settings.font_family = String::new();
+    h.run_steps(3);
+    h.state_mut().confirm = None;
+    h.state_mut().settings.font_family = font;
+    h.run_steps(3);
+    assert!(matches!(h.state_mut().confirm, Some(Confirm::ProportionalFont)));
+    click_button(&mut h, "關閉等寬模式");
+    assert!(h.state_mut().confirm.is_none());
+    assert!(!h.state_mut().settings.fixed_width);
+}
+
 #[test]
 fn test_confirmations_keep_their_buttons_on_a_small_window() {
     use eframe::egui::accesskit::Role;
@@ -1443,6 +1477,7 @@ fn test_confirmations_keep_their_buttons_on_a_small_window() {
         (Confirm::ReloadModified { id }, "重新載入"),
         (Confirm::CreateNew { path: std::path::PathBuf::from("/tmp/x-new.txt") }, "建立"),
         (Confirm::Message { title: "t".into(), text: "long ".repeat(200) }, "確定"),
+        (Confirm::ProportionalFont, "關閉等寬模式"),
     ];
     for (confirm, button) in cases {
         h.state_mut().confirm = Some(confirm);
