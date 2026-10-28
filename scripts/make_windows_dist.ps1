@@ -1,4 +1,4 @@
-# 產生 Windows 發行壓縮檔（MadEdit-<版本>-windows-<架構>.zip）。
+﻿# 產生 Windows 發行壓縮檔（MadEdit-<版本>-windows-<架構>.zip）。
 #
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File .\scripts\make_windows_dist.ps1 [輸出目錄]

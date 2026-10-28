@@ -1,4 +1,4 @@
-# 下載固定版本的 dprint 執行檔與 Wasm 插件（Windows「帶 DPRINT」發行版用）。
+﻿# 下載固定版本的 dprint 執行檔與 Wasm 插件（Windows「帶 DPRINT」發行版用）。
 #
 # 版本、網址與 SHA-256 一律取自 assets/formatters/manifest.json；
 # 已存在且雜湊正確的檔案不會重新下載。
