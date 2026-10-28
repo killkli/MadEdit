@@ -8,6 +8,7 @@ use super::view::{self, selected_line_range};
 use super::{print, App, Confirm};
 use crate::core::chinese::{self, ChineseConversion};
 use crate::core::document::EditKind;
+use crate::core::dprint;
 use crate::core::editor::{extract_visual_slice, EditorState, Selection, TextPosition};
 use crate::core::encoding;
 use crate::core::model::{EditMode, NewLineFormat};
@@ -817,6 +818,13 @@ impl App {
             C::AstyleFormat if !hex && editable => {
                 let opts = self.settings.astyle_options.clone();
                 self.transform(Scope::Whole, &|s| run_astyle(s, &opts));
+            }
+            C::DprintFormat if !hex && editable => {
+                let doc = self.doc();
+                match dprint::stdin_file_name(doc) {
+                    Ok(file_name) => self.transform(Scope::Whole, &|s| dprint::format_text(s, &file_name)),
+                    Err(e) => self.message("無法格式化", e),
+                }
             }
             C::WordCount => {
                 let doc = self.doc();

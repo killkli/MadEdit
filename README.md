@@ -59,7 +59,7 @@ The original C++ / wxWidgets **MadEdit** is a classic tool for many developers a
 - **Edit**: bookmark line operations, hex string conversion, indent, comment, change case, full/half width, tabs to spaces and back, increment numbers, sort, column alignment.
 - **Search**: plain text / case / whole word / Regex / Hex find and replace, find and replace in multiple files, jump to matching bracket.
 - **View**: word wrap, line numbers, bookmark gutter, ruler, control characters, current line, column guide lines, System / Light / Dark theme, Markdown / HTML preview.
-- **Macros and tools**: macro record and playback, shortcut reassignment and a searchable shortcut list (Help > Keyboard Shortcuts, F1), spell check, word count, Simplified/Traditional Chinese and Japanese Kanji conversion, JSON / XML formatting.
+- **Macros and tools**: macro record and playback, shortcut reassignment and a searchable shortcut list (Help > Keyboard Shortcuts, F1), spell check, word count, Simplified/Traditional Chinese and Japanese Kanji conversion, JSON / XML formatting, and a dprint-based formatter (Tools > Convert/Format > "dprint Format") for C/C++/Objective-C (clang-format), JavaScript/TypeScript, JSON/JSONC, CSS/SCSS, HTML/XML/SVG/Vue/Svelte, YAML, Markdown, TOML, GraphQL, SQL, Dockerfile, Shell, Python, Go, PHP, Lua and C#.
 
 ### 7. macOS native integration
 - Supports Finder "Open With" and dropping files on the Dock icon (including names with CJK characters, spaces and percent-encoding). Opening a file while the app is running adds a tab in the same app.
@@ -183,6 +183,8 @@ Release builds are on the [Releases](https://github.com/tenyi/MadEdit/releases) 
 
 Each release file has a matching `.sha256` next to it. After extracting a Linux archive, run `./MadEdit`, or `./install.sh` to install into `~/.local`. Make an AppImage executable and run it; it needs a Vulkan or OpenGL driver on the system. On Windows, extract and run `MadEdit.exe`. On macOS, open the DMG and drag `MadEdit.app` into Applications.
 
+**Two flavours per platform.** The files above are the clean version without any formatter. Every one of them also exists with a `-dprint` suffix (for example `MadEdit-<version>-macOS-arm64-dprint.dmg`, `MadEdit-<version>-linux-x86_64-dprint.AppImage`, `MadEdit-<version>-windows-x86_64-dprint.zip`); that package additionally bundles a pinned dprint CLI and Wasm plugins for C/C++ (clang-format), JavaScript/TypeScript, JSON/JSONC, CSS/SCSS, HTML/XML/SVG/Vue/Svelte, YAML, Markdown, TOML, GraphQL, SQL, Dockerfile, Shell, Python, Go, PHP, Lua and C#, so Tools > "dprint Format" works offline. The clean version still offers the command when a `dprint` executable is found on `PATH`; unsupported extensions are refused with a message. To package locally, add `MADEDIT_WITH_FORMATTER=1` to any `make dist-*` target (or `-WithFormatter` on the Windows script); `make formatters` downloads the pinned dprint into `target/formatters` and is run automatically when needed.
+
 ### Packaging for Windows
 
 On Windows (x64 or ARM, named after the local architecture):
@@ -230,7 +232,7 @@ Changes are recorded in [ChangeLog.md](ChangeLog.md). After a version tag is pus
    git push origin v0.6.0
    ```
    The tag version must equal `Cargo.toml` (`v0.6.0` for `0.6.0`). If it does not, or ChangeLog has no such section, the workflow stops before packaging.
-5. When Actions finishes, the Release page shows Linux (x64 / ARM tar.gz and AppImage), macOS DMG (Apple Silicon and Intel) and Windows zip (x64 / ARM), with the ChangeLog section as the notes.
+5. When Actions finishes, the Release page shows Linux (x64 / ARM tar.gz and AppImage), macOS DMG (Apple Silicon and Intel) and Windows zip (x64 / ARM) — each in the clean flavour and the `-dprint` flavour — with the ChangeLog section as the notes.
 
 To try packaging without creating a Release, run the Release workflow manually from the GitHub Actions page. The outputs stay in that run's artifacts and are not published.
 

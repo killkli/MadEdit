@@ -669,6 +669,7 @@ impl App {
             self.item(ui, C::AstyleFormat);
             self.item(ui, C::XmlFormat);
             self.item(ui, C::JsonFormat);
+            self.item(ui, C::DprintFormat);
         });
         ui.separator();
         self.item(ui, C::WordCount);

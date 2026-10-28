@@ -98,6 +98,12 @@ fi
 mkdir -p "$(dirname "${BIN_IN_APP}")/dictionaries"
 cp -a "${STAGE}/dictionaries/." "$(dirname "${BIN_IN_APP}")/dictionaries/"
 
+# 「帶 DPRINT」變體：格式化工具與執行檔放同一層（core/dprint.rs 會在 current_exe 旁找 formatters/）
+if [[ -d "${STAGE}/formatters" ]]; then
+    mkdir -p "$(dirname "${BIN_IN_APP}")/formatters"
+    cp -a "${STAGE}/formatters/." "$(dirname "${BIN_IN_APP}")/formatters/"
+fi
+
 APPIMAGE="${OUT_DIR}/${NAME}.AppImage"
 rm -f "${APPIMAGE}"
 echo "產生 ${NAME}.AppImage..."

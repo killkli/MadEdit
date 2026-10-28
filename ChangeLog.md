@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 - Automatically check GitHub Releases daily, show a non-blocking update notice with a download link, and offer manual checks and update preferences in Help.
+- New Tools > Convert/Format > "dprint Format" command formats the whole document with [dprint](https://dprint.dev/): the bundled plugins cover C/C++/Objective-C (clang-format), JavaScript/TypeScript, JSON/JSONC, CSS/SCSS/Sass/Less, HTML/XML/SVG/Vue/Svelte and template languages, YAML, Markdown, TOML, GraphQL, SQL, Dockerfile, Shell (sh/bash/zsh), Python, Go, PHP, Lua and C#/MSBuild. Unsupported extensions are refused with a message instead of being passed through unchanged.
+- Releases now come in two flavours per platform: the usual clean package and a `-dprint` package (for example `MadEdit-<version>-macOS-arm64-dprint.dmg`) that additionally bundles a pinned dprint CLI and plugins, so formatting works offline. The clean package uses the same command through a `dprint` found on `PATH`. Locally, `MADEDIT_WITH_FORMATTER=1 make dist-...` builds the bundle; `make formatters` downloads the pinned dprint and plugins into `target/formatters` (versions and SHA-256 come from `assets/formatters/manifest.json`).
+- The macOS dprint helper is signed for Hardened Runtime with a minimal `com.apple.security.cs.allow-unsigned-executable-memory` entitlement (required by its Wasm runtime); the app binary does not carry this entitlement, and the helper's minimum macOS version is included in the app's `LSMinimumSystemVersion`.
+
+### Changed
 - The Markdown preview renders LaTeX math: inline `$…$` sits on the text baseline and `$$…$$` is centred on its own line. Chinese and other non-ASCII text in a top-level `\text{…}` is shown with the preview font; a formula that cannot be rendered is shown as its TeX source.
 
 ### Changed

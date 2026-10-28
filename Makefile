@@ -8,7 +8,11 @@ VERSION := $(shell sed -n 's/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head 
 HOST_ARCH := $(shell uname -m | sed -e 's/amd64/x86_64/' -e 's/arm64/aarch64/' -e 's/x64/x86_64/')
 ARCH ?= $(HOST_ARCH)
 
-.PHONY: help check test test-core test-ui test-visual test-large test-tools bench run build dist dist-linux dist-appimage dist-macos dist-windows release-notes clean
+# 「帶 DPRINT」發行版：MADEDIT_WITH_FORMATTER=1 make dist-...（檔名會加 -dprint）
+export MADEDIT_WITH_FORMATTER
+export MADEDIT_FORMATTERS_DIR
+
+.PHONY: help check test test-core test-ui test-visual test-large test-tools bench run build formatters dist dist-linux dist-appimage dist-macos dist-windows release-notes clean
 
 .DEFAULT_GOAL := help
 
@@ -26,6 +30,7 @@ help:
 	@echo "  make bench              save release benchmark samples and metadata"
 	@echo "  make run                cargo run"
 	@echo "  make build              cargo build --release --locked"
+	@echo "  make formatters         下載固定版本 dprint 與插件到 target/formatters"
 	@echo ""
 	@echo "打包（ARCH 預設為本機 $(HOST_ARCH)；可設 x86_64 或 aarch64）："
 	@echo "  make dist-linux         Linux tar.gz"
@@ -33,6 +38,7 @@ help:
 	@echo "  make dist-macos         macOS .app 與 .dmg"
 	@echo "  make dist-windows       Windows zip（在 Windows 上執行）"
 	@echo "  make dist               依目前作業系統打包"
+	@echo "  帶 DPRINT 版：加 MADEDIT_WITH_FORMATTER=1（會自動下載 dprint，檔名加 -dprint）"
 	@echo "  make release-notes      印出 ChangeLog.md 裡 VERSION 的發行說明"
 	@echo "  make clean              清除 target 與 dist"
 	@echo ""
@@ -68,6 +74,9 @@ run:
 
 build:
 	$(CARGO) build --release --locked
+
+formatters:
+	./scripts/fetch_formatter.sh target/formatters
 
 dist-linux:
 	./scripts/make_linux_dist.sh $(DIST) $(ARCH)

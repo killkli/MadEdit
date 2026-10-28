@@ -70,6 +70,8 @@ jobs:
             libfontconfig1-dev libvulkan-dev
       - name: 打包 tar.gz 與 AppImage
         run: make dist-appimage
+      - name: 打包「帶 DPRINT」變體
+        run: make dist-appimage MADEDIT_WITH_FORMATTER=1
       - uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}
@@ -98,6 +100,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: 打包 DMG
         run: make dist-macos
+      - name: 打包「帶 DPRINT」變體
+        run: make dist-macos MADEDIT_WITH_FORMATTER=1
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
@@ -125,6 +129,9 @@ jobs:
       - name: 打包 zip
         shell: pwsh
         run: ./scripts/make_windows_dist.ps1 -Arch ${{ matrix.arch }}
+      - name: 打包「帶 DPRINT」變體
+        shell: pwsh
+        run: ./scripts/make_windows_dist.ps1 -Arch ${{ matrix.arch }} -WithFormatter
       - uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}

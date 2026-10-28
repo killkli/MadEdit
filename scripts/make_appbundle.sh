@@ -74,24 +74,55 @@ if ! file "${BIN}" | grep -q 'Mach-O.*executable'; then
     echo "執行檔不是 macOS Mach-O：${BIN}" >&2
     exit 1
 fi
+# --- 選配：dprint 格式化工具（MADEDIT_WITH_FORMATTER=1 打包「帶 DPRINT」版） ---
+WITH_FORMATTER="${MADEDIT_WITH_FORMATTER:-0}"
+FORMATTER_SRC="${MADEDIT_FORMATTERS_DIR:-${ROOT}/target/formatters}"
+FORMATTER_BIN="${BUNDLE}/Contents/Helpers/dprint"
+if [[ "${WITH_FORMATTER}" == "1" ]]; then
+    # fetch 是增量的：已驗證的檔案不會重抓，並會補齊 manifest 新增的插件、更新 dprint.json
+    "${ROOT}/scripts/fetch_formatter.sh" "${FORMATTER_SRC}"
+    if ! file "${FORMATTER_SRC}/dprint" | grep -q 'Mach-O.*executable'; then
+        echo "${FORMATTER_SRC}/dprint 不是 macOS 執行檔；請以對應架構重新下載。" >&2
+        echo "例：./scripts/fetch_formatter.sh target/formatters --target aarch64-apple-darwin" >&2
+        exit 1
+    fi
+    mkdir -p "${BUNDLE}/Contents/Helpers" "${BUNDLE}/Contents/Resources/formatters/plugins"
+    cp "${FORMATTER_SRC}/dprint" "${FORMATTER_BIN}"
+    chmod +x "${FORMATTER_BIN}"
+    cp "${FORMATTER_SRC}/dprint.json" "${BUNDLE}/Contents/Resources/formatters/dprint.json"
+    cp "${FORMATTER_SRC}"/plugins/*.wasm "${BUNDLE}/Contents/Resources/formatters/plugins/"
+    echo "已附帶 dprint 與插件（來源：${FORMATTER_SRC}）"
+fi
+
 # 從每個架構的 Mach-O 載入命令讀取最低 macOS 版本；Intel 舊版可能使用
 # LC_VERSION_MIN_MACOSX，Apple Silicon 與較新版產物使用 LC_BUILD_VERSION。
 # universal App 同時記錄各架構版本，全域值採最高者，避免低估執行需求。
+# 附帶 dprint helper 時一併納入計算；同一架構只記錄一次（Info.plist 是 dict）。
 MIN_OS="0.0"
 ARCH_MINIMUMS=""
-for arch in $(lipo -archs "${BIN}"); do
-    arch_min="$(vtool -arch "${arch}" -show-build "${BIN}" | awk '
-        $1 == "cmd" { macos = ($2 == "LC_VERSION_MIN_MACOSX"); legacy = macos }
-        $1 == "platform" { macos = ($2 == "MACOS") }
-        macos && ($1 == "minos" || (legacy && $1 == "version")) { print $2; found = 1; exit }
-        END { if (!found) exit 1 }
-    ')" || {
-        echo "無法讀取 ${arch} 的 macOS 最低版本：${BIN}" >&2
-        exit 1
-    }
-    MIN_OS="$(printf '%s\n%s\n' "${MIN_OS}" "${arch_min}" | sort -t . -k1,1n -k2,2n -k3,3n | tail -n 1)"
-    ARCH_MINIMUMS+="        <key>${arch}</key><string>${arch_min}</string>
+MACHO_BINS=("${BIN}")
+if [[ "${WITH_FORMATTER}" == "1" ]]; then
+    MACHO_BINS+=("${FORMATTER_BIN}")
+fi
+SEEN_ARCHS=" "
+for macho in "${MACHO_BINS[@]}"; do
+    for arch in $(lipo -archs "${macho}"); do
+        arch_min="$(vtool -arch "${arch}" -show-build "${macho}" | awk '
+            $1 == "cmd" { macos = ($2 == "LC_VERSION_MIN_MACOSX"); legacy = macos }
+            $1 == "platform" { macos = ($2 == "MACOS") }
+            macos && ($1 == "minos" || (legacy && $1 == "version")) { print $2; found = 1; exit }
+            END { if (!found) exit 1 }
+        ')" || {
+            echo "無法讀取 ${arch} 的 macOS 最低版本：${macho}" >&2
+            exit 1
+        }
+        MIN_OS="$(printf '%s\n%s\n' "${MIN_OS}" "${arch_min}" | sort -t . -k1,1n -k2,2n -k3,3n | tail -n 1)"
+        if [[ "${SEEN_ARCHS}" != *" ${arch} "* ]]; then
+            SEEN_ARCHS+="${arch} "
+            ARCH_MINIMUMS+="        <key>${arch}</key><string>${arch_min}</string>
 "
+        fi
+    done
 done
 if [[ "${MIN_OS}" == "0.0" ]]; then
     echo "執行檔未包含可辨識的 macOS 架構：${BIN}" >&2
@@ -202,6 +233,13 @@ printf 'APPL????' >"${BUNDLE}/Contents/PkgInfo"
 # ad-hoc 簽章供本機執行；對外發行仍需 Developer ID 簽章與 Apple 公證。
 # 簽章及驗證任一步失敗都中止，避免把壞掉的 App 當成成功產物。
 plutil -lint "${BUNDLE}/Contents/Info.plist"
+if [[ "${WITH_FORMATTER}" == "1" && -x "${FORMATTER_BIN}" ]]; then
+    # dprint 內建 wasmtime 需要 Hardened Runtime 的可執行記憶體權限；
+    # 只授予 helper，MadEdit 主程式不帶這項 entitlement。
+    codesign --force --options runtime \
+        --entitlements "${ROOT}/assets/formatters/dprint.entitlements" \
+        --sign - "${FORMATTER_BIN}"
+fi
 codesign --force --sign - "${BUNDLE}/Contents/MacOS/${APP_NAME}"
 codesign --force --sign - "${BUNDLE}"
 codesign --verify --deep --strict "${BUNDLE}"

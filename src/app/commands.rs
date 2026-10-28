@@ -212,6 +212,7 @@ commands! {
     AstyleFormat => "menuAstyleFormat", "AStyle 格式化（C++/C#/Java/ObjC）(&A)", "Ctrl+Shift+K";
     XmlFormat => "menuXMLFormat", "XML 格式化(&X)", "";
     JsonFormat => "menuJSONFormat", "JSON 格式化(&J)", "";
+    DprintFormat => "menuDprintFormat", "dprint 格式化（C/C++、JS/TS、JSON、MD、TOML、Python）(&D)", "";
     WordCount => "menuWordCount", "字數統計(&W)...", "";
 
     // ── 視窗 ──
