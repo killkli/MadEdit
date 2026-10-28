@@ -318,7 +318,7 @@ const BODY_FONT_SIZE: f32 = 16.0;
 /// 符合寬度時，重新排版用的寬度以此為單位量化，避免拖曳視窗邊緣時每個像素都重繪
 const WIDTH_BUCKET: f32 = 32.0;
 /// Mermaid 圖表的 uri 前綴，只有這類 uri 交給 [`DiagramLoader`]
-const DIAGRAM_URI_PREFIX: &str = "bytes://mermaid-";
+pub(super) const DIAGRAM_URI_PREFIX: &str = "bytes://mermaid-";
 /// 圖表點陣化倍率上限（避免高倍縮放時產生過大的貼圖）
 const RASTER_MAX: f32 = 6.0;
 
@@ -351,6 +351,8 @@ pub struct MarkdownPreview {
     built: Option<BuildKey>,
     items: Vec<Item>,
     cache: CommonMarkCache,
+    /// Shared with the 'static math callback egui_commonmark takes.
+    math: std::rc::Rc<super::mdmath::MathCache>,
     image_uris: Vec<String>,
     /// 文件結尾也要有錨點，最後一個長段落／圖表才能在區塊內繼續捲動。
     source_lines: usize,
@@ -422,6 +424,7 @@ impl MarkdownPreview {
             built: None,
             items: Vec::new(),
             cache: CommonMarkCache::default(),
+            math: Default::default(),
             image_uris: Vec::new(),
             source_lines: 0,
             zoom: 1.0,
@@ -553,6 +556,9 @@ impl MarkdownPreview {
         }
         self.image_uris = image_uris;
         self.items = items;
+        if self.built.as_ref().is_some_and(|old| old.dark != key.dark) {
+            self.math.clear(ctx);
+        }
         self.built = Some(key);
         self.source_lines = source_lines;
         self.anchors.clear();
@@ -715,12 +721,15 @@ impl MarkdownPreview {
                             // Columns then hug their text; egui_commonmark forces item_spacing.x
                             // to 0, so the column gap cannot be widened from here.
                             ui.spacing_mut().interact_size.x = 0.0;
+                            let cache = std::rc::Rc::clone(&self.math);
+                            let math = move |ui: &mut egui::Ui, tex: &str, inline: bool| cache.show(ui, tex, inline);
+                            let viewer = CommonMarkViewer::new().explicit_image_uri_scheme(true).render_math_fn(Some(&math));
                             if matches!(item.content, Content::Quote(_)) {
                                 quote_frame(ui, |ui| {
-                                    CommonMarkViewer::new().explicit_image_uri_scheme(true).show(ui, &mut self.cache, m);
+                                    viewer.show(ui, &mut self.cache, m);
                                 });
                             } else {
-                                CommonMarkViewer::new().explicit_image_uri_scheme(true).show(ui, &mut self.cache, m);
+                                viewer.show(ui, &mut self.cache, m);
                             }
                         });
                     }

@@ -25,12 +25,13 @@ This document is written for AI agents taking over the project. It gives the ful
 
 ## 2. Core Technology Choices
 
-- **Language**: Rust (Edition 2024; egui / eframe 0.37 needs Rust 1.95 or newer)
+- **Language**: Rust (Edition 2024; latex-rust needs Rust 1.99 or newer, egui / eframe 0.37 needs 1.95)
 - **GUI framework**: [eframe / egui](https://github.com/emilk/egui) (v0.37), rewritten from Slint in 2026-10 (see [ADR 0011](docs/adr/0011-egui-rewrite.md))
   - Why: it can measure width per character and supports any system font the user picks (proportional fonts included); input method events (`Event::Ime`) go straight to the custom-drawn editor.
   - The editor, hex view, scrollbars and ruler are all custom-drawn (`src/app/view.rs`, `src/app/hexview.rs`).
 - **System fonts**: `fontique` enumerates and loads system fonts; CJK characters automatically fall back to a system CJK font.
 - **Markdown preview**: `egui_commonmark` renders Markdown. `fermaid` (pure Rust) turns ```mermaid blocks into SVG, written with the actual colors from `Palette` (resvg does not support CSS variables), then rasterized through a custom loader (`mdpreview::DiagramLoader`; the resvg font database holds a single CJK font and does not load all system fonts) for display. `egui_extras` enables only `svg`, not `svg_text` (which would load all system fonts).
+- **Markdown math**: `latex-rust` (pure Rust) lays out `$…$` / `$$…$$` into an SVG of STIX Two Math glyph outlines, drawn through the same `DiagramLoader` as Mermaid (`src/app/mdmath.rs`, hooked in with egui_commonmark's `render_math_fn`). Use only its SVG output: its `egui` feature pins egui 0.36.2. The math font has no CJK glyphs and the crate has no font fallback, so a top-level `\text{…}` with non-ASCII text is cut out and drawn as egui text; anything else it cannot render shows the TeX source.
 - **Version alignment**: `fontique` must match the version eframe uses internally (currently 0.11.1); otherwise the fontconfig features conflict on Linux and the build fails.
 - **Emoji glyphs**: egui 0.37 only bundles its emoji fonts behind the `monochrome_emoji_fonts` feature, so `egui` is listed directly in `Cargo.toml` just to enable it (keep its version equal to eframe's). Without it, 🔒 and other emoji draw as empty boxes.
 - **System clipboard**: `arboard`; **syntax highlighting**: `syntect` with the Oniguruma regex backend (`regex-onig`; `onig_sys` builds the bundled C sources, so a C compiler is required); **spell check**: `spellbook` (Hunspell dictionaries).
@@ -93,6 +94,7 @@ MadEdit/
 │   │   ├── macros.rs       # Macro recording and playback (JSON step list)
 │   │   ├── print.rs        # Print content model and HTML printing (handed to the browser)
 │   │   ├── preview.rs      # In-app print preview window (A4 pages, paging, zoom)
+│   │   ├── mdmath.rs       # LaTeX math in the Markdown preview (latex-rust SVG, baseline-aligned inline, centred display)
 │   │   ├── mdpreview.rs    # In-app Markdown preview (egui_commonmark + fermaid for ```mermaid diagrams; zoom, fit width, relative-path images; switchable between a separate tab in the main window, side by side or top and bottom, each taking half in split layouts and following the editor scroll)
 │   │   ├── fonts.rs        # System font enumeration and the egui font chain
 │   │   ├── ui_tests.rs     # egui_kittest keyboard / input method interaction tests

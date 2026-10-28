@@ -46,6 +46,7 @@ The original C++ / wxWidgets **MadEdit** is a classic tool for many developers a
 - Open it from "View → Preview As → Preview as Markdown" or the toolbar preview button. Markdown is rendered in-app (`egui_commonmark`); the button is disabled when the current file is not Markdown.
 - ` ```mermaid ` blocks are rendered as diagrams by [**fermaid**](https://github.com/tenyi/fermaid), with no browser or Node.js needed.
   fermaid is a pure-Rust Mermaid rendering engine the author built specifically for the Markdown preview. It supports all current Mermaid diagram types and produces preview images quickly.
+- LaTeX math (`$…$` inline, `$$…$$` as a centred block) is rendered by [`latex-rust`](https://crates.io/crates/latex-rust), also pure Rust. Chinese in a top-level `\text{…}` is shown with the preview font; a formula that cannot be rendered is shown as its TeX source.
 - Relative image paths resolve against the document's folder. PNG, JPEG, GIF, WebP and SVG are supported.
 - Open the preview in a **separate tab in the main window**, or switch to **side by side** or **top and bottom**. Closing the preview tab keeps the source document open. In split layouts the preview and editor each take half, and the preview can **scroll in sync** with the editor.
 - Zoom (`Ctrl` / `⌘` + scroll wheel or trackpad pinch) and fit diagrams to width; high-contrast colors (pure black background in dark mode, pure white in light mode).
@@ -103,7 +104,7 @@ MadEdit/
 ## 🚀 Build and Run
 
 ### Requirements
-- **Rust toolchain**: Rust `1.95` or newer (the minimum for egui / eframe 0.37)
+- **Rust toolchain**: Rust `1.99` or newer (the minimum for latex-rust, which renders math in the Markdown preview)
 - Supported platforms: **Windows**, **macOS**, **Linux**
 
 ### Development and test commands
@@ -243,6 +244,7 @@ To try packaging without creating a Release, run the Release workflow manually f
 | **System fonts** | [`fontique`](https://crates.io/crates/fontique) | Enumerate and load system fonts |
 | **Markdown preview** | [`egui_commonmark`](https://crates.io/crates/egui_commonmark) | Render Markdown in-app |
 | **Mermaid diagrams** | [`fermaid`](https://github.com/tenyi/fermaid) + [`resvg`](https://crates.io/crates/resvg) | In-house pure-Rust Mermaid engine supporting all Mermaid diagram types, converted to SVG and rasterized |
+| **Math formulas** | [`latex-rust`](https://crates.io/crates/latex-rust) | Pure-Rust LaTeX math layout to SVG (bundled STIX Two Math font), rasterized like the diagrams |
 | **macOS integration** | [`objc2`](https://crates.io/crates/objc2) | Finder / Dock open-file and quit events |
 | **Character encoding** | [`encoding_rs`](https://crates.io/crates/encoding_rs) | Multi-encoding conversion and lossless verification |
 | **Syntax highlighting** | [`syntect`](https://crates.io/crates/syntect) | Sublime Text syntax definitions and themes |
