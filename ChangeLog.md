@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-10-29
+
 ### Added
 - Automatically check GitHub Releases daily, show a non-blocking update notice with a download link, and offer manual checks and update preferences in Help.
 - New Tools > Convert/Format > "dprint Format" command formats the whole document with [dprint](https://dprint.dev/): the bundled plugins cover C/C++/Objective-C (clang-format), JavaScript/TypeScript, JSON/JSONC, CSS/SCSS/Sass/Less, HTML/XML/SVG/Vue/Svelte and template languages, YAML, Markdown, TOML, GraphQL, SQL, Dockerfile, Shell (sh/bash/zsh), Python, Go, PHP, Lua and C#/MSBuild. Unsupported extensions are refused with a message instead of being passed through unchanged.
@@ -15,12 +17,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 - The Markdown preview renders LaTeX math: inline `$…$` sits on the text baseline and `$$…$$` is centred on its own line. Chinese and other non-ASCII text in a top-level `\text{…}` is shown with the preview font; a formula that cannot be rendered is shown as its TeX source.
 
-### Changed
 - Building from source needs Rust 1.99 or newer (required by latex-rust, the math renderer).
 
 ### Fixed
 - Long submenus such as Recent Files no longer flicker between vertical positions near the bottom of the window.
 - In the Markdown preview, a table inside a block quote (`> | a | b |`) ran together as a single paragraph of cell text. It now renders as a table inside the quote.
+
+### 繁體中文
+
+#### 新增
+- 每日自動檢查 GitHub Releases，以不干擾操作的通知顯示更新與下載連結，並在「說明」選單提供手動檢查和更新偏好設定。
+- 新增「工具 > 轉換／格式化 > dprint 格式化」命令，使用 [dprint](https://dprint.dev/) 格式化整份文件。隨附外掛支援 C/C++/Objective-C（clang-format）、JavaScript/TypeScript、JSON/JSONC、CSS/SCSS/Sass/Less、HTML/XML/SVG/Vue/Svelte 與範本語言、YAML、Markdown、TOML、GraphQL、SQL、Dockerfile、Shell（sh/bash/zsh）、Python、Go、PHP、Lua 和 C#/MSBuild。不支援的副檔名會顯示提示並拒絕處理。
+- 各平台發布檔提供兩種版本：一般精簡套件，以及額外包含固定版本 dprint 命令列工具與外掛的 `-dprint` 套件（例如 `MadEdit-<version>-macOS-arm64-dprint.dmg`），讓格式化能離線運作。精簡套件透過 `PATH` 中的 `dprint` 使用相同命令。本機可用 `MADEDIT_WITH_FORMATTER=1 make dist-...` 建置完整套件；`make formatters` 會下載固定版本的 dprint 與外掛至 `target/formatters`（版本與 SHA-256 取自 `assets/formatters/manifest.json`）。
+- macOS dprint 輔助程式使用最小權限的 `com.apple.security.cs.allow-unsigned-executable-memory` 權益簽署並啟用 Hardened Runtime（Wasm 執行環境需要此權益）；主程式不帶此權益，輔助程式要求的最低 macOS 版本也會列入 App 的 `LSMinimumSystemVersion`。
+
+#### 變更
+- Markdown 預覽支援 LaTeX 數學公式：行內 `$…$` 與文字基線對齊，`$$…$$` 獨立置中。最外層 `\text{…}` 中的中文及其他非 ASCII 文字使用預覽字型顯示；無法繪製的公式則顯示 TeX 原始碼。
+- 從原始碼建置需要 Rust 1.99 或更新版本（數學公式繪製套件 latex-rust 的要求）。
+
+#### 修正
+- 最近檔案等較長的子選單在視窗底部附近不再上下閃動。
+- Markdown 預覽中的引用區塊表格（`> | a | b |`）不再合併成一段儲存格文字，現在會在引用區塊中正確顯示為表格。
 
 ## [0.6.5] - 2026-10-28
 
@@ -204,7 +221,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 - Initial project. The Slint version implemented encoding support, a custom-drawn editor, a large-file engine, rectangular selection, find and replace, syntax highlighting, go-to-line, line endings, bookmarks, external change monitoring and the classic UI.
 
-[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/tenyi/MadEdit/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/tenyi/MadEdit/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/tenyi/MadEdit/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/tenyi/MadEdit/compare/v0.6.2...v0.6.3
