@@ -103,10 +103,17 @@ incomplete runs, malformed samples, changed sample counts, incompatible environm
 and different fixtures fail with a nonzero exit status. Reports retain the failure
 reason. Source revisions may differ, as comparing revisions is the purpose.
 
+Compiler-flag environment inputs (`RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS`,
+`CARGO_BUILD_RUSTFLAGS`, and `CARGO_TARGET_*_RUSTFLAGS`) are recorded verbatim.
+Unset and explicitly empty values remain distinct because Cargo can give these
+different precedence. Older reports without this metadata are incompatible;
+generate a new baseline rather than assuming the old flags were empty.
+
 Use `--environment <label>` to identify font/power settings; change the label when
-these change. Run on the same physical machine, with the same installed fonts and
-power settings, without competing workloads. Metadata cannot prove identical
-runtime conditions. Inspect noisy results rather than approving a weaker budget
+these or Cargo configuration files change. Run on the same physical machine,
+with the same installed fonts and power settings, without competing workloads.
+Metadata cannot prove identical runtime conditions. Inspect noisy results rather
+than approving a weaker budget
 automatically. Reports and logs remain local under the ignored `target/` directory.
 
 `make bench BENCH_ARGS='--profile debug'` is useful for checking the tool itself;

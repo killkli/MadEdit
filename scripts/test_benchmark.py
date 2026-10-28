@@ -3,13 +3,14 @@
 import copy
 import unittest
 
-from benchmark import CASES, compare, validate_metrics
+from benchmark import CASES, compare, rustflag_environment, validate_metrics
 
 
 class BenchmarkComparisonTests(unittest.TestCase):
     def setUp(self):
         self.baseline = {
-            "schema": 1, "environment": {"cpu": "fixture", "profile": "release"},
+            "schema": 1,
+            "environment": {"cpu": "fixture", "profile": "release", "rustflags": rustflag_environment({})},
             "fixtures": {"source": "sha256"},
             "metrics": [{"case": name, "samples_ms": [10, 10, 10], "median_ms": 10, "p90_ms": 10}
                         for name in sorted(CASES)],
@@ -18,6 +19,35 @@ class BenchmarkComparisonTests(unittest.TestCase):
 
     def test_equal_results_pass(self):
         self.assertEqual(compare(self.current, self.baseline, 0.25, 1), [])
+
+    def test_compiler_flag_changes_are_rejected(self):
+        for key in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS",
+                    "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS"):
+            with self.subTest(key=key):
+                self.current["environment"]["rustflags"] = rustflag_environment({key: "-Copt-level=0"})
+                with self.assertRaisesRegex(ValueError, "environment differs"):
+                    compare(self.current, self.baseline, 0.25, 1)
+
+    def test_empty_encoded_flags_differ_from_unset(self):
+        flags = {"RUSTFLAGS": "-Copt-level=0"}
+        self.baseline["environment"]["rustflags"] = rustflag_environment(flags)
+        self.current["environment"]["rustflags"] = rustflag_environment({**flags, "CARGO_ENCODED_RUSTFLAGS": ""})
+        self.assertIsNone(self.baseline["environment"]["rustflags"]["CARGO_ENCODED_RUSTFLAGS"])
+        self.assertEqual(self.current["environment"]["rustflags"]["CARGO_ENCODED_RUSTFLAGS"], "")
+        with self.assertRaisesRegex(ValueError, "environment differs"):
+            compare(self.current, self.baseline, 0.25, 1)
+
+    def test_identical_encoded_flags_remain_compatible(self):
+        flags = {"CARGO_ENCODED_RUSTFLAGS": "-C\x1fopt-level=1", "RUSTFLAGS": "-Copt-level=0"}
+        self.baseline["environment"]["rustflags"] = rustflag_environment(flags)
+        self.current["environment"]["rustflags"] = rustflag_environment(dict(reversed(list(flags.items()))))
+        self.assertEqual(self.current["environment"]["rustflags"]["CARGO_ENCODED_RUSTFLAGS"], flags["CARGO_ENCODED_RUSTFLAGS"])
+        self.assertEqual(compare(self.current, self.baseline, 0.25, 1), [])
+
+    def test_legacy_reports_without_complete_flag_metadata_are_rejected(self):
+        self.baseline["environment"]["rustflags"] = ""
+        with self.assertRaisesRegex(ValueError, "environment differs"):
+            compare(self.current, self.baseline, 0.25, 1)
 
     def test_median_and_p90_regressions_fail(self):
         metric = self.current["metrics"][0]

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 import datetime as dt
 import hashlib
 import json
@@ -34,6 +35,14 @@ def source_hash() -> str:
         digest.update(b"\0")
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def rustflag_environment(environ: Mapping[str, str]) -> dict[str, str | None]:
+    # Cargo can prefer encoded flags over RUSTFLAGS. Preserve unset versus empty:
+    # an explicitly empty higher-priority value can suppress lower-priority flags.
+    keys = {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"}
+    keys.update(key for key in environ if key.startswith("CARGO_TARGET_") and key.endswith("_RUSTFLAGS"))
+    return {key: environ.get(key) for key in sorted(keys)}
 
 
 def validate_metrics(metrics: list[dict]) -> dict[str, dict]:
@@ -118,7 +127,7 @@ def main() -> int:
             "rustc": subprocess.check_output(["rustc", "--version"], text=True).strip(),
             "lock_sha256": sha256(ROOT / "Cargo.lock"), "profile": args.profile,
             "label": args.environment, "renderer": "egui software layout; no native window or GPU presentation",
-            "rustflags": os.environ.get("RUSTFLAGS", ""),
+            "rustflags": rustflag_environment(os.environ),
         },
         "fixtures": {"long_line": sha256(fixture), "markdown": sha256(markdown)},
         "metrics": [],
