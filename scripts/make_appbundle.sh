@@ -79,10 +79,8 @@ WITH_FORMATTER="${MADEDIT_WITH_FORMATTER:-0}"
 FORMATTER_SRC="${MADEDIT_FORMATTERS_DIR:-${ROOT}/target/formatters}"
 FORMATTER_BIN="${BUNDLE}/Contents/Helpers/dprint"
 if [[ "${WITH_FORMATTER}" == "1" ]]; then
-    if [[ ! -x "${FORMATTER_SRC}/dprint" || ! -f "${FORMATTER_SRC}/dprint.json" ]]; then
-        echo "未找到 dprint（${FORMATTER_SRC}），下載固定版本..."
-        "${ROOT}/scripts/fetch_formatter.sh" "${FORMATTER_SRC}"
-    fi
+    # fetch 是增量的：已驗證的檔案不會重抓，並會補齊 manifest 新增的插件、更新 dprint.json
+    "${ROOT}/scripts/fetch_formatter.sh" "${FORMATTER_SRC}"
     if ! file "${FORMATTER_SRC}/dprint" | grep -q 'Mach-O.*executable'; then
         echo "${FORMATTER_SRC}/dprint 不是 macOS 執行檔；請以對應架構重新下載。" >&2
         echo "例：./scripts/fetch_formatter.sh target/formatters --target aarch64-apple-darwin" >&2

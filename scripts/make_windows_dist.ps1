@@ -96,10 +96,9 @@ if (Test-Path $DictSrc) {
 # 「帶 DPRINT」版：dprint 執行檔、dprint.json 與 plugins/ 放在 formatters\
 if ($WithFormatter) {
     $FormatterSrc = if ($env:MADEDIT_FORMATTERS_DIR) { $env:MADEDIT_FORMATTERS_DIR } else { Join-Path $Root "target\formatters" }
-    if (-not (Test-Path (Join-Path $FormatterSrc "dprint.exe"))) {
-        Write-Host "==> 下載固定版本 dprint（$Target）..."
-        & (Join-Path $PSScriptRoot "fetch_formatter.ps1") -OutDir $FormatterSrc -Target $Target
-    }
+    # fetch 是增量的：已驗證的檔案不會重抓，並會補齊 manifest 新增的插件、更新 dprint.json
+    Write-Host "==> 同步固定版本 dprint 與插件..."
+    & (Join-Path $PSScriptRoot "fetch_formatter.ps1") -OutDir $FormatterSrc -Target $Target
     if (-not (Test-Path (Join-Path $FormatterSrc "dprint.exe"))) {
         Write-Error "找不到 $FormatterSrc\dprint.exe，無法打包「帶 DPRINT」版"
         exit 1

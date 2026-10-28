@@ -52,16 +52,23 @@ $Entry = $Manifest.dprint.targets.$Target
 if (-not $Entry) { throw "manifest.json 沒有 $Target 的 dprint。" }
 Write-Host "dprint $($Manifest.dprint.version)（$Target）"
 $Binary = Join-Path $OutDir "dprint.exe"
-$tmpZip = Join-Path $OutDir "dprint.zip"
-Fetch-Verified $Entry.url $Entry.sha256 $tmpZip
-$tmpExtract = Join-Path $OutDir "dprint-extract"
-if (Test-Path $tmpExtract) { Remove-Item $tmpExtract -Recurse -Force }
-Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
-$Member = Get-ChildItem $tmpExtract -Recurse -Filter "dprint.exe" | Select-Object -First 1
-if (-not $Member) { throw "壓縮檔內找不到 dprint.exe" }
-Move-Item -Force $Member.FullName $Binary
-Remove-Item $tmpExtract -Recurse -Force
-Remove-Item $tmpZip -Force
+# sidecar 記下壓縮檔雜湊；一致時連 dprint 本體都不用重抓
+$Sidecar = Join-Path $OutDir ".dprint-zip-sha256"
+if ((Test-Path $Binary) -and (Test-Path $Sidecar) -and ((Get-Content $Sidecar -Raw).Trim() -eq $Entry.sha256)) {
+    Write-Host "  執行檔已存在且驗證通過：dprint.exe"
+} else {
+    $tmpZip = Join-Path $OutDir "dprint.zip"
+    Fetch-Verified $Entry.url $Entry.sha256 $tmpZip
+    $tmpExtract = Join-Path $OutDir "dprint-extract"
+    if (Test-Path $tmpExtract) { Remove-Item $tmpExtract -Recurse -Force }
+    Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
+    $Member = Get-ChildItem $tmpExtract -Recurse -Filter "dprint.exe" | Select-Object -First 1
+    if (-not $Member) { throw "壓縮檔內找不到 dprint.exe" }
+    Move-Item -Force $Member.FullName $Binary
+    Remove-Item $tmpExtract -Recurse -Force
+    Remove-Item $tmpZip -Force
+    Set-Content -Path $Sidecar -Value $Entry.sha256 -NoNewline
+}
 
 # --- Wasm 插件 ---
 foreach ($Prop in $Manifest.plugins.PSObject.Properties) {
@@ -69,6 +76,13 @@ foreach ($Prop in $Manifest.plugins.PSObject.Properties) {
     $Info = $Prop.Value
     Write-Host "插件 $Name $($Info.version)"
     Fetch-Verified $Info.url $Info.sha256 (Join-Path $PluginsDir "$Name.wasm")
+}
+
+# 清掉 manifest 以外的殘留插件，避免舊檔被一起打包
+$Keep = @($Manifest.plugins.PSObject.Properties.Name | ForEach-Object { "$_.wasm" })
+Get-ChildItem $PluginsDir -Filter "*.wasm" | Where-Object { $Keep -notcontains $_.Name } | ForEach-Object {
+    Write-Host "  移除非 manifest 插件：$($_.Name)"
+    Remove-Item $_.FullName -Force
 }
 
 # --- 設定檔（跟著 repo 走，永遠覆寫以保持同步） ---

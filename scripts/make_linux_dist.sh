@@ -76,10 +76,8 @@ cp "${ROOT}"/assets/dictionaries/* "${STAGE}/dictionaries/"
 # --- 選配：dprint 格式化工具（「帶 DPRINT」版） ---
 FORMATTER_NOTE="未附帶格式化工具：Tools > dprint 格式化需要 PATH 上的 dprint，或改用 -dprint 版的發行包。"
 if [[ "${WITH_FORMATTER}" == "1" ]]; then
-    if [[ ! -x "${FORMATTER_SRC}/dprint" || ! -f "${FORMATTER_SRC}/dprint.json" ]]; then
-        echo "未找到 dprint（${FORMATTER_SRC}），下載固定版本..."
-        "${ROOT}/scripts/fetch_formatter.sh" "${FORMATTER_SRC}" --target "${TARGET}"
-    fi
+    # fetch 是增量的：已驗證的檔案不會重抓，並會補齊 manifest 新增的插件、更新 dprint.json
+    "${ROOT}/scripts/fetch_formatter.sh" "${FORMATTER_SRC}" --target "${TARGET}"
     magic="$(od -An -tx1 -N4 "${FORMATTER_SRC}/dprint" | tr -d ' \n')"
     if [[ "${magic}" != "7f454c46" ]]; then
         echo "${FORMATTER_SRC}/dprint 不是 Linux ELF；請以 --target ${TARGET} 重新下載。" >&2

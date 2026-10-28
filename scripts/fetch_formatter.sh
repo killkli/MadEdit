@@ -105,16 +105,22 @@ if entry is None:
 print(f"dprint {manifest['dprint']['version']}（{target}）")
 binary_name = "dprint.exe" if target.endswith("windows") else "dprint"
 binary = out_dir / binary_name
-with tempfile.TemporaryDirectory() as tmp:
-    zip_path = pathlib.Path(tmp) / "dprint.zip"
-    fetch(entry["url"], entry["sha256"], zip_path)
-    with zipfile.ZipFile(zip_path) as z:
-        members = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == binary_name]
-        if not members:
-            raise SystemExit(f"壓縮檔內找不到 {binary_name}：{z.namelist()}")
-        data = z.read(members[0])
-binary.write_bytes(data)
-binary.chmod(binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+# sidecar 記下壓縮檔雜湊；一致時連 dprint 本體都不用重抓
+sidecar = out_dir / ".dprint-zip-sha256"
+if binary.is_file() and sidecar.is_file() and sidecar.read_text().strip() == entry["sha256"]:
+    print("  執行檔已存在且驗證通過：dprint")
+else:
+    with tempfile.TemporaryDirectory() as tmp:
+        zip_path = pathlib.Path(tmp) / "dprint.zip"
+        fetch(entry["url"], entry["sha256"], zip_path)
+        with zipfile.ZipFile(zip_path) as z:
+            members = [n for n in z.namelist() if pathlib.PurePosixPath(n).name == binary_name]
+            if not members:
+                raise SystemExit(f"壓縮檔內找不到 {binary_name}：{z.namelist()}")
+            data = z.read(members[0])
+    binary.write_bytes(data)
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    sidecar.write_text(entry["sha256"] + "\n")
 
 # --- Wasm 插件 ---------------------------------------------------------------
 plugins = out_dir / "plugins"
@@ -122,6 +128,13 @@ plugins.mkdir(exist_ok=True)
 for name, info in manifest["plugins"].items():
     print(f"插件 {name} {info['version']}")
     fetch(info["url"], info["sha256"], plugins / f"{name}.wasm")
+
+# 清掉 manifest 以外的殘留插件，避免舊檔被一起打包
+keep = {f"{name}.wasm" for name in manifest["plugins"]}
+for stale in plugins.glob("*.wasm"):
+    if stale.name not in keep:
+        print(f"  移除非 manifest 插件：{stale.name}")
+        stale.unlink()
 
 # --- 設定檔（跟著 repo 走，永遠覆寫以保持同步） --------------------------------
 shutil.copyfile(manifest_path.parent / "dprint.json", out_dir / "dprint.json")
