@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Added
+- Automatically check GitHub Releases daily, show a non-blocking update notice with a download link, and offer manual checks and update preferences in Help.
 - The Markdown preview renders LaTeX math: inline `$…$` sits on the text baseline and `$$…$$` is centred on its own line. Chinese and other non-ASCII text in a top-level `\text{…}` is shown with the preview font; a formula that cannot be rendered is shown as its TeX source.
 
 ### Changed
