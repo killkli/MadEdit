@@ -49,7 +49,12 @@ esac
 TARGET="${ARCH}-unknown-linux-gnu"
 
 OUT_DIR="${1:-${ROOT}/dist}"
+WITH_FORMATTER="${MADEDIT_WITH_FORMATTER:-0}"
+FORMATTER_SRC="${MADEDIT_FORMATTERS_DIR:-${ROOT}/target/formatters}"
 NAME="${APP_NAME}-${VERSION}-linux-${ARCH}"
+if [[ "${WITH_FORMATTER}" == "1" ]]; then
+    NAME="${NAME}-dprint"
+fi
 STAGE="${OUT_DIR}/${NAME}"
 
 # --- 建置 -----------------------------------------------------------------
@@ -67,6 +72,27 @@ elif command -v strip >/dev/null 2>&1 && [[ "$(uname)" == "Linux" ]]; then
     strip "${STAGE}/${APP_NAME}" || true
 fi
 cp "${ROOT}"/assets/dictionaries/* "${STAGE}/dictionaries/"
+
+# --- 選配：dprint 格式化工具（「帶 DPRINT」版） ---
+FORMATTER_NOTE="未附帶格式化工具：Tools > dprint 格式化需要 PATH 上的 dprint，或改用 -dprint 版的發行包。"
+if [[ "${WITH_FORMATTER}" == "1" ]]; then
+    if [[ ! -x "${FORMATTER_SRC}/dprint" || ! -f "${FORMATTER_SRC}/dprint.json" ]]; then
+        echo "未找到 dprint（${FORMATTER_SRC}），下載固定版本..."
+        "${ROOT}/scripts/fetch_formatter.sh" "${FORMATTER_SRC}" --target "${TARGET}"
+    fi
+    magic="$(od -An -tx1 -N4 "${FORMATTER_SRC}/dprint" | tr -d ' \n')"
+    if [[ "${magic}" != "7f454c46" ]]; then
+        echo "${FORMATTER_SRC}/dprint 不是 Linux ELF；請以 --target ${TARGET} 重新下載。" >&2
+        exit 1
+    fi
+    mkdir -p "${STAGE}/formatters/plugins"
+    cp "${FORMATTER_SRC}/dprint" "${STAGE}/formatters/dprint"
+    chmod +x "${STAGE}/formatters/dprint"
+    cp "${FORMATTER_SRC}/dprint.json" "${STAGE}/formatters/"
+    cp "${FORMATTER_SRC}"/plugins/*.wasm "${STAGE}/formatters/plugins/"
+    FORMATTER_NOTE="已附帶 dprint 格式化工具（C/C++、JS/TS、JSON、Markdown、TOML、Python；離線可用）。"
+fi
+
 cp "${ROOT}/assets/madedit.desktop" "${STAGE}/"
 cp "${ROOT}/assets/madedit-icon.png" "${STAGE}/"
 
@@ -86,6 +112,12 @@ rm -rf "${APP_DIR}/dictionaries"
 # install 會先移除舊檔再寫入，程式執行中也能升級（cp 會因「文字檔忙碌中」失敗）
 install -m 755 "${SRC}/MadEdit" "${APP_DIR}/MadEdit"
 cp -r "${SRC}/dictionaries" "${APP_DIR}/"
+# 「帶 DPRINT」版：格式化工具與執行檔放同一層（core/dprint.rs 會在 current_exe 旁找 formatters/）
+if [[ -d "${SRC}/formatters" ]]; then
+    rm -rf "${APP_DIR}/formatters"
+    cp -r "${SRC}/formatters" "${APP_DIR}/"
+    chmod +x "${APP_DIR}/formatters/dprint"
+fi
 ln -sf "${APP_DIR}/MadEdit" "${PREFIX}/bin/MadEdit"
 # Exec 改寫為絕對路徑：從啟動器（如 Walker）開啟時 PATH 不一定含 ${PREFIX}/bin；
 # %F 讓「以此程式開啟」可傳入檔案
@@ -112,6 +144,7 @@ MadEdit ${VERSION} — Linux ${ARCH}
   sudo PREFIX=/usr/local ./install.sh
 
 需求：glibc 2.28 以上、fontconfig、X11 或 Wayland，以及支援 Vulkan 或 OpenGL 的顯示驅動。
+${FORMATTER_NOTE}
 原始碼：https://github.com/tenyi/MadEdit
 EOF
 

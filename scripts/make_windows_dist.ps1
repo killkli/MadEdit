@@ -9,7 +9,8 @@
 
 param(
     [string]$OutDir = "",
-    [string]$Arch = ""
+    [string]$Arch = "",
+    [switch]$WithFormatter
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,6 +53,8 @@ $Target = if ($Arch -eq "aarch64") { "aarch64-pc-windows-msvc" } else { "x86_64-
 
 $AppName = "MadEdit"
 $DistName = "$AppName-$Version-windows-$Arch"
+# 「帶 DPRINT」版：檔名加 -dprint
+if ($WithFormatter) { $DistName = "$DistName-dprint" }
 $ZipFile = Join-Path $OutDir "$DistName.zip"
 $StageDir = Join-Path $OutDir "staging-$DistName"
 
@@ -88,6 +91,21 @@ Copy-Item $Bin -Destination (Join-Path $StageDir "$AppName.exe")
 $DictSrc = Join-Path $Root "assets\dictionaries"
 if (Test-Path $DictSrc) {
     Copy-Item $DictSrc -Destination (Join-Path $StageDir "dictionaries") -Recurse
+}
+
+# 「帶 DPRINT」版：dprint 執行檔、dprint.json 與 plugins/ 放在 formatters\
+if ($WithFormatter) {
+    $FormatterSrc = if ($env:MADEDIT_FORMATTERS_DIR) { $env:MADEDIT_FORMATTERS_DIR } else { Join-Path $Root "target\formatters" }
+    if (-not (Test-Path (Join-Path $FormatterSrc "dprint.exe"))) {
+        Write-Host "==> 下載固定版本 dprint（$Target）..."
+        & (Join-Path $PSScriptRoot "fetch_formatter.ps1") -OutDir $FormatterSrc -Target $Target
+    }
+    if (-not (Test-Path (Join-Path $FormatterSrc "dprint.exe"))) {
+        Write-Error "找不到 $FormatterSrc\dprint.exe，無法打包「帶 DPRINT」版"
+        exit 1
+    }
+    Write-Host "==> 附帶 dprint 格式化工具..."
+    Copy-Item $FormatterSrc -Destination (Join-Path $StageDir "formatters") -Recurse
 }
 
 Write-Host "==> 壓縮為 $ZipFile..."

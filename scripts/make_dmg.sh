@@ -57,6 +57,10 @@ else
 fi
 
 DMG_NAME="${APP_NAME}-${VERSION}-${ARCH_SUFFIX}.dmg"
+# App 內附帶 dprint helper 時，檔名加上 -dprint 以區隔「帶 DPRINT」版本
+if [[ -x "${SOURCE_APP}/Contents/Helpers/dprint" ]]; then
+    DMG_NAME="${APP_NAME}-${VERSION}-${ARCH_SUFFIX}-dprint.dmg"
+fi
 DMG_PATH="${OUT_DIR}/${DMG_NAME}"
 
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/madedit-dmg.XXXXXX")"

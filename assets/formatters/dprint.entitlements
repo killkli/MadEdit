@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- dprint 內建 wasmtime 需要配置可執行記憶體；Hardened Runtime 下必須明確授予。
+	     僅套用在 Contents/Helpers/dprint，MadEdit 主程式不取得此權限。 -->
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>

@@ -1,0 +1,23 @@
+{
+  "lineWidth": 100,
+  "indentWidth": 4,
+  "typescript": {
+    "indentWidth": 4,
+    "semiColons": "always"
+  },
+  "json": {
+    "indentWidth": 4
+  },
+  "markdown": {},
+  "toml": {},
+  "clangFormat": {},
+  "ruff": {},
+  "plugins": [
+    "./plugins/clang-format.wasm",
+    "./plugins/typescript.wasm",
+    "./plugins/json.wasm",
+    "./plugins/markdown.wasm",
+    "./plugins/toml.wasm",
+    "./plugins/ruff.wasm"
+  ]
+}
