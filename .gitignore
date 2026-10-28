@@ -1,4 +1,5 @@
 /target
+/.codegraph/
 
 # macOS App 打包產物
 /dist/

@@ -283,6 +283,8 @@ struct Item {
 const ZOOM_MIN: f32 = 0.5;
 const ZOOM_MAX: f32 = 3.0;
 const ZOOM_STEP: f32 = 1.1;
+/// 預覽一般內文在 100% 縮放時的字級。
+const BODY_FONT_SIZE: f32 = 16.0;
 /// 符合寬度時，重新排版用的寬度以此為單位量化，避免拖曳視窗邊緣時每個像素都重繪
 const WIDTH_BUCKET: f32 = 32.0;
 /// Mermaid 圖表的 uri 前綴，只有這類 uri 交給 [`DiagramLoader`]
@@ -654,8 +656,9 @@ impl MarkdownPreview {
         let output = egui::CentralPanel::default().frame(fill).show(ui, |ui| area.show(ui, |ui| {
             high_contrast(ui.visuals_mut());
             // 文字隨縮放放大（圖表另外依尺寸縮放）
+            let offset = BODY_FONT_SIZE - ui.style().text_styles[&egui::TextStyle::Body].size;
             for ts in ui.style_mut().text_styles.values_mut() {
-                ts.size *= zoom;
+                ts.size = (ts.size + offset) * zoom;
             }
             avail_w = ui.available_width();
             let origin = ui.cursor().min.y;
