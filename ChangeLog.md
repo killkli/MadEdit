@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-10-30
+
 ### Fixed
 - Selecting text with the mouse now starts at the position where the button was pressed. Dragging back no longer skips the character under the pointer, and dragging over the line-number gutter selects whole lines from the pressed line.
 
@@ -229,7 +231,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 - Initial project. The Slint version implemented encoding support, a custom-drawn editor, a large-file engine, rectangular selection, find and replace, syntax highlighting, go-to-line, line endings, bookmarks, external change monitoring and the classic UI.
 
-[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/tenyi/MadEdit/compare/v0.6.7...HEAD
+[0.6.7]: https://github.com/tenyi/MadEdit/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/tenyi/MadEdit/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/tenyi/MadEdit/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/tenyi/MadEdit/compare/v0.6.3...v0.6.4
