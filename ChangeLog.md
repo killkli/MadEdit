@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+- Selecting text with the mouse now starts at the position where the button was pressed. Dragging back no longer skips the character under the pointer, and dragging over the line-number gutter selects whole lines from the pressed line.
+
+### 繁體中文
+
+#### 修正
+- 以滑鼠拖曳選取文字時，選取範圍改為從按下的位置開始，往回拖曳不再漏掉游標下的字元；在行號欄拖曳選取整行也改為從按下的那一行開始。
+
 ## [0.6.6] - 2026-10-29
 
 ### Added

@@ -1833,3 +1833,83 @@ fn test_cjk_long_line_horizontal_scroll() {
     h.run_steps(2);
     assert_eq!(h.state().doc().editor.lines.len(), 1, "水平捲動不會產生新行");
 }
+
+/// 滑鼠拖曳選取：選取範圍必須從按下的位置開始，往回拖曳時第一個字元不得被跳過
+#[test]
+fn test_mouse_drag_selects_from_press_position() {
+    use eframe::egui;
+    let mut h = harness();
+    h.state_mut().settings.fixed_width = true;
+    type_text(&mut h, "abcdefghij");
+    h.run_steps(2);
+    let (rect, cell_w) = {
+        let s = h.state_mut();
+        let rect = s.tab_mut().view.text_rect;
+        (rect, s.widths.cell_w)
+    };
+    let y = rect.top() + 4.0;
+    let x = |col: f32| rect.left() + col * cell_w;
+
+    // 往後拖曳：按在 col 2，拖到 col 5，應選到 "cde"
+    h.drag_at(egui::pos2(x(2.0), y));
+    h.run_steps(1);
+    h.hover_at(egui::pos2(x(3.0), y));
+    h.run_steps(1);
+    h.hover_at(egui::pos2(x(5.0), y));
+    h.run_steps(1);
+    h.drop_at(egui::pos2(x(5.0), y));
+    h.run_steps(1);
+    assert_eq!(h.state().doc().editor.selected_text(), "cde", "往後拖曳的選取範圍");
+
+    // 往前（往回）拖曳：按在 col 5，拖到 col 2，應選到 "cde"
+    h.drag_at(egui::pos2(x(5.0), y));
+    h.run_steps(1);
+    h.hover_at(egui::pos2(x(4.0), y));
+    h.run_steps(1);
+    h.hover_at(egui::pos2(x(2.0), y));
+    h.run_steps(1);
+    h.drop_at(egui::pos2(x(2.0), y));
+    h.run_steps(1);
+    assert_eq!(h.state().doc().editor.selected_text(), "cde", "往前拖曳的選取範圍");
+
+    // 手快速甩動：一次就超過臨界距離，起點仍要是按下的位置
+    h.drag_at(egui::pos2(x(1.0), y));
+    h.run_steps(1);
+    h.hover_at(egui::pos2(x(8.0), y));
+    h.run_steps(1);
+    h.drop_at(egui::pos2(x(8.0), y));
+    h.run_steps(1);
+    assert_eq!(h.state().doc().editor.selected_text(), "bcdefgh", "快速拖曳的選取範圍");
+}
+
+/// 滑鼠跨行往回拖曳：起點的行與欄都要是按下的位置
+#[test]
+fn test_mouse_backward_drag_across_lines() {
+    use eframe::egui;
+    let mut h = harness();
+    h.state_mut().settings.fixed_width = true;
+    type_text(&mut h, "abcdefghij");
+    h.key_press(Key::Enter);
+    h.run_steps(1);
+    type_text(&mut h, "klmnopqrst");
+    h.run_steps(2);
+    let (rect, cell_w, row_h) = {
+        let s = h.state_mut();
+        let rect = s.tab_mut().view.text_rect;
+        let row_h = (s.widths.text_h * s.settings.line_spacing.clamp(100, 250) as f32 / 100.0).round().max(1.0);
+        (rect, s.widths.cell_w, row_h)
+    };
+    let y = |row: f32| rect.top() + row * row_h + 4.0;
+    let x = |col: f32| rect.left() + col * cell_w;
+
+    // 按在第二行 col 3，往回拖到第一行 col 1，應選到第一行 col 1 起至第二行 col 3
+    h.drag_at(egui::pos2(x(3.0), y(1.0)));
+    h.run_steps(1);
+    h.hover_at(egui::pos2(x(2.0), y(1.0)));
+    h.run_steps(1);
+    h.hover_at(egui::pos2(x(1.0), y(0.0)));
+    h.run_steps(1);
+    h.drop_at(egui::pos2(x(1.0), y(0.0)));
+    h.run_steps(1);
+    assert_eq!(h.state().doc().editor.selected_text(), "bcdefghij\nklm", "跨行往回拖曳的選取範圍");
+}

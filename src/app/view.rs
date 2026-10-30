@@ -1081,7 +1081,10 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
     if let Some(p) = pointer.interact_pos() {
         let block_drag = modifiers.alt || doc.mode == EditMode::Column;
         if response.drag_started_by(PointerButton::Primary) || (response.clicked_by(PointerButton::Primary) && !response.double_clicked()) {
-            let (pos, vcol) = hit(view, &doc.editor, p);
+            // 選取的錨點必須是「按下」的位置：egui 的 drag_started 要等指標移動超過臨界距離
+            // 才會觸發，若用當下的指標位置當錨點，按下的那個字元會被漏掉（往回拖曳時最明顯）。
+            let origin = pointer.press_origin().unwrap_or(p);
+            let (pos, vcol) = hit(view, &doc.editor, origin);
             let ed = &mut doc.editor;
             if block_drag && view.wrap.key.is_none() {
                 let anchor = if modifiers.shift { ed.selection.anchor } else { pos };
@@ -1174,20 +1177,22 @@ pub fn show(ui: &mut egui::Ui, doc: &mut Document, view: &mut ViewState, env: &m
 
     // 行號欄：點選或拖曳選取整行，點書籤區切換書籤
     if let Some(p) = pointer.interact_pos() {
-        let row_at = |view: &ViewState, ed: &EditorState| {
-            let r = view.top_row + ((p.y - text_rect.top()) / lay.row_h).floor().max(0.0) as usize;
+        let row_at = |view: &ViewState, ed: &EditorState, at: Pos2| {
+            let r = view.top_row + ((at.y - text_rect.top()) / lay.row_h).floor().max(0.0) as usize;
             view.row_info(ed, r.min(view.row_count(ed).saturating_sub(1))).0
         };
         if gutter_resp.clicked() && settings.show_bookmarks && p.x < gutter_rect.left() + mark_w {
-            let line = row_at(view, &doc.editor);
+            let line = row_at(view, &doc.editor, p);
             doc.editor.move_caret_to(TextPosition::new(line, 0), false);
             doc.editor.toggle_bookmark();
         } else if gutter_resp.drag_started() || gutter_resp.clicked() {
-            let line = row_at(view, &doc.editor);
+            // 起始行同樣取「按下」的位置，否則拖曳起點會落在拖曳開始時的指標位置
+            let origin = pointer.press_origin().unwrap_or(p);
+            let line = row_at(view, &doc.editor, origin);
             view.drag = Some(Drag::Lines { anchor_line: line });
         }
         if let Some(Drag::Lines { anchor_line }) = view.drag {
-            let line = row_at(view, &doc.editor);
+            let line = row_at(view, &doc.editor, p);
             let (a, b) = (anchor_line.min(line), anchor_line.max(line));
             let end = if b + 1 < doc.editor.lines.len() { TextPosition::new(b + 1, 0) } else { TextPosition::new(b, doc.editor.line_char_count(b)) };
             let start = TextPosition::new(a, 0);
